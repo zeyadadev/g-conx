@@ -12,8 +12,8 @@ set_target_properties(venus_common PROPERTIES
 target_include_directories(venus_common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/venus-protocol
+    ${Vulkan_INCLUDE_DIRS}
 )
 
-target_link_libraries(venus_common PUBLIC
-    Vulkan::Vulkan
-)
+# Note: venus_common only needs Vulkan headers, not the library
+# Do not link against Vulkan::Vulkan to avoid circular dependencies in the ICD

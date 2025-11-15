@@ -1,11 +1,16 @@
 #include "icd_entrypoints.h"
+#include "icd_instance.h"
 #include "network/network_client.h"
+#include "state/handle_allocator.h"
+#include "state/instance_state.h"
 #include <iostream>
 #include <vector>
 #include <cstring>
 
-// For Phase 1, we'll use a simple global connection
-static venus_plus::NetworkClient g_client;
+using namespace venus_plus;
+
+// For Phase 1-2, we'll use a simple global connection
+static NetworkClient g_client;
 static bool g_connected = false;
 
 // Constructor - runs when the shared library is loaded
@@ -34,9 +39,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t
     std::cout << "[Client ICD] vk_icdNegotiateLoaderICDInterfaceVersion called\n";
     std::cout << "[Client ICD] Loader requested version: " << *pSupportedVersion << "\n";
 
-    // We support ICD interface version 5
-    if (*pSupportedVersion > 5) {
-        *pSupportedVersion = 5;
+    // Use ICD interface version 7 (latest version)
+    // Version 7 adds support for additional loader features
+    if (*pSupportedVersion > 7) {
+        *pSupportedVersion = 7;
     }
 
     std::cout << "[Client ICD] Negotiated version: " << *pSupportedVersion << "\n";
@@ -61,9 +67,61 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
         std::cout << " -> returning vkEnumerateInstanceExtensionProperties\n";
         return (PFN_vkVoidFunction)vkEnumerateInstanceExtensionProperties;
     }
+    if (strcmp(pName, "vkCreateInstance") == 0) {
+        std::cout << " -> returning vkCreateInstance\n";
+        return (PFN_vkVoidFunction)vkCreateInstance;
+    }
     if (strcmp(pName, "vkGetInstanceProcAddr") == 0) {
         std::cout << " -> returning vkGetInstanceProcAddr\n";
         return (PFN_vkVoidFunction)vkGetInstanceProcAddr;
+    }
+    if (strcmp(pName, "vkDestroyInstance") == 0) {
+        std::cout << " -> returning vkDestroyInstance\n";
+        return (PFN_vkVoidFunction)vkDestroyInstance;
+    }
+    if (strcmp(pName, "vkEnumeratePhysicalDevices") == 0) {
+        std::cout << " -> returning vkEnumeratePhysicalDevices\n";
+        return (PFN_vkVoidFunction)vkEnumeratePhysicalDevices;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceFeatures") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceFeatures\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceFeatures;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceFormatProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceFormatProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceFormatProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceImageFormatProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceImageFormatProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceImageFormatProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceQueueFamilyProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceQueueFamilyProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceMemoryProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceMemoryProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceMemoryProperties;
+    }
+    if (strcmp(pName, "vkGetDeviceProcAddr") == 0) {
+        std::cout << " -> returning vkGetDeviceProcAddr\n";
+        return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
+    }
+    if (strcmp(pName, "vkCreateDevice") == 0) {
+        std::cout << " -> returning vkCreateDevice\n";
+        return (PFN_vkVoidFunction)vkCreateDevice;
+    }
+    if (strcmp(pName, "vkEnumerateDeviceExtensionProperties") == 0) {
+        std::cout << " -> returning vkEnumerateDeviceExtensionProperties\n";
+        return (PFN_vkVoidFunction)vkEnumerateDeviceExtensionProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceSparseImageFormatProperties") == 0) {
+        std::cout << " -> returning vkGetPhysicalDeviceSparseImageFormatProperties\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceSparseImageFormatProperties;
     }
 
     std::cout << " -> NOT FOUND, returning nullptr\n";
@@ -75,52 +133,29 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instan
     return vk_icdGetInstanceProcAddr(instance, pName);
 }
 
+// ICD GetPhysicalDeviceProcAddr (required for ICD interface version 3+)
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInstance instance, const char* pName) {
+    std::cout << "[Client ICD] vk_icdGetPhysicalDeviceProcAddr called for: " << (pName ? pName : "NULL");
+
+    if (pName == nullptr) {
+        std::cout << " -> returning nullptr\n";
+        return nullptr;
+    }
+
+    // For Phase 2, we don't implement any physical device functions yet
+    // Later phases will add these
+    std::cout << " -> NOT IMPLEMENTED, returning nullptr\n";
+    return nullptr;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t* pApiVersion) {
     std::cout << "[Client ICD] vkEnumerateInstanceVersion called\n";
 
-    if (!ensure_connected()) {
-        std::cerr << "[Client ICD] Failed to connect to server\n";
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
+    // Return our supported Vulkan API version (1.3)
+    // This is a static value, no server communication needed
+    *pApiVersion = VK_API_VERSION_1_3;
 
-    // For Phase 1: Send a simple encoded message
-    // Format: [command_type: uint32_t]
-    uint32_t command_type = 1;  // Arbitrary ID for EnumerateInstanceVersion
-
-    if (!g_client.send(&command_type, sizeof(command_type))) {
-        std::cerr << "[Client ICD] Failed to send command\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    std::cout << "[Client ICD] Sent command\n";
-
-    // Receive reply
-    std::vector<uint8_t> reply;
-    if (!g_client.receive(reply)) {
-        std::cerr << "[Client ICD] Failed to receive reply\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    std::cout << "[Client ICD] Received reply: " << reply.size() << " bytes\n";
-
-    // Decode reply: [result: uint32_t][version: uint32_t]
-    if (reply.size() < 8) {
-        std::cerr << "[Client ICD] Invalid reply size\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    uint32_t result;
-    uint32_t version;
-    memcpy(&result, reply.data(), 4);
-    memcpy(&version, reply.data() + 4, 4);
-
-    if (result != VK_SUCCESS) {
-        return static_cast<VkResult>(result);
-    }
-
-    *pApiVersion = version;
-    std::cout << "[Client ICD] Version: " << version << "\n";
-
+    std::cout << "[Client ICD] Returning version: 1.3.0\n";
     return VK_SUCCESS;
 }
 
@@ -131,20 +166,198 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
 
     std::cout << "[Client ICD] vkEnumerateInstanceExtensionProperties called\n";
 
+    // We don't support layers
+    if (pLayerName != nullptr) {
+        std::cout << "[Client ICD] Layer requested: " << pLayerName << " -> VK_ERROR_LAYER_NOT_PRESENT\n";
+        return VK_ERROR_LAYER_NOT_PRESENT;
+    }
+
+    // For Phase 2: Return 0 extensions (we don't need any yet)
+    // Later phases can add extensions as needed
+    const uint32_t extension_count = 0;
+
+    if (pProperties == nullptr) {
+        // First call: just return count
+        *pPropertyCount = extension_count;
+        std::cout << "[Client ICD] Returning extension count: " << extension_count << "\n";
+        return VK_SUCCESS;
+    }
+
+    // Second call: would fill in properties (but we have none)
+    *pPropertyCount = extension_count;
+    std::cout << "[Client ICD] Returning " << extension_count << " extensions\n";
+
+    return VK_SUCCESS;
+}
+
+// vkCreateInstance - Phase 2
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
+    const VkInstanceCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkInstance* pInstance) {
+
+    std::cout << "[Client ICD] vkCreateInstance called\n";
+
+    if (!pCreateInfo || !pInstance) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     if (!ensure_connected()) {
         std::cerr << "[Client ICD] Failed to connect to server\n";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // For Phase 1: Send command and get fake reply
-    uint32_t command_type = 2;  // EnumerateInstanceExtensionProperties
+    // 1. Allocate ICD instance structure (required for version 5 dispatch table)
+    IcdInstance* icd_instance = new IcdInstance();
+    if (!icd_instance) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
 
-    if (!g_client.send(&command_type, sizeof(command_type))) {
+    // Initialize loader dispatch - will be filled by loader after we return
+    icd_instance->loader_data = nullptr;
+
+    // Allocate client handle for server communication
+    icd_instance->client_handle = g_handle_allocator.allocate<VkInstance>();
+    std::cout << "[Client ICD] Allocated instance, client handle: " << icd_instance->client_handle << "\n";
+
+    // 2. For Phase 2: Send simple command (command_type = 3)
+    // In later phases, we'll encode full VkInstanceCreateInfo
+    uint32_t command_type = 3;  // vkCreateInstance
+    uint64_t instance_handle = reinterpret_cast<uint64_t>(icd_instance->client_handle);
+
+    // Send command
+    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t));
+    memcpy(message.data(), &command_type, sizeof(uint32_t));
+    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
+
+    if (!g_client.send(message.data(), message.size())) {
         std::cerr << "[Client ICD] Failed to send command\n";
         return VK_ERROR_DEVICE_LOST;
     }
 
-    std::cout << "[Client ICD] Sent command\n";
+    std::cout << "[Client ICD] Sent vkCreateInstance command\n";
+
+    // 3. Receive reply
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply)) {
+        std::cerr << "[Client ICD] Failed to receive reply\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    // 4. Decode reply: [result: uint32_t]
+    if (reply.size() < 4) {
+        std::cerr << "[Client ICD] Invalid reply size\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    uint32_t result;
+    memcpy(&result, reply.data(), 4);
+
+    if (result != VK_SUCCESS) {
+        delete icd_instance;
+        return static_cast<VkResult>(result);
+    }
+
+    // 5. Return the ICD instance as the VkInstance handle
+    //    The loader will fill in icd_instance->loader_data with dispatch table
+    *pInstance = icd_instance_to_handle(icd_instance);
+
+    // Store the client handle in our state (for tracking)
+    g_instance_state.add_instance(icd_instance->client_handle);
+
+    std::cout << "[Client ICD] Instance created successfully\n";
+    std::cout << "[Client ICD] Returned VkInstance handle: " << *pInstance << "\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyInstance - Phase 2
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
+    VkInstance instance,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyInstance called for instance: " << instance << "\n";
+
+    if (instance == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // Get ICD instance structure
+    IcdInstance* icd_instance = icd_instance_from_handle(instance);
+    VkInstance client_handle = icd_instance->client_handle;
+
+    if (!g_instance_state.has_instance(client_handle)) {
+        std::cerr << "[Client ICD] Invalid instance handle\n";
+        return;
+    }
+
+    // For Phase 2: Send destroy command (command_type = 4)
+    uint32_t command_type = 4;  // vkDestroyInstance
+    uint64_t instance_handle = reinterpret_cast<uint64_t>(client_handle);
+
+    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t));
+    memcpy(message.data(), &command_type, sizeof(uint32_t));
+    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
+
+    if (!g_client.send(message.data(), message.size())) {
+        std::cerr << "[Client ICD] Failed to send command\n";
+        return;
+    }
+
+    std::cout << "[Client ICD] Sent vkDestroyInstance command\n";
+
+    // Receive reply
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply)) {
+        std::cerr << "[Client ICD] Failed to receive reply\n";
+        return;
+    }
+
+    // Remove from client state
+    g_instance_state.remove_instance(client_handle);
+
+    // Free the ICD instance structure
+    delete icd_instance;
+
+    std::cout << "[Client ICD] Instance destroyed\n";
+}
+
+// vkEnumeratePhysicalDevices - Phase 2
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
+    VkInstance instance,
+    uint32_t* pPhysicalDeviceCount,
+    VkPhysicalDevice* pPhysicalDevices) {
+
+    std::cout << "[Client ICD] vkEnumeratePhysicalDevices called\n";
+
+    if (!pPhysicalDeviceCount) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // Get ICD instance structure
+    IcdInstance* icd_instance = icd_instance_from_handle(instance);
+    VkInstance client_handle = icd_instance->client_handle;
+
+    if (!g_instance_state.has_instance(client_handle)) {
+        std::cerr << "[Client ICD] Invalid instance handle\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // For Phase 2: Send enumerate command (command_type = 5)
+    uint32_t command_type = 5;  // vkEnumeratePhysicalDevices
+    uint64_t instance_handle = reinterpret_cast<uint64_t>(client_handle);
+    uint32_t query_devices = (pPhysicalDevices != nullptr) ? 1 : 0;
+
+    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t));
+    memcpy(message.data(), &command_type, sizeof(uint32_t));
+    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
+    memcpy(message.data() + sizeof(uint32_t) + sizeof(uint64_t), &query_devices, sizeof(uint32_t));
+
+    if (!g_client.send(message.data(), message.size())) {
+        std::cerr << "[Client ICD] Failed to send command\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::cout << "[Client ICD] Sent vkEnumeratePhysicalDevices command\n";
 
     // Receive reply
     std::vector<uint8_t> reply;
@@ -153,9 +366,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
         return VK_ERROR_DEVICE_LOST;
     }
 
-    std::cout << "[Client ICD] Received reply: " << reply.size() << " bytes\n";
-
-    // Decode reply: [result: uint32_t][count: uint32_t]
+    // Decode reply: [result: uint32_t][count: uint32_t][devices...]
     if (reply.size() < 8) {
         std::cerr << "[Client ICD] Invalid reply size\n";
         return VK_ERROR_DEVICE_LOST;
@@ -170,13 +381,215 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
         return static_cast<VkResult>(result);
     }
 
-    *pPropertyCount = count;
-    std::cout << "[Client ICD] Extension count: " << count << "\n";
+    *pPhysicalDeviceCount = count;
 
-    // For Phase 1, we don't fill in actual extension properties
-    // Phase 2 will implement this properly
+    // If pPhysicalDevices is not NULL, copy device handles
+    if (pPhysicalDevices != nullptr) {
+        if (reply.size() < 8 + count * sizeof(uint64_t)) {
+            std::cerr << "[Client ICD] Reply too small for device list\n";
+            return VK_ERROR_DEVICE_LOST;
+        }
 
+        for (uint32_t i = 0; i < count && i < *pPhysicalDeviceCount; i++) {
+            uint64_t device_handle;
+            memcpy(&device_handle, reply.data() + 8 + i * sizeof(uint64_t), sizeof(uint64_t));
+            pPhysicalDevices[i] = reinterpret_cast<VkPhysicalDevice>(device_handle);
+            std::cout << "[Client ICD] Physical device " << i << ": " << pPhysicalDevices[i] << "\n";
+        }
+    }
+
+    std::cout << "[Client ICD] Enumerated " << count << " physical device(s)\n";
     return VK_SUCCESS;
+}
+
+// vkGetPhysicalDeviceFeatures - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceFeatures* pFeatures) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceFeatures called\n";
+
+    if (!pFeatures) {
+        return;
+    }
+
+    // For Phase 2: Return a zeroed features structure (no features supported)
+    memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures));
+    std::cout << "[Client ICD] Returned fake features (all disabled)\n";
+}
+
+// vkGetPhysicalDeviceFormatProperties - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
+    VkPhysicalDevice physicalDevice,
+    VkFormat format,
+    VkFormatProperties* pFormatProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceFormatProperties called\n";
+
+    if (!pFormatProperties) {
+        return;
+    }
+
+    memset(pFormatProperties, 0, sizeof(VkFormatProperties));
+}
+
+// vkGetPhysicalDeviceImageFormatProperties - Phase 2 stub
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(
+    VkPhysicalDevice physicalDevice,
+    VkFormat format,
+    VkImageType type,
+    VkImageTiling tiling,
+    VkImageUsageFlags usage,
+    VkImageCreateFlags flags,
+    VkImageFormatProperties* pImageFormatProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceImageFormatProperties called\n";
+
+    if (!pImageFormatProperties) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    // For Phase 2: Return unsupported for all formats
+    return VK_ERROR_FORMAT_NOT_SUPPORTED;
+}
+
+// vkGetPhysicalDeviceProperties - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceProperties* pProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceProperties called\n";
+
+    if (!pProperties) {
+        return;
+    }
+
+    memset(pProperties, 0, sizeof(VkPhysicalDeviceProperties));
+
+    // Set minimal required properties
+    pProperties->apiVersion = VK_API_VERSION_1_3;
+    pProperties->driverVersion = VK_MAKE_VERSION(0, 1, 0);
+    pProperties->vendorID = 0x10005;  // Fake vendor ID
+    pProperties->deviceID = 0x0001;
+    pProperties->deviceType = VK_PHYSICAL_DEVICE_TYPE_OTHER;
+    strncpy(pProperties->deviceName, "Venus Plus Remote GPU", VK_MAX_PHYSICAL_DEVICE_NAME_SIZE);
+
+    std::cout << "[Client ICD] Returned fake device properties\n";
+}
+
+// vkGetPhysicalDeviceQueueFamilyProperties - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(
+    VkPhysicalDevice physicalDevice,
+    uint32_t* pQueueFamilyPropertyCount,
+    VkQueueFamilyProperties* pQueueFamilyProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceQueueFamilyProperties called\n";
+
+    if (!pQueueFamilyPropertyCount) {
+        return;
+    }
+
+    // For Phase 2: Return 1 fake queue family
+    if (pQueueFamilyProperties == nullptr) {
+        *pQueueFamilyPropertyCount = 1;
+        std::cout << "[Client ICD] Returning queue family count: 1\n";
+    } else {
+        *pQueueFamilyPropertyCount = 1;
+        memset(pQueueFamilyProperties, 0, sizeof(VkQueueFamilyProperties));
+        pQueueFamilyProperties[0].queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+        pQueueFamilyProperties[0].queueCount = 1;
+        std::cout << "[Client ICD] Returned fake queue family properties\n";
+    }
+}
+
+// vkGetPhysicalDeviceMemoryProperties - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceMemoryProperties* pMemoryProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceMemoryProperties called\n";
+
+    if (!pMemoryProperties) {
+        return;
+    }
+
+    memset(pMemoryProperties, 0, sizeof(VkPhysicalDeviceMemoryProperties));
+
+    // For Phase 2: Return minimal fake memory properties
+    pMemoryProperties->memoryTypeCount = 1;
+    pMemoryProperties->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    pMemoryProperties->memoryTypes[0].heapIndex = 0;
+
+    pMemoryProperties->memoryHeapCount = 1;
+    pMemoryProperties->memoryHeaps[0].size = 1024 * 1024 * 1024;  // 1GB fake
+    pMemoryProperties->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+
+    std::cout << "[Client ICD] Returned fake memory properties\n";
+}
+
+// vkGetDeviceProcAddr - Phase 2 stub
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* pName) {
+    std::cout << "[Client ICD] vkGetDeviceProcAddr called for: " << (pName ? pName : "NULL");
+
+    // For Phase 2, we don't support any device functions yet
+    // Phase 3 will add device creation
+    std::cout << " -> NOT IMPLEMENTED, returning nullptr\n";
+    return nullptr;
+}
+
+// vkEnumerateDeviceExtensionProperties - Phase 2 stub
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
+    VkPhysicalDevice physicalDevice,
+    const char* pLayerName,
+    uint32_t* pPropertyCount,
+    VkExtensionProperties* pProperties) {
+
+    std::cout << "[Client ICD] vkEnumerateDeviceExtensionProperties called\n";
+
+    // We don't support layers
+    if (pLayerName != nullptr) {
+        return VK_ERROR_LAYER_NOT_PRESENT;
+    }
+
+    // For Phase 2: Return 0 device extensions
+    *pPropertyCount = 0;
+    return VK_SUCCESS;
+}
+
+// vkGetPhysicalDeviceSparseImageFormatProperties - Phase 2 stub
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceSparseImageFormatProperties(
+    VkPhysicalDevice physicalDevice,
+    VkFormat format,
+    VkImageType type,
+    VkSampleCountFlagBits samples,
+    VkImageUsageFlags usage,
+    VkImageTiling tiling,
+    uint32_t* pPropertyCount,
+    VkSparseImageFormatProperties* pProperties) {
+
+    std::cout << "[Client ICD] vkGetPhysicalDeviceSparseImageFormatProperties called\n";
+
+    if (!pPropertyCount) {
+        return;
+    }
+
+    // For Phase 2: Return 0 sparse properties (we don't support sparse)
+    *pPropertyCount = 0;
+}
+
+// vkCreateDevice - Phase 2 stub (required by loader but not used in Phase 2)
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
+    VkPhysicalDevice physicalDevice,
+    const VkDeviceCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDevice* pDevice) {
+
+    std::cout << "[Client ICD] vkCreateDevice called\n";
+
+    // Phase 2 doesn't support device creation yet
+    // This stub is just to satisfy the loader's requirements
+    std::cout << "[Client ICD] Device creation not supported in Phase 2\n";
+    return VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
 } // extern "C"

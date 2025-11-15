@@ -1,10 +1,18 @@
 add_library(venus_icd SHARED
     icd/icd_entrypoints.cpp
+    state/handle_allocator.cpp
+    state/instance_state.cpp
 )
 
+target_include_directories(venus_icd PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Important: ICD must NOT link against Vulkan loader (Vulkan::Vulkan)
+# This would create circular dependency and symbol conflicts
+# We only need Vulkan headers, which are provided by venus_common
 target_link_libraries(venus_icd PRIVATE
     venus_common
-    Vulkan::Vulkan
 )
 
 # Generate ICD manifest

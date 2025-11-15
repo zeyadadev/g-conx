@@ -1,4 +1,5 @@
 #include "phase01/phase01_test.h"
+#include "phase02/phase02_test.h"
 #include <iostream>
 #include <cstring>
 
@@ -34,6 +35,8 @@ int main(int argc, char** argv) {
         switch (phase) {
         case 1:
             return phase01::run_test();
+        case 2:
+            return phase02::run_test();
         default:
             std::cerr << "Error: Phase " << phase << " not implemented yet\n";
             return 1;
@@ -43,6 +46,9 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "--all") == 0) {
         // Run all phases
         int result = phase01::run_test();
+        if (result != 0) return result;
+
+        result = phase02::run_test();
         if (result != 0) return result;
 
         std::cout << "\n";
