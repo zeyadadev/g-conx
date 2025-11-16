@@ -1,0 +1,22 @@
+Protocol
+
+ - finalize docs/VK_EXT_command_serialization.md
+   - pNext should use depth-first encode
+ - finalize xmls/VK_EXT_command_serialization.xml
+ - finalize xmls/VK_MESA_venus_protocol.xml
+ - verify the correctness of the generated code
+
+Features
+
+ - improve robustness for the renderer
+ - write tests
+ - clean up the generator
+ - do not generate dead code
+ - easier to use APIs for the renderer and the driver
+
+Performance
+
+ - help compiler generate better code (always_inline, macros)
+ - rework templates/driver_calls.h
+ - add smartness to some commands (e.g., ignore some members of
+   VkWriteDescriptorSet according to VkDescriptorType)

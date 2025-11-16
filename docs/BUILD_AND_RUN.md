@@ -532,6 +532,47 @@ cd build
 cmake ..
 ```
 
+---
+
+**Issue**: `vkEnumerateInstanceExtensionProperties points to the loader` or infinite recursion
+
+**Root Cause**: ICD linking against libvulkan.so or exporting Vulkan symbols
+
+**Solution**:
+1. **Never link ICD against Vulkan loader** - Check `client/CMakeLists.txt`:
+```cmake
+# ❌ WRONG - DON'T DO THIS
+target_link_libraries(venus_icd PRIVATE Vulkan::Vulkan)
+
+# ✅ CORRECT
+target_link_libraries(venus_icd PRIVATE venus_common)
+```
+
+2. **Use HIDDEN visibility for Vulkan functions** - Check `client/icd/icd_entrypoints.h`:
+```cpp
+#define VP_PUBLIC __attribute__((visibility("default")))
+#define VP_PRIVATE __attribute__((visibility("hidden")))
+
+// Only ICD interface functions should be PUBLIC
+VP_PUBLIC VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t*);
+
+// All Vulkan functions must be PRIVATE
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(...);
+```
+
+**Verification**:
+```bash
+# Check ICD doesn't link against libvulkan.so
+ldd ./client/libvenus_icd.so | grep vulkan
+# Should return NOTHING
+
+# Check Vulkan symbols are hidden
+nm -D ./client/libvenus_icd.so | grep vkCreateInstance
+# Should return NOTHING
+```
+
+**See also**: [VENUS_PROTOCOL_INTEGRATION.md - Common Pitfalls](VENUS_PROTOCOL_INTEGRATION.md#common-pitfalls-and-lessons-learned)
+
 ### Runtime Issues
 
 **Issue**: Client can't connect to server

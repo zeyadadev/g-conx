@@ -9,21 +9,36 @@
 namespace venus_plus {
 
 // Client-side instance state
-struct InstanceState {
-    VkInstance handle;
-    std::vector<VkPhysicalDevice> physical_devices;
+struct PhysicalDeviceEntry {
+    VkPhysicalDevice local_handle;
+    VkPhysicalDevice remote_handle;
 
-    InstanceState() : handle(VK_NULL_HANDLE) {}
-    InstanceState(VkInstance inst) : handle(inst) {}
+    PhysicalDeviceEntry()
+        : local_handle(VK_NULL_HANDLE), remote_handle(VK_NULL_HANDLE) {}
+
+    PhysicalDeviceEntry(VkPhysicalDevice local, VkPhysicalDevice remote)
+        : local_handle(local), remote_handle(remote) {}
+};
+
+struct InstanceState {
+    VkInstance local_handle;
+    VkInstance remote_handle;
+    std::vector<PhysicalDeviceEntry> physical_devices;
+
+    InstanceState()
+        : local_handle(VK_NULL_HANDLE), remote_handle(VK_NULL_HANDLE) {}
+
+    InstanceState(VkInstance local, VkInstance remote)
+        : local_handle(local), remote_handle(remote) {}
 };
 
 // Global instance state manager
 class InstanceStateManager {
 public:
     // Add new instance
-    void add_instance(VkInstance instance) {
+    void add_instance(VkInstance local_handle, VkInstance remote_handle) {
         std::lock_guard<std::mutex> lock(mutex_);
-        instances_[reinterpret_cast<uint64_t>(instance)] = InstanceState(instance);
+        instances_[reinterpret_cast<uint64_t>(local_handle)] = InstanceState(local_handle, remote_handle);
     }
 
     // Remove instance
@@ -49,12 +64,21 @@ public:
     }
 
     // Store physical devices for instance
-    void set_physical_devices(VkInstance instance, const std::vector<VkPhysicalDevice>& devices) {
+    void set_physical_devices(VkInstance instance, const std::vector<PhysicalDeviceEntry>& devices) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = instances_.find(reinterpret_cast<uint64_t>(instance));
         if (it != instances_.end()) {
             it->second.physical_devices = devices;
         }
+    }
+
+    VkInstance get_remote_handle(VkInstance instance) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = instances_.find(reinterpret_cast<uint64_t>(instance));
+        if (it == instances_.end()) {
+            return VK_NULL_HANDLE;
+        }
+        return it->second.remote_handle;
     }
 
 private:

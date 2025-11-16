@@ -1,5 +1,7 @@
 add_executable(venus-server
     main.cpp
+    server_state.cpp
+    renderer_decoder.c
 )
 
 target_include_directories(venus-server PRIVATE

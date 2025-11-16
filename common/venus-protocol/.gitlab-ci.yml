@@ -1,0 +1,87 @@
+variables:
+  TEMPLATES_COMMIT: &ci-templates-commit fb33e1b244ec2a0b8edf8ee5590a96369c3b4666
+  VENUS_PROTOCOL_IMAGE_TAG: '2023-05-16-first'
+
+# YAML anchors for rule conditions
+# --------------------------------
+.rules-anchors:
+  rules:
+    # Post-merge pipeline
+    - if: &is-post-merge '$CI_PROJECT_NAMESPACE == "virgl" && $CI_COMMIT_BRANCH'
+      when: on_success
+    # Post-merge pipeline, not for Marge Bot
+    - if: &is-post-merge-not-for-marge '$CI_PROJECT_NAMESPACE == "virgl" && $GITLAB_USER_LOGIN != "marge-bot" && $CI_COMMIT_BRANCH'
+      when: on_success
+    # Pre-merge pipeline
+    - if: &is-pre-merge '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    # Pre-merge pipeline for Marge Bot
+    - if: &is-pre-merge-for-marge '$GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+
+
+# When to automatically run the CI for build jobs
+.build-rules:
+  rules:
+    # If any files affecting the pipeline are changed, build/test jobs run
+    # automatically once all dependency jobs have passed
+    - changes: &all_paths
+      - vn_protocol.py
+      - vkxml.py
+      - tests/*
+      - utils/*
+      # GitLab CI
+      - .gitlab-ci.yml
+      # Meson
+      - meson*
+      # Source code
+      - include/**/*
+      - src/**/*
+      - templates/*
+      - xmls/*
+      when: on_success
+    # Otherwise, build/test jobs won't run because no rule matched.
+
+
+include:
+  - project: 'freedesktop/ci-templates'
+    ref: *ci-templates-commit
+    file:
+      - '/templates/debian.yml'
+
+stages:
+  - container
+  - build
+
+debian/container:
+  stage: container
+  extends:
+    - .fdo.container-build@debian
+    - .rules-anchors
+  variables:
+    FDO_DISTRIBUTION_VERSION: bookworm-slim
+    FDO_DISTRIBUTION_TAG: &debian-container "${VENUS_PROTOCOL_IMAGE_TAG}--${TEMPLATES_COMMIT}"
+    FDO_DISTRIBUTION_PACKAGES: 'meson gcc python3-mako python3-setuptools libvulkan-dev'
+    # no need to pull the whole repo to build the container image
+    GIT_STRATEGY: none
+
+debian/build:
+  stage: build
+  extends:
+    - .fdo.distribution-image@debian
+    - .rules-anchors
+    - .build-rules
+  variables:
+    FDO_DISTRIBUTION_VERSION: bookworm-slim
+    FDO_DISTRIBUTION_TAG: *debian-container
+  script:
+    - meson setup _build
+    - meson compile -C _build
+  interruptible: true
+  dependencies: []
+  artifacts:
+    name: "venus_protocol_${CI_JOB_NAME}"
+    when: always
+    paths:
+      - _build/meson-logs/*.txt
+      - _build/meson-logs/strace

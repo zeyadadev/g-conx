@@ -117,22 +117,36 @@ venus-plus/
 
 ### Venus Protocol Integration
 
+**Status:** ✅ Fully Integrated (Phase 2)
+
+Venus Plus uses the Venus protocol - a production-tested protocol from Mesa/Chromium that provides encoding/decoding for all Vulkan commands.
+
 **Why Venus?**
 - Complete coverage of all Vulkan commands
 - Auto-generated from Vulkan XML specs
 - Battle-tested (Chrome OS, Android virtualization)
 - Efficient binary format
 
-**Key Files:**
-- `common/venus-protocol/vn_protocol_driver.h` - Main protocol header
-- `common/venus-protocol/vn_protocol_driver_cs.h` - Command stream primitives
-- `common/venus-protocol/vn_protocol_driver_types.h` - Type definitions
+**Architecture:**
+- **Client**: Uses `vn_call_vkXxx()` wrappers (C++ ICD)
+- **vn_ring**: Custom implementation wrapping NetworkClient
+- **Server**: Pure C renderer with dispatch context (`VenusRenderer`)
+- **Integration**: Hybrid C/C++ approach with `extern "C"` boundaries
 
-**Source:** Copied from Mesa 3D (`src/virtio/venus-protocol/`)
+**Key Components:**
+- `common/vn_cs.h` - Core encoder/decoder primitives (C/C++ dual compatibility)
+- `common/vn_ring.h` - Ring buffer abstraction for networking
+- `common/protocol/venus_ring.cpp` - vn_ring implementation
+- `common/venus-protocol/*.h` - Generated protocol headers (37 files)
+- `server/renderer_decoder.c` - Command dispatch implementation (Pure C)
 
-**Wrappers:**
-- `VenusEncoder` class - Simplifies encoding Vulkan commands
-- `VenusDecoder` class - Simplifies decoding and extracting parameters
+**Generated from:** https://gitlab.freedesktop.org/virgl/venus-protocol
+
+**📖 Detailed Documentation:** See [docs/VENUS_PROTOCOL_INTEGRATION.md](docs/VENUS_PROTOCOL_INTEGRATION.md) for:
+- Complete architecture overview
+- How to add new commands
+- C/C++ compatibility approach
+- Debugging tips and troubleshooting
 
 ### Message Protocol
 
@@ -417,6 +431,32 @@ valgrind --leak-check=full ./server/venus-server
 3. **Thread safety**: Network layer must be thread-safe (multiple Vulkan commands may be concurrent)
 4. **Error resilience**: Network errors must not crash, return VK_ERROR_DEVICE_LOST
 5. **Handle lifetime**: Client handles persist until vkDestroy*, server must clean up mappings
+
+### ⚠️ Critical ICD Requirements
+
+**These are mandatory for ICDs to work correctly:**
+
+6. **Never link against libvulkan.so**: ICD must NOT link against Vulkan loader
+   - ❌ `target_link_libraries(venus_icd PRIVATE Vulkan::Vulkan)` - Creates circular dependency
+   - ✅ `target_link_libraries(venus_icd PRIVATE venus_common)` - Only headers needed
+   - **Why**: Linking creates infinite recursion (ICD → loader → ICD → loader...)
+
+7. **Symbol visibility control**: Only ICD interface functions should be PUBLIC
+   - ✅ `VP_PUBLIC` for: `vk_icdNegotiateLoaderICDInterfaceVersion`, `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr`
+   - ✅ `VP_PRIVATE` for: All Vulkan functions (`vkCreateInstance`, `vkEnumeratePhysicalDevices`, etc.)
+   - **Why**: Public Vulkan symbols cause loader to find ICD's symbols instead of dispatching
+
+**Verification**:
+```bash
+# Should show NOTHING (no libvulkan.so dependency)
+ldd ./client/libvenus_icd.so | grep vulkan
+
+# Should show NOTHING (vkCreateInstance is hidden)
+nm -D ./client/libvenus_icd.so | grep vkCreateInstance
+
+# Should show exported ICD interface
+nm -D ./client/libvenus_icd.so | grep vk_icdNegotiateLoaderICDInterfaceVersion
+```
 
 ## Performance Considerations
 

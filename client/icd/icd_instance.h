@@ -15,7 +15,7 @@ struct IcdInstance {
     void *loader_data;
 
     // Our instance data
-    VkInstance client_handle;  // The handle we allocated
+    VkInstance remote_handle;  // Remote handle owned by the Venus server
     // Future: Add more instance-specific state here
 };
 

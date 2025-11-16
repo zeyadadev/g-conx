@@ -3,14 +3,18 @@
 #include "network/network_client.h"
 #include "state/handle_allocator.h"
 #include "state/instance_state.h"
+#include "vn_protocol_driver.h"
+#include "vn_ring.h"
+#include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <vector>
-#include <cstring>
 
 using namespace venus_plus;
 
 // For Phase 1-2, we'll use a simple global connection
 static NetworkClient g_client;
+static vn_ring g_ring = {};
 static bool g_connected = false;
 
 // Constructor - runs when the shared library is loaded
@@ -27,6 +31,7 @@ static bool ensure_connected() {
         if (!g_client.connect("127.0.0.1", 5556)) {
             return false;
         }
+        g_ring.client = &g_client;
         g_connected = true;
     }
     return true;
@@ -172,22 +177,19 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
         return VK_ERROR_LAYER_NOT_PRESENT;
     }
 
-    // For Phase 2: Return 0 extensions (we don't need any yet)
-    // Later phases can add extensions as needed
-    const uint32_t extension_count = 0;
-
-    if (pProperties == nullptr) {
-        // First call: just return count
-        *pPropertyCount = extension_count;
-        std::cout << "[Client ICD] Returning extension count: " << extension_count << "\n";
-        return VK_SUCCESS;
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Second call: would fill in properties (but we have none)
-    *pPropertyCount = extension_count;
-    std::cout << "[Client ICD] Returning " << extension_count << " extensions\n";
+    VkResult result = vn_call_vkEnumerateInstanceExtensionProperties(
+        &g_ring, pLayerName, pPropertyCount, pProperties);
 
-    return VK_SUCCESS;
+    if (result == VK_SUCCESS && pPropertyCount) {
+        std::cout << "[Client ICD] Returning " << *pPropertyCount << " extensions\n";
+    }
+
+    return result;
 }
 
 // vkCreateInstance - Phase 2
@@ -216,57 +218,24 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     // Initialize loader dispatch - will be filled by loader after we return
     icd_instance->loader_data = nullptr;
 
-    // Allocate client handle for server communication
-    icd_instance->client_handle = g_handle_allocator.allocate<VkInstance>();
-    std::cout << "[Client ICD] Allocated instance, client handle: " << icd_instance->client_handle << "\n";
+    icd_instance->remote_handle = VK_NULL_HANDLE;
 
-    // 2. For Phase 2: Send simple command (command_type = 3)
-    // In later phases, we'll encode full VkInstanceCreateInfo
-    uint32_t command_type = 3;  // vkCreateInstance
-    uint64_t instance_handle = reinterpret_cast<uint64_t>(icd_instance->client_handle);
-
-    // Send command
-    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t));
-    memcpy(message.data(), &command_type, sizeof(uint32_t));
-    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
-
-    if (!g_client.send(message.data(), message.size())) {
-        std::cerr << "[Client ICD] Failed to send command\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    std::cout << "[Client ICD] Sent vkCreateInstance command\n";
-
-    // 3. Receive reply
-    std::vector<uint8_t> reply;
-    if (!g_client.receive(reply)) {
-        std::cerr << "[Client ICD] Failed to receive reply\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    // 4. Decode reply: [result: uint32_t]
-    if (reply.size() < 4) {
-        std::cerr << "[Client ICD] Invalid reply size\n";
-        return VK_ERROR_DEVICE_LOST;
-    }
-
-    uint32_t result;
-    memcpy(&result, reply.data(), 4);
-
-    if (result != VK_SUCCESS) {
+    VkResult wire_result = vn_call_vkCreateInstance(&g_ring, pCreateInfo, pAllocator, &icd_instance->remote_handle);
+    if (wire_result != VK_SUCCESS) {
         delete icd_instance;
-        return static_cast<VkResult>(result);
+        return wire_result;
     }
 
-    // 5. Return the ICD instance as the VkInstance handle
-    //    The loader will fill in icd_instance->loader_data with dispatch table
+    // Return the ICD instance as the VkInstance handle. The loader will populate
+    // icd_instance->loader_data after we return.
     *pInstance = icd_instance_to_handle(icd_instance);
 
-    // Store the client handle in our state (for tracking)
-    g_instance_state.add_instance(icd_instance->client_handle);
+    // Track the mapping between the loader-visible handle and the remote handle.
+    g_instance_state.add_instance(*pInstance, icd_instance->remote_handle);
 
     std::cout << "[Client ICD] Instance created successfully\n";
-    std::cout << "[Client ICD] Returned VkInstance handle: " << *pInstance << "\n";
+    std::cout << "[Client ICD] Loader handle: " << *pInstance
+              << ", remote handle: " << icd_instance->remote_handle << "\n";
     return VK_SUCCESS;
 }
 
@@ -283,37 +252,17 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 
     // Get ICD instance structure
     IcdInstance* icd_instance = icd_instance_from_handle(instance);
-    VkInstance client_handle = icd_instance->client_handle;
+    VkInstance loader_handle = icd_instance_to_handle(icd_instance);
 
-    if (!g_instance_state.has_instance(client_handle)) {
-        std::cerr << "[Client ICD] Invalid instance handle\n";
-        return;
+    if (g_connected) {
+        vn_async_vkDestroyInstance(&g_ring, icd_instance->remote_handle, pAllocator);
     }
 
-    // For Phase 2: Send destroy command (command_type = 4)
-    uint32_t command_type = 4;  // vkDestroyInstance
-    uint64_t instance_handle = reinterpret_cast<uint64_t>(client_handle);
-
-    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t));
-    memcpy(message.data(), &command_type, sizeof(uint32_t));
-    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
-
-    if (!g_client.send(message.data(), message.size())) {
-        std::cerr << "[Client ICD] Failed to send command\n";
-        return;
+    if (g_instance_state.has_instance(loader_handle)) {
+        g_instance_state.remove_instance(loader_handle);
+    } else {
+        std::cerr << "[Client ICD] Warning: Instance not tracked during destroy\n";
     }
-
-    std::cout << "[Client ICD] Sent vkDestroyInstance command\n";
-
-    // Receive reply
-    std::vector<uint8_t> reply;
-    if (!g_client.receive(reply)) {
-        std::cerr << "[Client ICD] Failed to receive reply\n";
-        return;
-    }
-
-    // Remove from client state
-    g_instance_state.remove_instance(client_handle);
 
     // Free the ICD instance structure
     delete icd_instance;
@@ -333,72 +282,76 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Get ICD instance structure
-    IcdInstance* icd_instance = icd_instance_from_handle(instance);
-    VkInstance client_handle = icd_instance->client_handle;
-
-    if (!g_instance_state.has_instance(client_handle)) {
-        std::cerr << "[Client ICD] Invalid instance handle\n";
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // For Phase 2: Send enumerate command (command_type = 5)
-    uint32_t command_type = 5;  // vkEnumeratePhysicalDevices
-    uint64_t instance_handle = reinterpret_cast<uint64_t>(client_handle);
-    uint32_t query_devices = (pPhysicalDevices != nullptr) ? 1 : 0;
-
-    std::vector<uint8_t> message(sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t));
-    memcpy(message.data(), &command_type, sizeof(uint32_t));
-    memcpy(message.data() + sizeof(uint32_t), &instance_handle, sizeof(uint64_t));
-    memcpy(message.data() + sizeof(uint32_t) + sizeof(uint64_t), &query_devices, sizeof(uint32_t));
-
-    if (!g_client.send(message.data(), message.size())) {
-        std::cerr << "[Client ICD] Failed to send command\n";
-        return VK_ERROR_DEVICE_LOST;
+    IcdInstance* icd_instance = icd_instance_from_handle(instance);
+    InstanceState* state = g_instance_state.get_instance(instance);
+    if (!icd_instance || !state) {
+        std::cerr << "[Client ICD] Invalid instance state\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    std::cout << "[Client ICD] Sent vkEnumeratePhysicalDevices command\n";
-
-    // Receive reply
-    std::vector<uint8_t> reply;
-    if (!g_client.receive(reply)) {
-        std::cerr << "[Client ICD] Failed to receive reply\n";
-        return VK_ERROR_DEVICE_LOST;
+    VkInstance remote_instance = icd_instance->remote_handle;
+    uint32_t requested_count = (pPhysicalDevices && *pPhysicalDeviceCount) ? *pPhysicalDeviceCount : 0;
+    std::vector<VkPhysicalDevice> remote_devices;
+    if (pPhysicalDevices && requested_count > 0) {
+        remote_devices.resize(requested_count);
     }
 
-    // Decode reply: [result: uint32_t][count: uint32_t][devices...]
-    if (reply.size() < 8) {
-        std::cerr << "[Client ICD] Invalid reply size\n";
-        return VK_ERROR_DEVICE_LOST;
+    VkResult wire_result = vn_call_vkEnumeratePhysicalDevices(
+        &g_ring,
+        remote_instance,
+        pPhysicalDeviceCount,
+        pPhysicalDevices && requested_count > 0 ? remote_devices.data() : nullptr);
+
+    if (wire_result != VK_SUCCESS) {
+        return wire_result;
     }
 
-    uint32_t result;
-    uint32_t count;
-    memcpy(&result, reply.data(), 4);
-    memcpy(&count, reply.data() + 4, 4);
+    std::cout << "[Client ICD] Server reported " << *pPhysicalDeviceCount << " device(s)\n";
 
-    if (result != VK_SUCCESS) {
-        return static_cast<VkResult>(result);
+    if (!pPhysicalDevices) {
+        return VK_SUCCESS;
     }
 
-    *pPhysicalDeviceCount = count;
+    const uint32_t returned = std::min<uint32_t>(remote_devices.size(), *pPhysicalDeviceCount);
+    remote_devices.resize(returned);
 
-    // If pPhysicalDevices is not NULL, copy device handles
-    if (pPhysicalDevices != nullptr) {
-        if (reply.size() < 8 + count * sizeof(uint64_t)) {
-            std::cerr << "[Client ICD] Reply too small for device list\n";
-            return VK_ERROR_DEVICE_LOST;
+    std::vector<PhysicalDeviceEntry> new_entries;
+    new_entries.reserve(remote_devices.size());
+    std::vector<VkPhysicalDevice> local_devices;
+    local_devices.reserve(remote_devices.size());
+
+    for (VkPhysicalDevice remote : remote_devices) {
+        auto existing = std::find_if(
+            state->physical_devices.begin(),
+            state->physical_devices.end(),
+            [remote](const PhysicalDeviceEntry& entry) {
+                return entry.remote_handle == remote;
+            });
+
+        VkPhysicalDevice local = VK_NULL_HANDLE;
+        if (existing != state->physical_devices.end()) {
+            local = existing->local_handle;
+        } else {
+            local = g_handle_allocator.allocate<VkPhysicalDevice>();
         }
 
-        for (uint32_t i = 0; i < count && i < *pPhysicalDeviceCount; i++) {
-            uint64_t device_handle;
-            memcpy(&device_handle, reply.data() + 8 + i * sizeof(uint64_t), sizeof(uint64_t));
-            pPhysicalDevices[i] = reinterpret_cast<VkPhysicalDevice>(device_handle);
-            std::cout << "[Client ICD] Physical device " << i << ": " << pPhysicalDevices[i] << "\n";
-        }
+        new_entries.emplace_back(local, remote);
+        local_devices.push_back(local);
     }
 
-    std::cout << "[Client ICD] Enumerated " << count << " physical device(s)\n";
+    state->physical_devices = std::move(new_entries);
+
+    for (uint32_t i = 0; i < local_devices.size(); ++i) {
+        pPhysicalDevices[i] = local_devices[i];
+        std::cout << "[Client ICD] Physical device " << i << " local=" << local_devices[i]
+                  << " remote=" << remote_devices[i] << "\n";
+    }
+
     return VK_SUCCESS;
 }
 
