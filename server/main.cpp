@@ -1,18 +1,51 @@
 #include "network/network_server.h"
+#include "memory/memory_transfer.h"
 #include "renderer_decoder.h"
 #include "server_state.h"
+#include "protocol/memory_transfer.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 using namespace venus_plus;
 
 static ServerState g_server_state;
 static VenusRenderer* g_renderer = nullptr;
+static MemoryTransferHandler g_memory_transfer(&g_server_state);
 
 bool handle_client_message(int client_fd, const void* data, size_t size) {
+    if (size >= sizeof(uint32_t)) {
+        uint32_t command = 0;
+        std::memcpy(&command, data, sizeof(command));
+        if (command == VENUS_PLUS_CMD_TRANSFER_MEMORY_DATA) {
+            VkResult result = g_memory_transfer.handle_transfer_command(data, size);
+            if (!NetworkServer::send_to_client(client_fd, &result, sizeof(result))) {
+                std::cerr << "[Server] Failed to send transfer ack\n";
+                return false;
+            }
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_READ_MEMORY_DATA) {
+            std::vector<uint8_t> payload;
+            VkResult result = g_memory_transfer.handle_read_command(data, size, &payload);
+            const size_t reply_size = sizeof(VkResult) +
+                                      (result == VK_SUCCESS ? payload.size() : 0);
+            std::vector<uint8_t> reply(reply_size);
+            std::memcpy(reply.data(), &result, sizeof(VkResult));
+            if (result == VK_SUCCESS && !payload.empty()) {
+                std::memcpy(reply.data() + sizeof(VkResult), payload.data(), payload.size());
+            }
+            if (!NetworkServer::send_to_client(client_fd, reply.data(), reply.size())) {
+                std::cerr << "[Server] Failed to send read reply\n";
+                return false;
+            }
+            return true;
+        }
+    }
+
     uint8_t* reply = nullptr;
     size_t reply_size = 0;
 

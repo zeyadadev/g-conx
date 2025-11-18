@@ -2,6 +2,7 @@ add_executable(venus-server
     main.cpp
     server_state.cpp
     vulkan/vulkan_context.cpp
+    memory/memory_transfer.cpp
     renderer_decoder.c
     state/fake_gpu_data.cpp
     state/fake_gpu_data_bridge.cpp

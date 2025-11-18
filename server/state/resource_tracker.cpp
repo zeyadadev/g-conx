@@ -385,6 +385,31 @@ VkDeviceMemory ResourceTracker::get_real_memory(VkDeviceMemory memory) const {
     return it->second.real_handle;
 }
 
+bool ResourceTracker::get_memory_info(VkDeviceMemory memory,
+                                      VkDeviceMemory* real_memory,
+                                      VkDevice* real_device,
+                                      VkDeviceSize* size,
+                                      uint32_t* type_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return false;
+    }
+    if (real_memory) {
+        *real_memory = it->second.real_handle;
+    }
+    if (real_device) {
+        *real_device = it->second.real_device;
+    }
+    if (size) {
+        *size = it->second.size;
+    }
+    if (type_index) {
+        *type_index = it->second.type_index;
+    }
+    return true;
+}
+
 bool ResourceTracker::ranges_overlap(VkDeviceSize offset_a, VkDeviceSize size_a, VkDeviceSize offset_b, VkDeviceSize size_b) {
     if (size_a == 0 || size_b == 0) {
         return false;

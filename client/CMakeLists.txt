@@ -4,6 +4,7 @@ add_library(venus_icd SHARED
     state/instance_state.cpp
     state/device_state.cpp
     state/resource_state.cpp
+    state/shadow_buffer.cpp
     state/command_buffer_state.cpp
     state/sync_state.cpp
 )

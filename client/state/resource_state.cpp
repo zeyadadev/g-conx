@@ -230,6 +230,24 @@ VkDeviceSize ResourceState::get_memory_size(VkDeviceMemory memory) const {
     return it->second.size;
 }
 
+VkDevice ResourceState::get_memory_device(VkDeviceMemory memory) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.device;
+}
+
+uint32_t ResourceState::get_memory_type_index(VkDeviceMemory memory) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return UINT32_MAX;
+    }
+    return it->second.memory_type_index;
+}
+
 bool ResourceState::buffer_is_bound(VkBuffer buffer) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = buffers_.find(handle_key(buffer));

@@ -34,6 +34,11 @@ public:
                                    const VkMemoryAllocateInfo& info);
     bool free_memory(VkDeviceMemory memory);
     VkDeviceMemory get_real_memory(VkDeviceMemory memory) const;
+    bool get_memory_info(VkDeviceMemory memory,
+                         VkDeviceMemory* real_memory,
+                         VkDevice* real_device,
+                         VkDeviceSize* size,
+                         uint32_t* type_index) const;
 
     bool bind_buffer_memory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);
     bool bind_image_memory(VkImage image, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);

@@ -70,6 +70,8 @@ public:
     bool has_memory(VkDeviceMemory memory) const;
     VkDeviceMemory get_remote_memory(VkDeviceMemory memory) const;
     VkDeviceSize get_memory_size(VkDeviceMemory memory) const;
+    VkDevice get_memory_device(VkDeviceMemory memory) const;
+    uint32_t get_memory_type_index(VkDeviceMemory memory) const;
 
     bool buffer_is_bound(VkBuffer buffer) const;
     bool image_is_bound(VkImage image) const;

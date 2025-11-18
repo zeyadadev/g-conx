@@ -6,13 +6,17 @@
 #include "state/instance_state.h"
 #include "state/device_state.h"
 #include "state/resource_state.h"
+#include "state/shadow_buffer.h"
 #include "state/command_buffer_state.h"
 #include "state/sync_state.h"
+#include "protocol/memory_transfer.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <new>
 #include <vector>
 
@@ -102,6 +106,134 @@ static const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const VkSemapho
         header = header->pNext;
     }
     return nullptr;
+}
+
+static bool check_payload_size(size_t payload_size) {
+    if (payload_size > std::numeric_limits<uint32_t>::max()) {
+        std::cerr << "[Client ICD] Payload exceeds protocol limit (" << payload_size << " bytes)\n";
+        return false;
+    }
+    return true;
+}
+
+static VkResult send_transfer_memory_data(VkDeviceMemory memory,
+                                          VkDeviceSize offset,
+                                          VkDeviceSize size,
+                                          const void* data) {
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+    if (remote_memory == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Missing remote memory mapping for transfer\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    if (size == 0) {
+        return VK_SUCCESS;
+    }
+    if (!data) {
+        std::cerr << "[Client ICD] Transfer requested with null data pointer\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    if (size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
+        std::cerr << "[Client ICD] Transfer size exceeds host limits\n";
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    const size_t payload_size = sizeof(TransferMemoryDataHeader) + static_cast<size_t>(size);
+    if (!check_payload_size(payload_size)) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    std::vector<uint8_t> payload(payload_size);
+    TransferMemoryDataHeader header = {};
+    header.command = VENUS_PLUS_CMD_TRANSFER_MEMORY_DATA;
+    header.memory_handle = reinterpret_cast<uint64_t>(remote_memory);
+    header.offset = static_cast<uint64_t>(offset);
+    header.size = static_cast<uint64_t>(size);
+
+    std::memcpy(payload.data(), &header, sizeof(header));
+    std::memcpy(payload.data() + sizeof(header), data, static_cast<size_t>(size));
+
+    if (!g_client.send(payload.data(), payload.size())) {
+        std::cerr << "[Client ICD] Failed to send memory transfer message\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply)) {
+        std::cerr << "[Client ICD] Failed to receive memory transfer reply\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    if (reply.size() < sizeof(VkResult)) {
+        std::cerr << "[Client ICD] Invalid reply size for memory transfer\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    VkResult result = VK_ERROR_DEVICE_LOST;
+    std::memcpy(&result, reply.data(), sizeof(VkResult));
+    return result;
+}
+
+static VkResult read_memory_data(VkDeviceMemory memory,
+                                 VkDeviceSize offset,
+                                 VkDeviceSize size,
+                                 void* dst) {
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+    if (remote_memory == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Missing remote memory mapping for read\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    if (size == 0) {
+        return VK_SUCCESS;
+    }
+    if (!dst) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    if (size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
+        std::cerr << "[Client ICD] Read size exceeds host limits\n";
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    ReadMemoryDataRequest request = {};
+    request.command = VENUS_PLUS_CMD_READ_MEMORY_DATA;
+    request.memory_handle = reinterpret_cast<uint64_t>(remote_memory);
+    request.offset = static_cast<uint64_t>(offset);
+    request.size = static_cast<uint64_t>(size);
+
+    if (!check_payload_size(sizeof(request))) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    if (!g_client.send(&request, sizeof(request))) {
+        std::cerr << "[Client ICD] Failed to send read memory request\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply)) {
+        std::cerr << "[Client ICD] Failed to receive read memory reply\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    if (reply.size() < sizeof(VkResult)) {
+        std::cerr << "[Client ICD] Invalid reply for read memory request\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    VkResult result = VK_ERROR_DEVICE_LOST;
+    std::memcpy(&result, reply.data(), sizeof(VkResult));
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    const size_t payload_size = reply.size() - sizeof(VkResult);
+    if (payload_size != static_cast<size_t>(size)) {
+        std::cerr << "[Client ICD] Read reply size mismatch (" << payload_size
+                  << " vs " << size << ")\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::memcpy(dst, reply.data() + sizeof(VkResult), payload_size);
+    return VK_SUCCESS;
 }
 
 static const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void* pNext) {
@@ -714,6 +846,22 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         std::cout << " -> vkFreeMemory\n";
         return (PFN_vkVoidFunction)vkFreeMemory;
     }
+    if (strcmp(pName, "vkMapMemory") == 0) {
+        std::cout << " -> vkMapMemory\n";
+        return (PFN_vkVoidFunction)vkMapMemory;
+    }
+    if (strcmp(pName, "vkUnmapMemory") == 0) {
+        std::cout << " -> vkUnmapMemory\n";
+        return (PFN_vkVoidFunction)vkUnmapMemory;
+    }
+    if (strcmp(pName, "vkFlushMappedMemoryRanges") == 0) {
+        std::cout << " -> vkFlushMappedMemoryRanges\n";
+        return (PFN_vkVoidFunction)vkFlushMappedMemoryRanges;
+    }
+    if (strcmp(pName, "vkInvalidateMappedMemoryRanges") == 0) {
+        std::cout << " -> vkInvalidateMappedMemoryRanges\n";
+        return (PFN_vkVoidFunction)vkInvalidateMappedMemoryRanges;
+    }
     if (strcmp(pName, "vkCreateBuffer") == 0) {
         std::cout << " -> vkCreateBuffer\n";
         return (PFN_vkVoidFunction)vkCreateBuffer;
@@ -1004,6 +1152,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
         std::cerr << "[Client ICD] Not connected to server\n";
         // Still clean up local resources
         g_resource_state.remove_device_resources(device);
+        g_shadow_buffer_manager.remove_device(device);
         g_device_state.remove_device(device);
         delete icd_device;
         return;
@@ -1015,6 +1164,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
     // Drop resource tracking for this device
     g_resource_state.remove_device_resources(device);
     g_sync_state.remove_device(device);
+    g_shadow_buffer_manager.remove_device(device);
 
     // Remove from state
     g_device_state.remove_device(device);
@@ -1132,6 +1282,14 @@ VKAPI_ATTR void VKAPI_CALL vkFreeMemory(
         return;
     }
 
+    ShadowBufferMapping mapping = {};
+    if (g_shadow_buffer_manager.remove_mapping(memory, &mapping)) {
+        if (mapping.data) {
+            std::free(mapping.data);
+        }
+        std::cerr << "[Client ICD] Warning: Memory freed while still mapped, dropping local shadow buffer\n";
+    }
+
     VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
 
     if (!ensure_connected()) {
@@ -1156,6 +1314,287 @@ VKAPI_ATTR void VKAPI_CALL vkFreeMemory(
     vn_async_vkFreeMemory(&g_ring, icd_device->remote_handle, remote_memory, pAllocator);
     g_resource_state.remove_memory(memory);
     std::cout << "[Client ICD] Memory freed (local=" << memory << ", remote=" << remote_memory << ")\n";
+}
+
+// vkMapMemory - Phase 8
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(
+    VkDevice device,
+    VkDeviceMemory memory,
+    VkDeviceSize offset,
+    VkDeviceSize size,
+    VkMemoryMapFlags flags,
+    void** ppData) {
+
+    std::cout << "[Client ICD] vkMapMemory called\n";
+
+    if (!ppData) {
+        std::cerr << "[Client ICD] vkMapMemory requires valid ppData\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    *ppData = nullptr;
+
+    if (flags != 0) {
+        std::cerr << "[Client ICD] vkMapMemory flags must be zero (got " << flags << ")\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkMapMemory\n";
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    if (!g_device_state.has_device(device) || !g_resource_state.has_memory(memory)) {
+        std::cerr << "[Client ICD] vkMapMemory called with unknown device or memory\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (g_shadow_buffer_manager.is_mapped(memory)) {
+        std::cerr << "[Client ICD] Memory already mapped\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkDevice memory_device = g_resource_state.get_memory_device(memory);
+    if (memory_device != device) {
+        std::cerr << "[Client ICD] Memory belongs to different device\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkDeviceSize memory_size = g_resource_state.get_memory_size(memory);
+    if (size == VK_WHOLE_SIZE) {
+        if (offset >= memory_size) {
+            std::cerr << "[Client ICD] vkMapMemory offset beyond allocation size\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+        size = memory_size - offset;
+    }
+
+    if (offset + size > memory_size) {
+        std::cerr << "[Client ICD] vkMapMemory range exceeds allocation (offset=" << offset
+                  << ", size=" << size << ", alloc=" << memory_size << ")\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    DeviceEntry* device_entry = g_device_state.get_device(device);
+    if (!device_entry) {
+        std::cerr << "[Client ICD] Failed to find device entry during vkMapMemory\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkPhysicalDeviceMemoryProperties mem_props = {};
+    vkGetPhysicalDeviceMemoryProperties(device_entry->physical_device, &mem_props);
+
+    uint32_t type_index = g_resource_state.get_memory_type_index(memory);
+    if (type_index >= mem_props.memoryTypeCount) {
+        std::cerr << "[Client ICD] Invalid memory type index during vkMapMemory\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkMemoryPropertyFlags property_flags = mem_props.memoryTypes[type_index].propertyFlags;
+    if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+        std::cerr << "[Client ICD] Memory type is not HOST_VISIBLE\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    bool host_coherent = (property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+
+    void* shadow_ptr = nullptr;
+    if (!g_shadow_buffer_manager.create_mapping(device, memory, offset, size, host_coherent, &shadow_ptr)) {
+        std::cerr << "[Client ICD] Failed to allocate shadow buffer for mapping\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkResult read_result = read_memory_data(memory, offset, size, shadow_ptr);
+    if (read_result != VK_SUCCESS) {
+        ShadowBufferMapping mapping = {};
+        g_shadow_buffer_manager.remove_mapping(memory, &mapping);
+        if (mapping.data) {
+            std::free(mapping.data);
+        }
+        return read_result;
+    }
+
+    *ppData = shadow_ptr;
+    std::cout << "[Client ICD] Memory mapped (size=" << size << ", offset=" << offset << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkUnmapMemory - Phase 8
+VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(
+    VkDevice device,
+    VkDeviceMemory memory) {
+
+    std::cout << "[Client ICD] vkUnmapMemory called\n";
+
+    if (memory == VK_NULL_HANDLE) {
+        return;
+    }
+
+    ShadowBufferMapping mapping = {};
+    if (!g_shadow_buffer_manager.remove_mapping(memory, &mapping)) {
+        std::cerr << "[Client ICD] vkUnmapMemory: memory was not mapped\n";
+        return;
+    }
+
+    if (mapping.device != device) {
+        std::cerr << "[Client ICD] vkUnmapMemory: device mismatch\n";
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Lost connection before flushing vkUnmapMemory\n";
+        if (mapping.data) {
+            std::free(mapping.data);
+        }
+        return;
+    }
+
+    if (mapping.size > 0 && mapping.data) {
+        VkResult result = send_transfer_memory_data(memory, mapping.offset, mapping.size, mapping.data);
+        if (result != VK_SUCCESS) {
+            std::cerr << "[Client ICD] Failed to transfer memory on unmap: " << result << "\n";
+        } else {
+            std::cout << "[Client ICD] Transferred " << mapping.size << " bytes on unmap\n";
+        }
+    }
+
+    if (mapping.data) {
+        std::free(mapping.data);
+    }
+}
+
+// vkFlushMappedMemoryRanges - Phase 8
+VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges(
+    VkDevice device,
+    uint32_t memoryRangeCount,
+    const VkMappedMemoryRange* pMemoryRanges) {
+
+    std::cout << "[Client ICD] vkFlushMappedMemoryRanges called (count=" << memoryRangeCount << ")\n";
+
+    if (memoryRangeCount == 0) {
+        return VK_SUCCESS;
+    }
+    if (!pMemoryRanges) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    for (uint32_t i = 0; i < memoryRangeCount; ++i) {
+        const VkMappedMemoryRange& range = pMemoryRanges[i];
+        ShadowBufferMapping mapping = {};
+        if (!g_shadow_buffer_manager.get_mapping(range.memory, &mapping)) {
+            std::cerr << "[Client ICD] vkFlushMappedMemoryRanges: memory not mapped\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        if (mapping.device != device) {
+            std::cerr << "[Client ICD] vkFlushMappedMemoryRanges: device mismatch\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        if (range.offset < mapping.offset) {
+            std::cerr << "[Client ICD] vkFlushMappedMemoryRanges: offset before mapping\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        VkDeviceSize relative_offset = range.offset - mapping.offset;
+        if (relative_offset > mapping.size) {
+            std::cerr << "[Client ICD] vkFlushMappedMemoryRanges: offset beyond mapping size\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        VkDeviceSize flush_size = range.size;
+        if (flush_size == VK_WHOLE_SIZE) {
+            flush_size = mapping.size - relative_offset;
+        }
+        if (relative_offset + flush_size > mapping.size) {
+            std::cerr << "[Client ICD] vkFlushMappedMemoryRanges: range exceeds mapping size\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+        if (flush_size == 0) {
+            continue;
+        }
+
+        const uint8_t* src = static_cast<const uint8_t*>(mapping.data);
+        VkResult result = send_transfer_memory_data(range.memory,
+                                                    range.offset,
+                                                    flush_size,
+                                                    src + static_cast<size_t>(relative_offset));
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
+// vkInvalidateMappedMemoryRanges - Phase 8
+VKAPI_ATTR VkResult VKAPI_CALL vkInvalidateMappedMemoryRanges(
+    VkDevice device,
+    uint32_t memoryRangeCount,
+    const VkMappedMemoryRange* pMemoryRanges) {
+
+    std::cout << "[Client ICD] vkInvalidateMappedMemoryRanges called (count=" << memoryRangeCount << ")\n";
+
+    if (memoryRangeCount == 0) {
+        return VK_SUCCESS;
+    }
+    if (!pMemoryRanges) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    for (uint32_t i = 0; i < memoryRangeCount; ++i) {
+        const VkMappedMemoryRange& range = pMemoryRanges[i];
+        ShadowBufferMapping mapping = {};
+        if (!g_shadow_buffer_manager.get_mapping(range.memory, &mapping)) {
+            std::cerr << "[Client ICD] vkInvalidateMappedMemoryRanges: memory not mapped\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        if (mapping.device != device) {
+            std::cerr << "[Client ICD] vkInvalidateMappedMemoryRanges: device mismatch\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        if (range.offset < mapping.offset) {
+            std::cerr << "[Client ICD] vkInvalidateMappedMemoryRanges: offset before mapping\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        VkDeviceSize relative_offset = range.offset - mapping.offset;
+        if (relative_offset > mapping.size) {
+            std::cerr << "[Client ICD] vkInvalidateMappedMemoryRanges: offset beyond mapping size\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+
+        VkDeviceSize read_size = range.size;
+        if (read_size == VK_WHOLE_SIZE) {
+            read_size = mapping.size - relative_offset;
+        }
+        if (relative_offset + read_size > mapping.size) {
+            std::cerr << "[Client ICD] vkInvalidateMappedMemoryRanges: range exceeds mapping size\n";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+        if (read_size == 0) {
+            continue;
+        }
+
+        uint8_t* dst = static_cast<uint8_t*>(mapping.data);
+        VkResult result = read_memory_data(range.memory,
+                                           range.offset,
+                                           read_size,
+                                           dst + static_cast<size_t>(relative_offset));
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
+    return VK_SUCCESS;
 }
 
 // vkCreateBuffer - Phase 4
