@@ -7,6 +7,8 @@ add_executable(venus-server
     state/resource_tracker.cpp
     state/memory_requirements.cpp
     state/binding_validator.cpp
+    state/command_buffer_state.cpp
+    state/command_validator.cpp
 )
 
 target_include_directories(venus-server PRIVATE

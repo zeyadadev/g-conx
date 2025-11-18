@@ -3,6 +3,8 @@
 
 #include "state/handle_map.h"
 #include "state/resource_tracker.h"
+#include "state/command_buffer_state.h"
+#include "state/command_validator.h"
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <unordered_map>
@@ -21,6 +23,8 @@ struct DeviceInfo {
 };
 
 struct ServerState {
+    ServerState();
+
     venus_plus::HandleMap<VkInstance> instance_map;
     venus_plus::HandleMap<VkPhysicalDevice> physical_device_map;
     venus_plus::HandleMap<VkDevice> device_map;
@@ -34,6 +38,8 @@ struct ServerState {
     uint64_t next_queue_handle = 0x3000;
     VkPhysicalDevice fake_device_handle = VK_NULL_HANDLE;
     venus_plus::ResourceTracker resource_tracker;
+    venus_plus::CommandBufferState command_buffer_state;
+    venus_plus::CommandValidator command_validator;
 };
 
 namespace venus_plus {
@@ -65,6 +71,25 @@ bool server_state_destroy_image(ServerState* state, VkImage image);
 bool server_state_get_image_memory_requirements(ServerState* state, VkImage image, VkMemoryRequirements* requirements);
 VkResult server_state_bind_image_memory(ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
 bool server_state_get_image_subresource_layout(ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
+
+VkCommandPool server_state_create_command_pool(ServerState* state, VkDevice device, const VkCommandPoolCreateInfo* info);
+bool server_state_destroy_command_pool(ServerState* state, VkCommandPool pool);
+VkResult server_state_reset_command_pool(ServerState* state, VkCommandPool pool, VkCommandPoolResetFlags flags);
+VkResult server_state_allocate_command_buffers(ServerState* state, VkDevice device, const VkCommandBufferAllocateInfo* info, VkCommandBuffer* buffers);
+void server_state_free_command_buffers(ServerState* state, VkCommandPool pool, uint32_t commandBufferCount, const VkCommandBuffer* buffers);
+VkResult server_state_begin_command_buffer(ServerState* state, VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* info);
+VkResult server_state_end_command_buffer(ServerState* state, VkCommandBuffer commandBuffer);
+VkResult server_state_reset_command_buffer(ServerState* state, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
+bool server_state_command_buffer_is_recording(const ServerState* state, VkCommandBuffer commandBuffer);
+void server_state_mark_command_buffer_invalid(ServerState* state, VkCommandBuffer commandBuffer);
+bool server_state_validate_cmd_copy_buffer(ServerState* state, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* regions);
+bool server_state_validate_cmd_copy_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageCopy* regions);
+bool server_state_validate_cmd_blit_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageBlit* regions);
+bool server_state_validate_cmd_copy_buffer_to_image(ServerState* state, VkBuffer srcBuffer, VkImage dstImage, uint32_t regionCount, const VkBufferImageCopy* regions);
+bool server_state_validate_cmd_copy_image_to_buffer(ServerState* state, VkImage srcImage, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* regions);
+bool server_state_validate_cmd_fill_buffer(ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size);
+bool server_state_validate_cmd_update_buffer(ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize dataSize, const void* data);
+bool server_state_validate_cmd_clear_color_image(ServerState* state, VkImage image, uint32_t rangeCount, const VkImageSubresourceRange* ranges);
 
 } // namespace venus_plus
 

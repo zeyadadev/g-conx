@@ -29,6 +29,9 @@ public:
     bool bind_buffer_memory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);
     bool bind_image_memory(VkImage image, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);
 
+    bool buffer_exists(VkBuffer buffer) const;
+    bool image_exists(VkImage image) const;
+
 private:
     struct BufferResource {
         VkDevice handle_device;

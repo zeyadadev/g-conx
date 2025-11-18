@@ -5,6 +5,8 @@
         "vector": "cpp",
         "algorithm": "cpp",
         "new": "cpp",
-        "cstdint": "cpp"
+        "cstdint": "cpp",
+        "string": "cpp",
+        "cstdio": "cpp"
     }
 }

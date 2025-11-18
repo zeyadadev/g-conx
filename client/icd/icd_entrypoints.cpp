@@ -6,11 +6,13 @@
 #include "state/instance_state.h"
 #include "state/device_state.h"
 #include "state/resource_state.h"
+#include "state/command_buffer_state.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <new>
 #include <vector>
 
 using namespace venus_plus;
@@ -38,6 +40,36 @@ static bool ensure_connected() {
         g_connected = true;
     }
     return true;
+}
+
+static bool ensure_command_buffer_tracked(VkCommandBuffer commandBuffer, const char* func_name) {
+    if (!g_command_buffer_state.has_command_buffer(commandBuffer)) {
+        std::cerr << "[Client ICD] " << func_name << " called with unknown command buffer\n";
+        return false;
+    }
+    return true;
+}
+
+static bool ensure_command_buffer_recording(VkCommandBuffer commandBuffer, const char* func_name) {
+    if (!ensure_command_buffer_tracked(commandBuffer, func_name)) {
+        return false;
+    }
+    CommandBufferLifecycleState state = g_command_buffer_state.get_buffer_state(commandBuffer);
+    if (state != CommandBufferLifecycleState::RECORDING) {
+        std::cerr << "[Client ICD] " << func_name << " requires RECORDING state (current="
+                  << static_cast<int>(state) << ")\n";
+        return false;
+    }
+    return true;
+}
+
+static VkCommandBuffer get_remote_command_buffer_handle(VkCommandBuffer commandBuffer) {
+    VkCommandBuffer remote = g_command_buffer_state.get_remote_command_buffer(commandBuffer);
+    if (remote != VK_NULL_HANDLE) {
+        return remote;
+    }
+    IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(commandBuffer);
+    return icd_cb ? icd_cb->remote_handle : VK_NULL_HANDLE;
 }
 
 extern "C" {
@@ -623,6 +655,70 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         std::cout << " -> vkGetImageSubresourceLayout\n";
         return (PFN_vkVoidFunction)vkGetImageSubresourceLayout;
     }
+    if (strcmp(pName, "vkCreateCommandPool") == 0) {
+        std::cout << " -> vkCreateCommandPool\n";
+        return (PFN_vkVoidFunction)vkCreateCommandPool;
+    }
+    if (strcmp(pName, "vkDestroyCommandPool") == 0) {
+        std::cout << " -> vkDestroyCommandPool\n";
+        return (PFN_vkVoidFunction)vkDestroyCommandPool;
+    }
+    if (strcmp(pName, "vkResetCommandPool") == 0) {
+        std::cout << " -> vkResetCommandPool\n";
+        return (PFN_vkVoidFunction)vkResetCommandPool;
+    }
+    if (strcmp(pName, "vkAllocateCommandBuffers") == 0) {
+        std::cout << " -> vkAllocateCommandBuffers\n";
+        return (PFN_vkVoidFunction)vkAllocateCommandBuffers;
+    }
+    if (strcmp(pName, "vkFreeCommandBuffers") == 0) {
+        std::cout << " -> vkFreeCommandBuffers\n";
+        return (PFN_vkVoidFunction)vkFreeCommandBuffers;
+    }
+    if (strcmp(pName, "vkBeginCommandBuffer") == 0) {
+        std::cout << " -> vkBeginCommandBuffer\n";
+        return (PFN_vkVoidFunction)vkBeginCommandBuffer;
+    }
+    if (strcmp(pName, "vkEndCommandBuffer") == 0) {
+        std::cout << " -> vkEndCommandBuffer\n";
+        return (PFN_vkVoidFunction)vkEndCommandBuffer;
+    }
+    if (strcmp(pName, "vkResetCommandBuffer") == 0) {
+        std::cout << " -> vkResetCommandBuffer\n";
+        return (PFN_vkVoidFunction)vkResetCommandBuffer;
+    }
+    if (strcmp(pName, "vkCmdCopyBuffer") == 0) {
+        std::cout << " -> vkCmdCopyBuffer\n";
+        return (PFN_vkVoidFunction)vkCmdCopyBuffer;
+    }
+    if (strcmp(pName, "vkCmdCopyImage") == 0) {
+        std::cout << " -> vkCmdCopyImage\n";
+        return (PFN_vkVoidFunction)vkCmdCopyImage;
+    }
+    if (strcmp(pName, "vkCmdBlitImage") == 0) {
+        std::cout << " -> vkCmdBlitImage\n";
+        return (PFN_vkVoidFunction)vkCmdBlitImage;
+    }
+    if (strcmp(pName, "vkCmdCopyBufferToImage") == 0) {
+        std::cout << " -> vkCmdCopyBufferToImage\n";
+        return (PFN_vkVoidFunction)vkCmdCopyBufferToImage;
+    }
+    if (strcmp(pName, "vkCmdCopyImageToBuffer") == 0) {
+        std::cout << " -> vkCmdCopyImageToBuffer\n";
+        return (PFN_vkVoidFunction)vkCmdCopyImageToBuffer;
+    }
+    if (strcmp(pName, "vkCmdFillBuffer") == 0) {
+        std::cout << " -> vkCmdFillBuffer\n";
+        return (PFN_vkVoidFunction)vkCmdFillBuffer;
+    }
+    if (strcmp(pName, "vkCmdUpdateBuffer") == 0) {
+        std::cout << " -> vkCmdUpdateBuffer\n";
+        return (PFN_vkVoidFunction)vkCmdUpdateBuffer;
+    }
+    if (strcmp(pName, "vkCmdClearColorImage") == 0) {
+        std::cout << " -> vkCmdClearColorImage\n";
+        return (PFN_vkVoidFunction)vkCmdClearColorImage;
+    }
     if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
         // Return nullptr for now - not implemented in Phase 3
         std::cout << " -> NOT IMPLEMENTED\n";
@@ -753,6 +849,14 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 
     // Get ICD device structure
     IcdDevice* icd_device = icd_device_from_handle(device);
+
+    // Clean up any command pools/buffers owned by this device
+    std::vector<VkCommandBuffer> buffers_to_free;
+    g_command_buffer_state.remove_device(device, &buffers_to_free, nullptr);
+    for (VkCommandBuffer buffer : buffers_to_free) {
+        IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(buffer);
+        delete icd_cb;
+    }
 
     if (!ensure_connected()) {
         std::cerr << "[Client ICD] Not connected to server\n";
@@ -1315,6 +1419,781 @@ VKAPI_ATTR void VKAPI_CALL vkGetImageSubresourceLayout(
 
     IcdDevice* icd_device = icd_device_from_handle(device);
     vn_call_vkGetImageSubresourceLayout(&g_ring, icd_device->remote_handle, remote_image, pSubresource, pLayout);
+}
+
+// vkCreateCommandPool - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
+    VkDevice device,
+    const VkCommandPoolCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkCommandPool* pCommandPool) {
+
+    std::cout << "[Client ICD] vkCreateCommandPool called\n";
+
+    if (!pCreateInfo || !pCommandPool) {
+        std::cerr << "[Client ICD] Invalid parameters for vkCreateCommandPool\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkCreateCommandPool\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkCommandPool remote_pool = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateCommandPool(&g_ring, icd_device->remote_handle, pCreateInfo, pAllocator, &remote_pool);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateCommandPool failed: " << result << "\n";
+        return result;
+    }
+
+    VkCommandPool local_pool = g_handle_allocator.allocate<VkCommandPool>();
+    *pCommandPool = local_pool;
+    g_command_buffer_state.add_pool(device, local_pool, remote_pool, *pCreateInfo);
+
+    std::cout << "[Client ICD] Command pool created (local=" << local_pool
+              << ", family=" << pCreateInfo->queueFamilyIndex << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyCommandPool - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkDestroyCommandPool(
+    VkDevice device,
+    VkCommandPool commandPool,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyCommandPool called\n";
+
+    if (commandPool == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkCommandPool remote_pool = g_command_buffer_state.get_remote_pool(commandPool);
+    std::vector<VkCommandBuffer> buffers_to_free;
+    g_command_buffer_state.remove_pool(commandPool, &buffers_to_free);
+
+    for (VkCommandBuffer buffer : buffers_to_free) {
+        IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(buffer);
+        delete icd_cb;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkDestroyCommandPool\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDestroyCommandPool\n";
+        return;
+    }
+
+    if (remote_pool == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command pool handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyCommandPool(&g_ring, icd_device->remote_handle, remote_pool, pAllocator);
+    std::cout << "[Client ICD] Command pool destroyed (local=" << commandPool << ")\n";
+}
+
+// vkResetCommandPool - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandPool(
+    VkDevice device,
+    VkCommandPool commandPool,
+    VkCommandPoolResetFlags flags) {
+
+    std::cout << "[Client ICD] vkResetCommandPool called\n";
+
+    if (!g_command_buffer_state.has_pool(commandPool)) {
+        std::cerr << "[Client ICD] Unknown command pool in vkResetCommandPool\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkResetCommandPool\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandPool remote_pool = g_command_buffer_state.get_remote_pool(commandPool);
+    if (remote_pool == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote pool missing in vkResetCommandPool\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkResetCommandPool(&g_ring, icd_device->remote_handle, remote_pool, flags);
+    if (result == VK_SUCCESS) {
+        g_command_buffer_state.reset_pool(commandPool);
+        std::cout << "[Client ICD] Command pool reset\n";
+    } else {
+        std::cerr << "[Client ICD] vkResetCommandPool failed: " << result << "\n";
+    }
+    return result;
+}
+
+// vkAllocateCommandBuffers - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(
+    VkDevice device,
+    const VkCommandBufferAllocateInfo* pAllocateInfo,
+    VkCommandBuffer* pCommandBuffers) {
+
+    std::cout << "[Client ICD] vkAllocateCommandBuffers called\n";
+
+    if (!pAllocateInfo || !pCommandBuffers || pAllocateInfo->commandBufferCount == 0) {
+        std::cerr << "[Client ICD] Invalid parameters for vkAllocateCommandBuffers\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkAllocateCommandBuffers\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandPool command_pool = pAllocateInfo->commandPool;
+    if (!g_command_buffer_state.has_pool(command_pool)) {
+        std::cerr << "[Client ICD] Command pool not tracked in vkAllocateCommandBuffers\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (g_command_buffer_state.get_pool_device(command_pool) != device) {
+        std::cerr << "[Client ICD] Command pool not owned by device\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandPool remote_pool = g_command_buffer_state.get_remote_pool(command_pool);
+    if (remote_pool == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command pool missing in vkAllocateCommandBuffers\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    uint32_t count = pAllocateInfo->commandBufferCount;
+    std::vector<VkCommandBuffer> remote_buffers(count, VK_NULL_HANDLE);
+    VkCommandBufferAllocateInfo remote_info = *pAllocateInfo;
+    remote_info.commandPool = remote_pool;
+    VkResult result = vn_call_vkAllocateCommandBuffers(&g_ring, icd_device->remote_handle, &remote_info, remote_buffers.data());
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkAllocateCommandBuffers failed: " << result << "\n";
+        return result;
+    }
+
+    uint32_t allocated = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (remote_buffers[i] == VK_NULL_HANDLE) {
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            break;
+        }
+
+        IcdCommandBuffer* icd_cb = new (std::nothrow) IcdCommandBuffer();
+        if (!icd_cb) {
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+            break;
+        }
+
+        icd_cb->loader_data = nullptr;
+        icd_cb->remote_handle = remote_buffers[i];
+        icd_cb->parent_device = device;
+        icd_cb->parent_pool = command_pool;
+        icd_cb->level = pAllocateInfo->level;
+
+        VkCommandBuffer local_handle = icd_command_buffer_to_handle(icd_cb);
+        pCommandBuffers[i] = local_handle;
+        g_command_buffer_state.add_command_buffer(command_pool, local_handle, remote_buffers[i], pAllocateInfo->level);
+        allocated++;
+    }
+
+    if (result != VK_SUCCESS) {
+        for (uint32_t i = 0; i < allocated; ++i) {
+            g_command_buffer_state.remove_command_buffer(pCommandBuffers[i]);
+            IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(pCommandBuffers[i]);
+            delete icd_cb;
+            pCommandBuffers[i] = VK_NULL_HANDLE;
+        }
+        vn_async_vkFreeCommandBuffers(&g_ring, icd_device->remote_handle, remote_pool, count, remote_buffers.data());
+        return result;
+    }
+
+    std::cout << "[Client ICD] Allocated " << count << " command buffer(s)\n";
+    return VK_SUCCESS;
+}
+
+// vkFreeCommandBuffers - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkFreeCommandBuffers(
+    VkDevice device,
+    VkCommandPool commandPool,
+    uint32_t commandBufferCount,
+    const VkCommandBuffer* pCommandBuffers) {
+
+    std::cout << "[Client ICD] vkFreeCommandBuffers called\n";
+
+    if (commandBufferCount == 0 || !pCommandBuffers) {
+        return;
+    }
+
+    if (!g_command_buffer_state.has_pool(commandPool)) {
+        std::cerr << "[Client ICD] Unknown command pool in vkFreeCommandBuffers\n";
+        return;
+    }
+
+    VkCommandPool remote_pool = g_command_buffer_state.get_remote_pool(commandPool);
+    if (remote_pool == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command pool missing in vkFreeCommandBuffers\n";
+        return;
+    }
+    std::vector<VkCommandBuffer> remote_handles;
+    std::vector<VkCommandBuffer> local_handles;
+    remote_handles.reserve(commandBufferCount);
+    local_handles.reserve(commandBufferCount);
+
+    for (uint32_t i = 0; i < commandBufferCount; ++i) {
+        VkCommandBuffer handle = pCommandBuffers[i];
+        if (handle == VK_NULL_HANDLE) {
+            continue;
+        }
+        if (!g_command_buffer_state.has_command_buffer(handle)) {
+            std::cerr << "[Client ICD] vkFreeCommandBuffers skipping unknown buffer " << handle << "\n";
+            continue;
+        }
+        if (g_command_buffer_state.get_buffer_pool(handle) != commandPool) {
+            std::cerr << "[Client ICD] vkFreeCommandBuffers: buffer " << handle << " not from pool\n";
+            continue;
+        }
+        VkCommandBuffer remote_cb = get_remote_command_buffer_handle(handle);
+        if (remote_cb != VK_NULL_HANDLE) {
+            remote_handles.push_back(remote_cb);
+        }
+        g_command_buffer_state.remove_command_buffer(handle);
+        local_handles.push_back(handle);
+    }
+
+    for (VkCommandBuffer handle : local_handles) {
+        IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(handle);
+        delete icd_cb;
+    }
+
+    if (remote_handles.empty()) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkFreeCommandBuffers\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkFreeCommandBuffers\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkFreeCommandBuffers(&g_ring,
+                                  icd_device->remote_handle,
+                                  remote_pool,
+                                  static_cast<uint32_t>(remote_handles.size()),
+                                  remote_handles.data());
+    std::cout << "[Client ICD] Freed " << remote_handles.size() << " command buffer(s)\n";
+}
+
+// vkBeginCommandBuffer - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(
+    VkCommandBuffer commandBuffer,
+    const VkCommandBufferBeginInfo* pBeginInfo) {
+
+    std::cout << "[Client ICD] vkBeginCommandBuffer called\n";
+
+    if (!pBeginInfo) {
+        std::cerr << "[Client ICD] pBeginInfo is NULL in vkBeginCommandBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_command_buffer_tracked(commandBuffer, "vkBeginCommandBuffer")) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    CommandBufferLifecycleState state = g_command_buffer_state.get_buffer_state(commandBuffer);
+    if (state == CommandBufferLifecycleState::RECORDING) {
+        std::cerr << "[Client ICD] Command buffer already recording\n";
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    if (state == CommandBufferLifecycleState::EXECUTABLE &&
+        !(pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) {
+        std::cerr << "[Client ICD] vkBeginCommandBuffer requires SIMULTANEOUS_USE when re-recording\n";
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    if (state == CommandBufferLifecycleState::INVALID) {
+        std::cerr << "[Client ICD] Command buffer is invalid\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkBeginCommandBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkBeginCommandBuffer(&g_ring, remote_cb, pBeginInfo);
+    if (result == VK_SUCCESS) {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::RECORDING);
+        g_command_buffer_state.set_usage_flags(commandBuffer, pBeginInfo->flags);
+        std::cout << "[Client ICD] Command buffer recording begun\n";
+    } else {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INVALID);
+        std::cerr << "[Client ICD] vkBeginCommandBuffer failed: " << result << "\n";
+    }
+    return result;
+}
+
+// vkEndCommandBuffer - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
+    std::cout << "[Client ICD] vkEndCommandBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkEndCommandBuffer")) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkEndCommandBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkEndCommandBuffer(&g_ring, remote_cb);
+    if (result == VK_SUCCESS) {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::EXECUTABLE);
+        std::cout << "[Client ICD] Command buffer recording ended\n";
+    } else {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INVALID);
+        std::cerr << "[Client ICD] vkEndCommandBuffer failed: " << result << "\n";
+    }
+    return result;
+}
+
+// vkResetCommandBuffer - Phase 5
+VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(
+    VkCommandBuffer commandBuffer,
+    VkCommandBufferResetFlags flags) {
+
+    std::cout << "[Client ICD] vkResetCommandBuffer called\n";
+
+    if (!ensure_command_buffer_tracked(commandBuffer, "vkResetCommandBuffer")) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandPool pool = g_command_buffer_state.get_buffer_pool(commandBuffer);
+    if (pool == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Unable to determine parent pool in vkResetCommandBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandPoolCreateFlags pool_flags = g_command_buffer_state.get_pool_flags(pool);
+    if (!(pool_flags & VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)) {
+        std::cerr << "[Client ICD] Command pool does not support individual reset\n";
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkResetCommandBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkResetCommandBuffer(&g_ring, remote_cb, flags);
+    if (result == VK_SUCCESS) {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INITIAL);
+        g_command_buffer_state.set_usage_flags(commandBuffer, 0);
+        std::cout << "[Client ICD] Command buffer reset\n";
+    } else {
+        g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INVALID);
+        std::cerr << "[Client ICD] vkResetCommandBuffer failed: " << result << "\n";
+    }
+    return result;
+}
+
+static bool validate_buffer_regions(uint32_t count, const void* regions, const char* func_name) {
+    if (count == 0 || !regions) {
+        std::cerr << "[Client ICD] " << func_name << " requires valid regions\n";
+        return false;
+    }
+    return true;
+}
+
+static bool ensure_remote_buffer(VkBuffer buffer, VkBuffer* remote, const char* func_name) {
+    *remote = g_resource_state.get_remote_buffer(buffer);
+    if (*remote == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] " << func_name << " buffer not tracked\n";
+        return false;
+    }
+    return true;
+}
+
+static bool ensure_remote_image(VkImage image, VkImage* remote, const char* func_name) {
+    *remote = g_resource_state.get_remote_image(image);
+    if (*remote == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] " << func_name << " image not tracked\n";
+        return false;
+    }
+    return true;
+}
+
+// vkCmdCopyBuffer - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyBuffer(
+    VkCommandBuffer commandBuffer,
+    VkBuffer srcBuffer,
+    VkBuffer dstBuffer,
+    uint32_t regionCount,
+    const VkBufferCopy* pRegions) {
+
+    std::cout << "[Client ICD] vkCmdCopyBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdCopyBuffer") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdCopyBuffer")) {
+        return;
+    }
+
+    VkBuffer remote_src = VK_NULL_HANDLE;
+    VkBuffer remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(srcBuffer, &remote_src, "vkCmdCopyBuffer") ||
+        !ensure_remote_buffer(dstBuffer, &remote_dst, "vkCmdCopyBuffer")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdCopyBuffer\n";
+        return;
+    }
+    vn_async_vkCmdCopyBuffer(&g_ring, remote_cb, remote_src, remote_dst, regionCount, pRegions);
+    std::cout << "[Client ICD] vkCmdCopyBuffer recorded (" << regionCount << " regions)\n";
+}
+
+// vkCmdCopyImage - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(
+    VkCommandBuffer commandBuffer,
+    VkImage srcImage,
+    VkImageLayout srcImageLayout,
+    VkImage dstImage,
+    VkImageLayout dstImageLayout,
+    uint32_t regionCount,
+    const VkImageCopy* pRegions) {
+
+    std::cout << "[Client ICD] vkCmdCopyImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdCopyImage") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdCopyImage")) {
+        return;
+    }
+
+    VkImage remote_src = VK_NULL_HANDLE;
+    VkImage remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_image(srcImage, &remote_src, "vkCmdCopyImage") ||
+        !ensure_remote_image(dstImage, &remote_dst, "vkCmdCopyImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdCopyImage\n";
+        return;
+    }
+    vn_async_vkCmdCopyImage(&g_ring,
+                            remote_cb,
+                            remote_src,
+                            srcImageLayout,
+                            remote_dst,
+                            dstImageLayout,
+                            regionCount,
+                            pRegions);
+    std::cout << "[Client ICD] vkCmdCopyImage recorded\n";
+}
+
+// vkCmdBlitImage - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(
+    VkCommandBuffer commandBuffer,
+    VkImage srcImage,
+    VkImageLayout srcImageLayout,
+    VkImage dstImage,
+    VkImageLayout dstImageLayout,
+    uint32_t regionCount,
+    const VkImageBlit* pRegions,
+    VkFilter filter) {
+
+    std::cout << "[Client ICD] vkCmdBlitImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBlitImage") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdBlitImage")) {
+        return;
+    }
+
+    VkImage remote_src = VK_NULL_HANDLE;
+    VkImage remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_image(srcImage, &remote_src, "vkCmdBlitImage") ||
+        !ensure_remote_image(dstImage, &remote_dst, "vkCmdBlitImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdBlitImage\n";
+        return;
+    }
+    vn_async_vkCmdBlitImage(&g_ring,
+                            remote_cb,
+                            remote_src,
+                            srcImageLayout,
+                            remote_dst,
+                            dstImageLayout,
+                            regionCount,
+                            pRegions,
+                            filter);
+    std::cout << "[Client ICD] vkCmdBlitImage recorded\n";
+}
+
+// vkCmdCopyBufferToImage - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyBufferToImage(
+    VkCommandBuffer commandBuffer,
+    VkBuffer srcBuffer,
+    VkImage dstImage,
+    VkImageLayout dstImageLayout,
+    uint32_t regionCount,
+    const VkBufferImageCopy* pRegions) {
+
+    std::cout << "[Client ICD] vkCmdCopyBufferToImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdCopyBufferToImage") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdCopyBufferToImage")) {
+        return;
+    }
+
+    VkBuffer remote_src = VK_NULL_HANDLE;
+    VkImage remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(srcBuffer, &remote_src, "vkCmdCopyBufferToImage") ||
+        !ensure_remote_image(dstImage, &remote_dst, "vkCmdCopyBufferToImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdCopyBufferToImage\n";
+        return;
+    }
+    vn_async_vkCmdCopyBufferToImage(&g_ring,
+                                    remote_cb,
+                                    remote_src,
+                                    remote_dst,
+                                    dstImageLayout,
+                                    regionCount,
+                                    pRegions);
+    std::cout << "[Client ICD] vkCmdCopyBufferToImage recorded\n";
+}
+
+// vkCmdCopyImageToBuffer - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(
+    VkCommandBuffer commandBuffer,
+    VkImage srcImage,
+    VkImageLayout srcImageLayout,
+    VkBuffer dstBuffer,
+    uint32_t regionCount,
+    const VkBufferImageCopy* pRegions) {
+
+    std::cout << "[Client ICD] vkCmdCopyImageToBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdCopyImageToBuffer") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdCopyImageToBuffer")) {
+        return;
+    }
+
+    VkImage remote_src = VK_NULL_HANDLE;
+    VkBuffer remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_image(srcImage, &remote_src, "vkCmdCopyImageToBuffer") ||
+        !ensure_remote_buffer(dstBuffer, &remote_dst, "vkCmdCopyImageToBuffer")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdCopyImageToBuffer\n";
+        return;
+    }
+    vn_async_vkCmdCopyImageToBuffer(&g_ring,
+                                    remote_cb,
+                                    remote_src,
+                                    srcImageLayout,
+                                    remote_dst,
+                                    regionCount,
+                                    pRegions);
+    std::cout << "[Client ICD] vkCmdCopyImageToBuffer recorded\n";
+}
+
+// vkCmdFillBuffer - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdFillBuffer(
+    VkCommandBuffer commandBuffer,
+    VkBuffer dstBuffer,
+    VkDeviceSize dstOffset,
+    VkDeviceSize size,
+    uint32_t data) {
+
+    std::cout << "[Client ICD] vkCmdFillBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdFillBuffer")) {
+        return;
+    }
+
+    VkBuffer remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(dstBuffer, &remote_dst, "vkCmdFillBuffer")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdFillBuffer\n";
+        return;
+    }
+    vn_async_vkCmdFillBuffer(&g_ring, remote_cb, remote_dst, dstOffset, size, data);
+    std::cout << "[Client ICD] vkCmdFillBuffer recorded\n";
+}
+
+// vkCmdUpdateBuffer - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdUpdateBuffer(
+    VkCommandBuffer commandBuffer,
+    VkBuffer dstBuffer,
+    VkDeviceSize dstOffset,
+    VkDeviceSize dataSize,
+    const void* pData) {
+
+    std::cout << "[Client ICD] vkCmdUpdateBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdUpdateBuffer")) {
+        return;
+    }
+
+    if (!pData || dataSize == 0 || (dataSize % 4) != 0) {
+        std::cerr << "[Client ICD] vkCmdUpdateBuffer requires 4-byte aligned data\n";
+        return;
+    }
+
+    VkBuffer remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(dstBuffer, &remote_dst, "vkCmdUpdateBuffer")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdUpdateBuffer\n";
+        return;
+    }
+    vn_async_vkCmdUpdateBuffer(&g_ring, remote_cb, remote_dst, dstOffset, dataSize, pData);
+    std::cout << "[Client ICD] vkCmdUpdateBuffer recorded\n";
+}
+
+// vkCmdClearColorImage - Phase 5
+VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(
+    VkCommandBuffer commandBuffer,
+    VkImage image,
+    VkImageLayout imageLayout,
+    const VkClearColorValue* pColor,
+    uint32_t rangeCount,
+    const VkImageSubresourceRange* pRanges) {
+
+    std::cout << "[Client ICD] vkCmdClearColorImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdClearColorImage") ||
+        !pColor ||
+        !validate_buffer_regions(rangeCount, pRanges, "vkCmdClearColorImage")) {
+        return;
+    }
+
+    VkImage remote_image = VK_NULL_HANDLE;
+    if (!ensure_remote_image(image, &remote_image, "vkCmdClearColorImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote command buffer missing in vkCmdClearColorImage\n";
+        return;
+    }
+    vn_async_vkCmdClearColorImage(&g_ring,
+                                  remote_cb,
+                                  remote_image,
+                                  imageLayout,
+                                  pColor,
+                                  rangeCount,
+                                  pRanges);
+    std::cout << "[Client ICD] vkCmdClearColorImage recorded\n";
 }
 
 } // extern "C"

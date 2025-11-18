@@ -18,6 +18,17 @@ struct VenusRenderer {
     struct ServerState* state;
 };
 
+static bool command_buffer_recording_guard(struct ServerState* state,
+                                           VkCommandBuffer command_buffer,
+                                           const char* name) {
+    if (!server_state_bridge_command_buffer_is_recording(state, command_buffer)) {
+        printf("[Venus Server]   -> ERROR: %s requires command buffer in RECORDING state\n", name);
+        server_state_bridge_mark_command_buffer_invalid(state, command_buffer);
+        return false;
+    }
+    return true;
+}
+
 static void server_dispatch_vkCreateInstance(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkCreateInstance* args) {
     printf("[Venus Server] Dispatching vkCreateInstance\n");
@@ -394,6 +405,246 @@ static void server_dispatch_vkGetImageSubresourceLayout(struct vn_dispatch_conte
     }
 }
 
+static void server_dispatch_vkCreateCommandPool(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCreateCommandPool* args) {
+    printf("[Venus Server] Dispatching vkCreateCommandPool\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pCommandPool) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Invalid parameters\n");
+        return;
+    }
+
+    VkCommandPool handle = server_state_bridge_create_command_pool(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> Failed to allocate command pool\n");
+        return;
+    }
+    *args->pCommandPool = handle;
+    printf("[Venus Server]   -> Created command pool: %p\n", (void*)handle);
+}
+
+static void server_dispatch_vkDestroyCommandPool(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkDestroyCommandPool* args) {
+    printf("[Venus Server] Dispatching vkDestroyCommandPool\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!server_state_bridge_destroy_command_pool(state, args->commandPool)) {
+        printf("[Venus Server]   -> Warning: Command pool not found\n");
+    } else {
+        printf("[Venus Server]   -> Command pool destroyed\n");
+    }
+}
+
+static void server_dispatch_vkResetCommandPool(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkResetCommandPool* args) {
+    printf("[Venus Server] Dispatching vkResetCommandPool\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_reset_command_pool(state, args->commandPool, args->flags);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Command pool reset\n");
+    } else {
+        printf("[Venus Server]   -> Failed to reset command pool (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkAllocateCommandBuffers(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkAllocateCommandBuffers* args) {
+    printf("[Venus Server] Dispatching vkAllocateCommandBuffers (count=%u)\n", args->pAllocateInfo ? args->pAllocateInfo->commandBufferCount : 0);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_allocate_command_buffers(state, args->device, args->pAllocateInfo, args->pCommandBuffers);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Command buffers allocated\n");
+    } else {
+        printf("[Venus Server]   -> Allocation failed (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkFreeCommandBuffers(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkFreeCommandBuffers* args) {
+    printf("[Venus Server] Dispatching vkFreeCommandBuffers (count=%u)\n", args->commandBufferCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    server_state_bridge_free_command_buffers(state, args->commandPool, args->commandBufferCount, args->pCommandBuffers);
+    printf("[Venus Server]   -> Command buffers freed\n");
+}
+
+static void server_dispatch_vkBeginCommandBuffer(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkBeginCommandBuffer* args) {
+    printf("[Venus Server] Dispatching vkBeginCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_begin_command_buffer(state, args->commandBuffer, args->pBeginInfo);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Command buffer recording started\n");
+    } else {
+        printf("[Venus Server]   -> Failed to begin command buffer (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkEndCommandBuffer(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkEndCommandBuffer* args) {
+    printf("[Venus Server] Dispatching vkEndCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_end_command_buffer(state, args->commandBuffer);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Command buffer ended\n");
+    } else {
+        printf("[Venus Server]   -> Failed to end command buffer (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkResetCommandBuffer(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkResetCommandBuffer* args) {
+    printf("[Venus Server] Dispatching vkResetCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_reset_command_buffer(state, args->commandBuffer, args->flags);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Command buffer reset\n");
+    } else {
+        printf("[Venus Server]   -> Failed to reset command buffer (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkCmdCopyBuffer(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdCopyBuffer* args) {
+    printf("[Venus Server] Dispatching vkCmdCopyBuffer (%u regions)\n", args->regionCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyBuffer")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_copy_buffer(state,
+                                                      args->srcBuffer,
+                                                      args->dstBuffer,
+                                                      args->regionCount,
+                                                      args->pRegions)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdCopyBuffer validated\n");
+}
+
+static void server_dispatch_vkCmdCopyImage(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkCmdCopyImage* args) {
+    printf("[Venus Server] Dispatching vkCmdCopyImage (%u regions)\n", args->regionCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyImage")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_copy_image(state,
+                                                     args->srcImage,
+                                                     args->dstImage,
+                                                     args->regionCount,
+                                                     args->pRegions)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdCopyImage validated\n");
+}
+
+static void server_dispatch_vkCmdBlitImage(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkCmdBlitImage* args) {
+    printf("[Venus Server] Dispatching vkCmdBlitImage (%u regions)\n", args->regionCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBlitImage")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_blit_image(state,
+                                                     args->srcImage,
+                                                     args->dstImage,
+                                                     args->regionCount,
+                                                     args->pRegions)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdBlitImage validated\n");
+}
+
+static void server_dispatch_vkCmdCopyBufferToImage(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdCopyBufferToImage* args) {
+    printf("[Venus Server] Dispatching vkCmdCopyBufferToImage (%u regions)\n", args->regionCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyBufferToImage")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_copy_buffer_to_image(state,
+                                                               args->srcBuffer,
+                                                               args->dstImage,
+                                                               args->regionCount,
+                                                               args->pRegions)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdCopyBufferToImage validated\n");
+}
+
+static void server_dispatch_vkCmdCopyImageToBuffer(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdCopyImageToBuffer* args) {
+    printf("[Venus Server] Dispatching vkCmdCopyImageToBuffer (%u regions)\n", args->regionCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyImageToBuffer")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_copy_image_to_buffer(state,
+                                                               args->srcImage,
+                                                               args->dstBuffer,
+                                                               args->regionCount,
+                                                               args->pRegions)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdCopyImageToBuffer validated\n");
+}
+
+static void server_dispatch_vkCmdFillBuffer(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdFillBuffer* args) {
+    printf("[Venus Server] Dispatching vkCmdFillBuffer\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdFillBuffer")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_fill_buffer(state, args->dstBuffer, args->dstOffset, args->size)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdFillBuffer validated\n");
+}
+
+static void server_dispatch_vkCmdUpdateBuffer(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdUpdateBuffer* args) {
+    printf("[Venus Server] Dispatching vkCmdUpdateBuffer (size=%llu)\n", (unsigned long long)args->dataSize);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdUpdateBuffer")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_update_buffer(state,
+                                                        args->dstBuffer,
+                                                        args->dstOffset,
+                                                        args->dataSize,
+                                                        args->pData)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdUpdateBuffer validated\n");
+}
+
+static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCmdClearColorImage* args) {
+    printf("[Venus Server] Dispatching vkCmdClearColorImage (ranges=%u)\n", args->rangeCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdClearColorImage")) {
+        return;
+    }
+    if (!server_state_bridge_validate_cmd_clear_color_image(state,
+                                                            args->image,
+                                                            args->rangeCount,
+                                                            args->pRanges)) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    printf("[Venus Server]   -> vkCmdClearColorImage validated\n");
+}
+
 struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     struct VenusRenderer* renderer = (struct VenusRenderer*)calloc(1, sizeof(*renderer));
     if (!renderer)
@@ -446,6 +697,22 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetImageMemoryRequirements = server_dispatch_vkGetImageMemoryRequirements;
     renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
     renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
+    renderer->ctx.dispatch_vkCreateCommandPool = server_dispatch_vkCreateCommandPool;
+    renderer->ctx.dispatch_vkDestroyCommandPool = server_dispatch_vkDestroyCommandPool;
+    renderer->ctx.dispatch_vkResetCommandPool = server_dispatch_vkResetCommandPool;
+    renderer->ctx.dispatch_vkAllocateCommandBuffers = server_dispatch_vkAllocateCommandBuffers;
+    renderer->ctx.dispatch_vkFreeCommandBuffers = server_dispatch_vkFreeCommandBuffers;
+    renderer->ctx.dispatch_vkBeginCommandBuffer = server_dispatch_vkBeginCommandBuffer;
+    renderer->ctx.dispatch_vkEndCommandBuffer = server_dispatch_vkEndCommandBuffer;
+    renderer->ctx.dispatch_vkResetCommandBuffer = server_dispatch_vkResetCommandBuffer;
+    renderer->ctx.dispatch_vkCmdCopyBuffer = server_dispatch_vkCmdCopyBuffer;
+    renderer->ctx.dispatch_vkCmdCopyImage = server_dispatch_vkCmdCopyImage;
+    renderer->ctx.dispatch_vkCmdBlitImage = server_dispatch_vkCmdBlitImage;
+    renderer->ctx.dispatch_vkCmdCopyBufferToImage = server_dispatch_vkCmdCopyBufferToImage;
+    renderer->ctx.dispatch_vkCmdCopyImageToBuffer = server_dispatch_vkCmdCopyImageToBuffer;
+    renderer->ctx.dispatch_vkCmdFillBuffer = server_dispatch_vkCmdFillBuffer;
+    renderer->ctx.dispatch_vkCmdUpdateBuffer = server_dispatch_vkCmdUpdateBuffer;
+    renderer->ctx.dispatch_vkCmdClearColorImage = server_dispatch_vkCmdClearColorImage;
 
     return renderer;
 }

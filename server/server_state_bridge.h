@@ -35,6 +35,25 @@ bool server_state_bridge_get_image_memory_requirements(struct ServerState* state
 VkResult server_state_bridge_bind_image_memory(struct ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
 bool server_state_bridge_get_image_subresource_layout(struct ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
 
+VkCommandPool server_state_bridge_create_command_pool(struct ServerState* state, VkDevice device, const VkCommandPoolCreateInfo* info);
+bool server_state_bridge_destroy_command_pool(struct ServerState* state, VkCommandPool commandPool);
+VkResult server_state_bridge_reset_command_pool(struct ServerState* state, VkCommandPool commandPool, VkCommandPoolResetFlags flags);
+VkResult server_state_bridge_allocate_command_buffers(struct ServerState* state, VkDevice device, const VkCommandBufferAllocateInfo* info, VkCommandBuffer* pCommandBuffers);
+void server_state_bridge_free_command_buffers(struct ServerState* state, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers);
+VkResult server_state_bridge_begin_command_buffer(struct ServerState* state, VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* info);
+VkResult server_state_bridge_end_command_buffer(struct ServerState* state, VkCommandBuffer commandBuffer);
+VkResult server_state_bridge_reset_command_buffer(struct ServerState* state, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
+bool server_state_bridge_command_buffer_is_recording(const struct ServerState* state, VkCommandBuffer commandBuffer);
+void server_state_bridge_mark_command_buffer_invalid(struct ServerState* state, VkCommandBuffer commandBuffer);
+bool server_state_bridge_validate_cmd_copy_buffer(struct ServerState* state, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions);
+bool server_state_bridge_validate_cmd_copy_image(struct ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageCopy* pRegions);
+bool server_state_bridge_validate_cmd_blit_image(struct ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageBlit* pRegions);
+bool server_state_bridge_validate_cmd_copy_buffer_to_image(struct ServerState* state, VkBuffer srcBuffer, VkImage dstImage, uint32_t regionCount, const VkBufferImageCopy* pRegions);
+bool server_state_bridge_validate_cmd_copy_image_to_buffer(struct ServerState* state, VkImage srcImage, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* pRegions);
+bool server_state_bridge_validate_cmd_fill_buffer(struct ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size);
+bool server_state_bridge_validate_cmd_update_buffer(struct ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize dataSize, const void* data);
+bool server_state_bridge_validate_cmd_clear_color_image(struct ServerState* state, VkImage image, uint32_t rangeCount, const VkImageSubresourceRange* pRanges);
+
 #ifdef __cplusplus
 }
 #endif

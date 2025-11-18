@@ -304,6 +304,16 @@ bool ResourceTracker::get_image_subresource_layout(VkImage image,
     return true;
 }
 
+bool ResourceTracker::buffer_exists(VkBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return buffers_.find(handle_key(buffer)) != buffers_.end();
+}
+
+bool ResourceTracker::image_exists(VkImage image) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return images_.find(handle_key(image)) != images_.end();
+}
+
 bool ResourceTracker::ranges_overlap(VkDeviceSize offset_a, VkDeviceSize size_a, VkDeviceSize offset_b, VkDeviceSize size_b) {
     if (size_a == 0 || size_b == 0) {
         return false;

@@ -2,6 +2,7 @@
 #include "phase02/phase02_test.h"
 #include "phase03/phase03_test.h"
 #include "phase04/phase04_test.h"
+#include "phase05/phase05_test.h"
 #include <iostream>
 #include <cstring>
 
@@ -43,6 +44,8 @@ int main(int argc, char** argv) {
             return run_phase03_test() ? 0 : 1;
         case 4:
             return run_phase04_test() ? 0 : 1;
+        case 5:
+            return run_phase05_test() ? 0 : 1;
         default:
             std::cerr << "Error: Phase " << phase << " not implemented yet\n";
             return 1;
@@ -59,6 +62,7 @@ int main(int argc, char** argv) {
 
         if (!run_phase03_test()) return 1;
         if (!run_phase04_test()) return 1;
+        if (!run_phase05_test()) return 1;
 
         std::cout << "\n";
         std::cout << "=================================================\n";

@@ -26,6 +26,16 @@ struct IcdQueue {
     uint32_t queue_index;
 };
 
+struct IcdCommandBuffer {
+    // Loader dispatch - MUST BE FIRST
+    void* loader_data;
+
+    VkCommandBuffer remote_handle;
+    VkDevice parent_device;
+    VkCommandPool parent_pool;
+    VkCommandBufferLevel level;
+};
+
 // Helper functions for handle conversion
 inline IcdDevice* icd_device_from_handle(VkDevice device) {
     return reinterpret_cast<IcdDevice*>(device);
@@ -41,6 +51,14 @@ inline IcdQueue* icd_queue_from_handle(VkQueue queue) {
 
 inline VkQueue icd_queue_to_handle(IcdQueue* queue) {
     return reinterpret_cast<VkQueue>(queue);
+}
+
+inline IcdCommandBuffer* icd_command_buffer_from_handle(VkCommandBuffer buffer) {
+    return reinterpret_cast<IcdCommandBuffer*>(buffer);
+}
+
+inline VkCommandBuffer icd_command_buffer_to_handle(IcdCommandBuffer* buffer) {
+    return reinterpret_cast<VkCommandBuffer>(buffer);
 }
 
 #endif // VENUS_PLUS_ICD_DEVICE_H

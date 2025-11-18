@@ -2,8 +2,15 @@
 #include "server_state_bridge.h"
 #include <algorithm>
 #include <string>
+#include <vector>
+#include <cstdio>
 
 namespace venus_plus {
+
+ServerState::ServerState()
+    : resource_tracker(),
+      command_buffer_state(),
+      command_validator(&resource_tracker) {}
 
 VkInstance server_state_alloc_instance(ServerState* state) {
     VkInstance handle = reinterpret_cast<VkInstance>(state->next_instance_handle++);
@@ -169,6 +176,163 @@ bool server_state_get_image_subresource_layout(ServerState* state,
     return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
 }
 
+VkCommandPool server_state_create_command_pool(ServerState* state,
+                                               VkDevice device,
+                                               const VkCommandPoolCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->command_buffer_state.create_pool(device, *info);
+}
+
+bool server_state_destroy_command_pool(ServerState* state, VkCommandPool pool) {
+    return state->command_buffer_state.destroy_pool(pool);
+}
+
+VkResult server_state_reset_command_pool(ServerState* state,
+                                         VkCommandPool pool,
+                                         VkCommandPoolResetFlags flags) {
+    return state->command_buffer_state.reset_pool(pool, flags);
+}
+
+VkResult server_state_allocate_command_buffers(ServerState* state,
+                                               VkDevice device,
+                                               const VkCommandBufferAllocateInfo* info,
+                                               VkCommandBuffer* buffers) {
+    if (!info || !buffers) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkCommandBuffer> temp;
+    VkResult result = state->command_buffer_state.allocate_command_buffers(device, *info, &temp);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    for (size_t i = 0; i < temp.size(); ++i) {
+        buffers[i] = temp[i];
+    }
+    return VK_SUCCESS;
+}
+
+void server_state_free_command_buffers(ServerState* state,
+                                       VkCommandPool pool,
+                                       uint32_t commandBufferCount,
+                                       const VkCommandBuffer* buffers) {
+    if (!buffers || commandBufferCount == 0) {
+        return;
+    }
+    std::vector<VkCommandBuffer> temp(buffers, buffers + commandBufferCount);
+    state->command_buffer_state.free_command_buffers(pool, temp);
+}
+
+VkResult server_state_begin_command_buffer(ServerState* state,
+                                           VkCommandBuffer commandBuffer,
+                                           const VkCommandBufferBeginInfo* info) {
+    return state->command_buffer_state.begin(commandBuffer, info);
+}
+
+VkResult server_state_end_command_buffer(ServerState* state, VkCommandBuffer commandBuffer) {
+    return state->command_buffer_state.end(commandBuffer);
+}
+
+VkResult server_state_reset_command_buffer(ServerState* state,
+                                           VkCommandBuffer commandBuffer,
+                                           VkCommandBufferResetFlags flags) {
+    return state->command_buffer_state.reset_buffer(commandBuffer, flags);
+}
+
+bool server_state_command_buffer_is_recording(const ServerState* state, VkCommandBuffer commandBuffer) {
+    return state->command_buffer_state.is_recording(commandBuffer);
+}
+
+void server_state_mark_command_buffer_invalid(ServerState* state, VkCommandBuffer commandBuffer) {
+    state->command_buffer_state.invalidate(commandBuffer);
+}
+
+static bool log_validation_result(bool result, const std::string& error_message) {
+    if (!result && !error_message.empty()) {
+        std::printf("[Venus Server]   -> Validation error: %s\n", error_message.c_str());
+    }
+    return result;
+}
+
+bool server_state_validate_cmd_copy_buffer(ServerState* state,
+                                           VkBuffer srcBuffer,
+                                           VkBuffer dstBuffer,
+                                           uint32_t regionCount,
+                                           const VkBufferCopy* regions) {
+    std::string error;
+    bool ok = state->command_validator.validate_copy_buffer(srcBuffer, dstBuffer, regionCount, regions, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_copy_image(ServerState* state,
+                                          VkImage srcImage,
+                                          VkImage dstImage,
+                                          uint32_t regionCount,
+                                          const VkImageCopy* regions) {
+    std::string error;
+    bool ok = state->command_validator.validate_copy_image(srcImage, dstImage, regionCount, regions, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_blit_image(ServerState* state,
+                                          VkImage srcImage,
+                                          VkImage dstImage,
+                                          uint32_t regionCount,
+                                          const VkImageBlit* regions) {
+    std::string error;
+    bool ok = state->command_validator.validate_blit_image(srcImage, dstImage, regionCount, regions, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_copy_buffer_to_image(ServerState* state,
+                                                    VkBuffer srcBuffer,
+                                                    VkImage dstImage,
+                                                    uint32_t regionCount,
+                                                    const VkBufferImageCopy* regions) {
+    std::string error;
+    bool ok = state->command_validator.validate_copy_buffer_to_image(srcBuffer, dstImage, regionCount, regions, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_copy_image_to_buffer(ServerState* state,
+                                                    VkImage srcImage,
+                                                    VkBuffer dstBuffer,
+                                                    uint32_t regionCount,
+                                                    const VkBufferImageCopy* regions) {
+    std::string error;
+    bool ok = state->command_validator.validate_copy_image_to_buffer(srcImage, dstBuffer, regionCount, regions, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_fill_buffer(ServerState* state,
+                                           VkBuffer buffer,
+                                           VkDeviceSize offset,
+                                           VkDeviceSize size) {
+    std::string error;
+    bool ok = state->command_validator.validate_fill_buffer(buffer, offset, size, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_update_buffer(ServerState* state,
+                                             VkBuffer buffer,
+                                             VkDeviceSize offset,
+                                             VkDeviceSize dataSize,
+                                             const void* data) {
+    std::string error;
+    bool ok = state->command_validator.validate_update_buffer(buffer, offset, dataSize, data, &error);
+    return log_validation_result(ok, error);
+}
+
+bool server_state_validate_cmd_clear_color_image(ServerState* state,
+                                                 VkImage image,
+                                                 uint32_t rangeCount,
+                                                 const VkImageSubresourceRange* ranges) {
+    std::string error;
+    bool ok = state->command_validator.validate_clear_color_image(image, rangeCount, ranges, &error);
+    return log_validation_result(ok, error);
+}
+
 } // namespace venus_plus
 
 extern "C" {
@@ -255,6 +419,122 @@ bool server_state_bridge_get_image_subresource_layout(struct ServerState* state,
                                                       const VkImageSubresource* subresource,
                                                       VkSubresourceLayout* layout) {
     return venus_plus::server_state_get_image_subresource_layout(state, image, subresource, layout);
+}
+
+VkCommandPool server_state_bridge_create_command_pool(struct ServerState* state,
+                                                      VkDevice device,
+                                                      const VkCommandPoolCreateInfo* info) {
+    return venus_plus::server_state_create_command_pool(state, device, info);
+}
+
+bool server_state_bridge_destroy_command_pool(struct ServerState* state, VkCommandPool commandPool) {
+    return venus_plus::server_state_destroy_command_pool(state, commandPool);
+}
+
+VkResult server_state_bridge_reset_command_pool(struct ServerState* state,
+                                                VkCommandPool commandPool,
+                                                VkCommandPoolResetFlags flags) {
+    return venus_plus::server_state_reset_command_pool(state, commandPool, flags);
+}
+
+VkResult server_state_bridge_allocate_command_buffers(struct ServerState* state,
+                                                      VkDevice device,
+                                                      const VkCommandBufferAllocateInfo* info,
+                                                      VkCommandBuffer* pCommandBuffers) {
+    return venus_plus::server_state_allocate_command_buffers(state, device, info, pCommandBuffers);
+}
+
+void server_state_bridge_free_command_buffers(struct ServerState* state,
+                                              VkCommandPool commandPool,
+                                              uint32_t commandBufferCount,
+                                              const VkCommandBuffer* pCommandBuffers) {
+    venus_plus::server_state_free_command_buffers(state, commandPool, commandBufferCount, pCommandBuffers);
+}
+
+VkResult server_state_bridge_begin_command_buffer(struct ServerState* state,
+                                                  VkCommandBuffer commandBuffer,
+                                                  const VkCommandBufferBeginInfo* info) {
+    return venus_plus::server_state_begin_command_buffer(state, commandBuffer, info);
+}
+
+VkResult server_state_bridge_end_command_buffer(struct ServerState* state, VkCommandBuffer commandBuffer) {
+    return venus_plus::server_state_end_command_buffer(state, commandBuffer);
+}
+
+VkResult server_state_bridge_reset_command_buffer(struct ServerState* state,
+                                                  VkCommandBuffer commandBuffer,
+                                                  VkCommandBufferResetFlags flags) {
+    return venus_plus::server_state_reset_command_buffer(state, commandBuffer, flags);
+}
+
+bool server_state_bridge_command_buffer_is_recording(const struct ServerState* state, VkCommandBuffer commandBuffer) {
+    return venus_plus::server_state_command_buffer_is_recording(state, commandBuffer);
+}
+
+void server_state_bridge_mark_command_buffer_invalid(struct ServerState* state, VkCommandBuffer commandBuffer) {
+    venus_plus::server_state_mark_command_buffer_invalid(state, commandBuffer);
+}
+
+bool server_state_bridge_validate_cmd_copy_buffer(struct ServerState* state,
+                                                  VkBuffer srcBuffer,
+                                                  VkBuffer dstBuffer,
+                                                  uint32_t regionCount,
+                                                  const VkBufferCopy* pRegions) {
+    return venus_plus::server_state_validate_cmd_copy_buffer(state, srcBuffer, dstBuffer, regionCount, pRegions);
+}
+
+bool server_state_bridge_validate_cmd_copy_image(struct ServerState* state,
+                                                 VkImage srcImage,
+                                                 VkImage dstImage,
+                                                 uint32_t regionCount,
+                                                 const VkImageCopy* pRegions) {
+    return venus_plus::server_state_validate_cmd_copy_image(state, srcImage, dstImage, regionCount, pRegions);
+}
+
+bool server_state_bridge_validate_cmd_blit_image(struct ServerState* state,
+                                                 VkImage srcImage,
+                                                 VkImage dstImage,
+                                                 uint32_t regionCount,
+                                                 const VkImageBlit* pRegions) {
+    return venus_plus::server_state_validate_cmd_blit_image(state, srcImage, dstImage, regionCount, pRegions);
+}
+
+bool server_state_bridge_validate_cmd_copy_buffer_to_image(struct ServerState* state,
+                                                           VkBuffer srcBuffer,
+                                                           VkImage dstImage,
+                                                           uint32_t regionCount,
+                                                           const VkBufferImageCopy* pRegions) {
+    return venus_plus::server_state_validate_cmd_copy_buffer_to_image(state, srcBuffer, dstImage, regionCount, pRegions);
+}
+
+bool server_state_bridge_validate_cmd_copy_image_to_buffer(struct ServerState* state,
+                                                           VkImage srcImage,
+                                                           VkBuffer dstBuffer,
+                                                           uint32_t regionCount,
+                                                           const VkBufferImageCopy* pRegions) {
+    return venus_plus::server_state_validate_cmd_copy_image_to_buffer(state, srcImage, dstBuffer, regionCount, pRegions);
+}
+
+bool server_state_bridge_validate_cmd_fill_buffer(struct ServerState* state,
+                                                  VkBuffer buffer,
+                                                  VkDeviceSize offset,
+                                                  VkDeviceSize size) {
+    return venus_plus::server_state_validate_cmd_fill_buffer(state, buffer, offset, size);
+}
+
+bool server_state_bridge_validate_cmd_update_buffer(struct ServerState* state,
+                                                    VkBuffer buffer,
+                                                    VkDeviceSize offset,
+                                                    VkDeviceSize dataSize,
+                                                    const void* data) {
+    return venus_plus::server_state_validate_cmd_update_buffer(state, buffer, offset, dataSize, data);
+}
+
+bool server_state_bridge_validate_cmd_clear_color_image(struct ServerState* state,
+                                                        VkImage image,
+                                                        uint32_t rangeCount,
+                                                        const VkImageSubresourceRange* pRanges) {
+    return venus_plus::server_state_validate_cmd_clear_color_image(state, image, rangeCount, pRanges);
 }
 
 } // extern "C"
