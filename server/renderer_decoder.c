@@ -214,6 +214,186 @@ static void server_dispatch_vkGetDeviceQueue(
     }
 }
 
+// Phase 4: Resource and memory management
+static void server_dispatch_vkAllocateMemory(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkAllocateMemory* args) {
+    printf("[Venus Server] Dispatching vkAllocateMemory\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pMemory || !args->pAllocateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: pMemory or pAllocateInfo is NULL\n");
+        return;
+    }
+
+    VkDeviceMemory handle = server_state_bridge_alloc_memory(state, args->device, args->pAllocateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        printf("[Venus Server]   -> ERROR: Failed to allocate memory\n");
+        return;
+    }
+
+    *args->pMemory = handle;
+    printf("[Venus Server]   -> Allocated memory handle: %p (size=%llu)\n",
+           (void*)handle, (unsigned long long)args->pAllocateInfo->allocationSize);
+}
+
+static void server_dispatch_vkFreeMemory(struct vn_dispatch_context* ctx,
+                                         struct vn_command_vkFreeMemory* args) {
+    printf("[Venus Server] Dispatching vkFreeMemory (memory: %p)\n", (void*)args->memory);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->memory == VK_NULL_HANDLE) {
+        return;
+    }
+
+    if (!server_state_bridge_free_memory(state, args->memory)) {
+        printf("[Venus Server]   -> Warning: Memory handle not found\n");
+    } else {
+        printf("[Venus Server]   -> Memory freed\n");
+    }
+}
+
+static void server_dispatch_vkCreateBuffer(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkCreateBuffer* args) {
+    printf("[Venus Server] Dispatching vkCreateBuffer (device: %p)\n", (void*)args->device);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pBuffer || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: pBuffer or pCreateInfo is NULL\n");
+        return;
+    }
+
+    VkBuffer handle = server_state_bridge_create_buffer(state, args->device, args->pCreateInfo);
+    *args->pBuffer = handle;
+    printf("[Venus Server]   -> Created buffer handle: %p (size=%llu)\n",
+           (void*)handle, (unsigned long long)args->pCreateInfo->size);
+}
+
+static void server_dispatch_vkDestroyBuffer(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkDestroyBuffer* args) {
+    printf("[Venus Server] Dispatching vkDestroyBuffer (buffer: %p)\n", (void*)args->buffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!server_state_bridge_destroy_buffer(state, args->buffer)) {
+        printf("[Venus Server]   -> Warning: Buffer not found\n");
+    } else {
+        printf("[Venus Server]   -> Buffer destroyed\n");
+    }
+}
+
+static void server_dispatch_vkGetBufferMemoryRequirements(struct vn_dispatch_context* ctx,
+                                                          struct vn_command_vkGetBufferMemoryRequirements* args) {
+    printf("[Venus Server] Dispatching vkGetBufferMemoryRequirements\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pMemoryRequirements) {
+        printf("[Venus Server]   -> ERROR: pMemoryRequirements is NULL\n");
+        return;
+    }
+
+    if (!server_state_bridge_get_buffer_memory_requirements(state, args->buffer, args->pMemoryRequirements)) {
+        memset(args->pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        printf("[Venus Server]   -> Warning: Buffer not found\n");
+    } else {
+        printf("[Venus Server]   -> Requirements: size=%llu alignment=%llu\n",
+               (unsigned long long)args->pMemoryRequirements->size,
+               (unsigned long long)args->pMemoryRequirements->alignment);
+    }
+}
+
+static void server_dispatch_vkBindBufferMemory(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkBindBufferMemory* args) {
+    printf("[Venus Server] Dispatching vkBindBufferMemory (buffer: %p)\n", (void*)args->buffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_bind_buffer_memory(state, args->buffer, args->memory, args->memoryOffset);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Buffer bound (memory=%p, offset=%llu)\n",
+               (void*)args->memory, (unsigned long long)args->memoryOffset);
+    } else {
+        printf("[Venus Server]   -> Failed to bind buffer (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkCreateImage(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCreateImage* args) {
+    printf("[Venus Server] Dispatching vkCreateImage (device: %p)\n", (void*)args->device);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pImage || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: pImage or pCreateInfo is NULL\n");
+        return;
+    }
+
+    VkImage handle = server_state_bridge_create_image(state, args->device, args->pCreateInfo);
+    *args->pImage = handle;
+    printf("[Venus Server]   -> Created image handle: %p (format=%d)\n",
+           (void*)handle, args->pCreateInfo->format);
+}
+
+static void server_dispatch_vkDestroyImage(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkDestroyImage* args) {
+    printf("[Venus Server] Dispatching vkDestroyImage (image: %p)\n", (void*)args->image);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!server_state_bridge_destroy_image(state, args->image)) {
+        printf("[Venus Server]   -> Warning: Image not found\n");
+    } else {
+        printf("[Venus Server]   -> Image destroyed\n");
+    }
+}
+
+static void server_dispatch_vkGetImageMemoryRequirements(struct vn_dispatch_context* ctx,
+                                                         struct vn_command_vkGetImageMemoryRequirements* args) {
+    printf("[Venus Server] Dispatching vkGetImageMemoryRequirements\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pMemoryRequirements) {
+        printf("[Venus Server]   -> ERROR: pMemoryRequirements is NULL\n");
+        return;
+    }
+
+    if (!server_state_bridge_get_image_memory_requirements(state, args->image, args->pMemoryRequirements)) {
+        memset(args->pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        printf("[Venus Server]   -> Warning: Image not found\n");
+    } else {
+        printf("[Venus Server]   -> Requirements: size=%llu alignment=%llu\n",
+               (unsigned long long)args->pMemoryRequirements->size,
+               (unsigned long long)args->pMemoryRequirements->alignment);
+    }
+}
+
+static void server_dispatch_vkBindImageMemory(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkBindImageMemory* args) {
+    printf("[Venus Server] Dispatching vkBindImageMemory (image: %p)\n", (void*)args->image);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_bind_image_memory(state, args->image, args->memory, args->memoryOffset);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Image bound (memory=%p, offset=%llu)\n",
+               (void*)args->memory, (unsigned long long)args->memoryOffset);
+    } else {
+        printf("[Venus Server]   -> Failed to bind image (result=%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkGetImageSubresourceLayout(struct vn_dispatch_context* ctx,
+                                                        struct vn_command_vkGetImageSubresourceLayout* args) {
+    printf("[Venus Server] Dispatching vkGetImageSubresourceLayout\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pLayout || !args->pSubresource) {
+        printf("[Venus Server]   -> ERROR: pLayout or pSubresource is NULL\n");
+        return;
+    }
+
+    if (!server_state_bridge_get_image_subresource_layout(state, args->image, args->pSubresource, args->pLayout)) {
+        memset(args->pLayout, 0, sizeof(VkSubresourceLayout));
+        printf("[Venus Server]   -> Warning: Image not found or invalid subresource\n");
+    } else {
+        printf("[Venus Server]   -> Returned subresource layout (offset=%llu)\n",
+               (unsigned long long)args->pLayout->offset);
+    }
+}
+
 struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     struct VenusRenderer* renderer = (struct VenusRenderer*)calloc(1, sizeof(*renderer));
     if (!renderer)
@@ -253,6 +433,19 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCreateDevice = server_dispatch_vkCreateDevice;
     renderer->ctx.dispatch_vkDestroyDevice = server_dispatch_vkDestroyDevice;
     renderer->ctx.dispatch_vkGetDeviceQueue = server_dispatch_vkGetDeviceQueue;
+
+    // Phase 4 handlers: Memory and resources
+    renderer->ctx.dispatch_vkAllocateMemory = server_dispatch_vkAllocateMemory;
+    renderer->ctx.dispatch_vkFreeMemory = server_dispatch_vkFreeMemory;
+    renderer->ctx.dispatch_vkCreateBuffer = server_dispatch_vkCreateBuffer;
+    renderer->ctx.dispatch_vkDestroyBuffer = server_dispatch_vkDestroyBuffer;
+    renderer->ctx.dispatch_vkGetBufferMemoryRequirements = server_dispatch_vkGetBufferMemoryRequirements;
+    renderer->ctx.dispatch_vkBindBufferMemory = server_dispatch_vkBindBufferMemory;
+    renderer->ctx.dispatch_vkCreateImage = server_dispatch_vkCreateImage;
+    renderer->ctx.dispatch_vkDestroyImage = server_dispatch_vkDestroyImage;
+    renderer->ctx.dispatch_vkGetImageMemoryRequirements = server_dispatch_vkGetImageMemoryRequirements;
+    renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
+    renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
 
     return renderer;
 }

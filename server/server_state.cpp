@@ -1,6 +1,7 @@
 #include "server_state.h"
 #include "server_state_bridge.h"
 #include <algorithm>
+#include <string>
 
 namespace venus_plus {
 
@@ -92,6 +93,82 @@ VkQueue server_state_find_queue(const ServerState* state, VkDevice device, uint3
     return VK_NULL_HANDLE;
 }
 
+VkDeviceMemory server_state_alloc_memory(ServerState* state, VkDevice device, const VkMemoryAllocateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->resource_tracker.allocate_memory(device, *info);
+}
+
+bool server_state_free_memory(ServerState* state, VkDeviceMemory memory) {
+    return state->resource_tracker.free_memory(memory);
+}
+
+VkBuffer server_state_create_buffer(ServerState* state, VkDevice device, const VkBufferCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->resource_tracker.create_buffer(device, *info);
+}
+
+bool server_state_destroy_buffer(ServerState* state, VkBuffer buffer) {
+    return state->resource_tracker.destroy_buffer(buffer);
+}
+
+bool server_state_get_buffer_memory_requirements(ServerState* state, VkBuffer buffer, VkMemoryRequirements* requirements) {
+    return state->resource_tracker.get_buffer_requirements(buffer, requirements);
+}
+
+VkResult server_state_bind_buffer_memory(ServerState* state,
+                                         VkBuffer buffer,
+                                         VkDeviceMemory memory,
+                                         VkDeviceSize offset) {
+    std::string error;
+    if (!state->resource_tracker.bind_buffer_memory(buffer, memory, offset, &error)) {
+        if (!error.empty()) {
+            printf("[Venus Server]   -> %s\n", error.c_str());
+        }
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+    return VK_SUCCESS;
+}
+
+VkImage server_state_create_image(ServerState* state, VkDevice device, const VkImageCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->resource_tracker.create_image(device, *info);
+}
+
+bool server_state_destroy_image(ServerState* state, VkImage image) {
+    return state->resource_tracker.destroy_image(image);
+}
+
+bool server_state_get_image_memory_requirements(ServerState* state, VkImage image, VkMemoryRequirements* requirements) {
+    return state->resource_tracker.get_image_requirements(image, requirements);
+}
+
+VkResult server_state_bind_image_memory(ServerState* state,
+                                        VkImage image,
+                                        VkDeviceMemory memory,
+                                        VkDeviceSize offset) {
+    std::string error;
+    if (!state->resource_tracker.bind_image_memory(image, memory, offset, &error)) {
+        if (!error.empty()) {
+            printf("[Venus Server]   -> %s\n", error.c_str());
+        }
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+    return VK_SUCCESS;
+}
+
+bool server_state_get_image_subresource_layout(ServerState* state,
+                                               VkImage image,
+                                               const VkImageSubresource* subresource,
+                                               VkSubresourceLayout* layout) {
+    return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
+}
+
 } // namespace venus_plus
 
 extern "C" {
@@ -131,6 +208,53 @@ VkQueue server_state_bridge_alloc_queue(struct ServerState* state, VkDevice devi
 
 VkQueue server_state_bridge_find_queue(const struct ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index) {
     return venus_plus::server_state_find_queue(state, device, family_index, queue_index);
+}
+
+VkDeviceMemory server_state_bridge_alloc_memory(struct ServerState* state, VkDevice device, const VkMemoryAllocateInfo* info) {
+    return venus_plus::server_state_alloc_memory(state, device, info);
+}
+
+bool server_state_bridge_free_memory(struct ServerState* state, VkDeviceMemory memory) {
+    return venus_plus::server_state_free_memory(state, memory);
+}
+
+VkBuffer server_state_bridge_create_buffer(struct ServerState* state, VkDevice device, const VkBufferCreateInfo* info) {
+    return venus_plus::server_state_create_buffer(state, device, info);
+}
+
+bool server_state_bridge_destroy_buffer(struct ServerState* state, VkBuffer buffer) {
+    return venus_plus::server_state_destroy_buffer(state, buffer);
+}
+
+bool server_state_bridge_get_buffer_memory_requirements(struct ServerState* state, VkBuffer buffer, VkMemoryRequirements* requirements) {
+    return venus_plus::server_state_get_buffer_memory_requirements(state, buffer, requirements);
+}
+
+VkResult server_state_bridge_bind_buffer_memory(struct ServerState* state, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset) {
+    return venus_plus::server_state_bind_buffer_memory(state, buffer, memory, offset);
+}
+
+VkImage server_state_bridge_create_image(struct ServerState* state, VkDevice device, const VkImageCreateInfo* info) {
+    return venus_plus::server_state_create_image(state, device, info);
+}
+
+bool server_state_bridge_destroy_image(struct ServerState* state, VkImage image) {
+    return venus_plus::server_state_destroy_image(state, image);
+}
+
+bool server_state_bridge_get_image_memory_requirements(struct ServerState* state, VkImage image, VkMemoryRequirements* requirements) {
+    return venus_plus::server_state_get_image_memory_requirements(state, image, requirements);
+}
+
+VkResult server_state_bridge_bind_image_memory(struct ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset) {
+    return venus_plus::server_state_bind_image_memory(state, image, memory, offset);
+}
+
+bool server_state_bridge_get_image_subresource_layout(struct ServerState* state,
+                                                      VkImage image,
+                                                      const VkImageSubresource* subresource,
+                                                      VkSubresourceLayout* layout) {
+    return venus_plus::server_state_get_image_subresource_layout(state, image, subresource, layout);
 }
 
 } // extern "C"

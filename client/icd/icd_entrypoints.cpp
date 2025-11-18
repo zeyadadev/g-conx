@@ -5,6 +5,7 @@
 #include "state/handle_allocator.h"
 #include "state/instance_state.h"
 #include "state/device_state.h"
+#include "state/resource_state.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include <algorithm>
@@ -578,6 +579,50 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         std::cout << " -> vkDestroyDevice\n";
         return (PFN_vkVoidFunction)vkDestroyDevice;
     }
+    if (strcmp(pName, "vkAllocateMemory") == 0) {
+        std::cout << " -> vkAllocateMemory\n";
+        return (PFN_vkVoidFunction)vkAllocateMemory;
+    }
+    if (strcmp(pName, "vkFreeMemory") == 0) {
+        std::cout << " -> vkFreeMemory\n";
+        return (PFN_vkVoidFunction)vkFreeMemory;
+    }
+    if (strcmp(pName, "vkCreateBuffer") == 0) {
+        std::cout << " -> vkCreateBuffer\n";
+        return (PFN_vkVoidFunction)vkCreateBuffer;
+    }
+    if (strcmp(pName, "vkDestroyBuffer") == 0) {
+        std::cout << " -> vkDestroyBuffer\n";
+        return (PFN_vkVoidFunction)vkDestroyBuffer;
+    }
+    if (strcmp(pName, "vkGetBufferMemoryRequirements") == 0) {
+        std::cout << " -> vkGetBufferMemoryRequirements\n";
+        return (PFN_vkVoidFunction)vkGetBufferMemoryRequirements;
+    }
+    if (strcmp(pName, "vkBindBufferMemory") == 0) {
+        std::cout << " -> vkBindBufferMemory\n";
+        return (PFN_vkVoidFunction)vkBindBufferMemory;
+    }
+    if (strcmp(pName, "vkCreateImage") == 0) {
+        std::cout << " -> vkCreateImage\n";
+        return (PFN_vkVoidFunction)vkCreateImage;
+    }
+    if (strcmp(pName, "vkDestroyImage") == 0) {
+        std::cout << " -> vkDestroyImage\n";
+        return (PFN_vkVoidFunction)vkDestroyImage;
+    }
+    if (strcmp(pName, "vkGetImageMemoryRequirements") == 0) {
+        std::cout << " -> vkGetImageMemoryRequirements\n";
+        return (PFN_vkVoidFunction)vkGetImageMemoryRequirements;
+    }
+    if (strcmp(pName, "vkBindImageMemory") == 0) {
+        std::cout << " -> vkBindImageMemory\n";
+        return (PFN_vkVoidFunction)vkBindImageMemory;
+    }
+    if (strcmp(pName, "vkGetImageSubresourceLayout") == 0) {
+        std::cout << " -> vkGetImageSubresourceLayout\n";
+        return (PFN_vkVoidFunction)vkGetImageSubresourceLayout;
+    }
     if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
         // Return nullptr for now - not implemented in Phase 3
         std::cout << " -> NOT IMPLEMENTED\n";
@@ -712,6 +757,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
     if (!ensure_connected()) {
         std::cerr << "[Client ICD] Not connected to server\n";
         // Still clean up local resources
+        g_resource_state.remove_device_resources(device);
         g_device_state.remove_device(device);
         delete icd_device;
         return;
@@ -719,6 +765,9 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 
     // Call server to destroy device
     vn_async_vkDestroyDevice(&g_ring, icd_device->remote_handle, pAllocator);
+
+    // Drop resource tracking for this device
+    g_resource_state.remove_device_resources(device);
 
     // Remove from state
     g_device_state.remove_device(device);
@@ -778,6 +827,494 @@ VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 
     std::cout << "[Client ICD] Queue retrieved (local=" << *pQueue
               << ", remote=" << icd_queue->remote_handle << ")\n";
+}
+
+// vkAllocateMemory - Phase 4
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(
+    VkDevice device,
+    const VkMemoryAllocateInfo* pAllocateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDeviceMemory* pMemory) {
+
+    std::cout << "[Client ICD] vkAllocateMemory called\n";
+
+    if (!pAllocateInfo || !pMemory) {
+        std::cerr << "[Client ICD] Invalid parameters for vkAllocateMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkAllocateMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkDevice remote_device = icd_device->remote_handle;
+
+    VkDeviceMemory remote_memory = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkAllocateMemory(&g_ring, remote_device, pAllocateInfo, pAllocator, &remote_memory);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkAllocateMemory failed: " << result << "\n";
+        return result;
+    }
+
+    VkDeviceMemory local_memory = g_handle_allocator.allocate<VkDeviceMemory>();
+    g_resource_state.add_memory(device, local_memory, remote_memory, *pAllocateInfo);
+    *pMemory = local_memory;
+
+    std::cout << "[Client ICD] Memory allocated (local=" << *pMemory
+              << ", remote=" << remote_memory
+              << ", size=" << pAllocateInfo->allocationSize << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkFreeMemory - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkFreeMemory(
+    VkDevice device,
+    VkDeviceMemory memory,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkFreeMemory called\n";
+
+    if (memory == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkFreeMemory\n";
+        g_resource_state.remove_memory(memory);
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkFreeMemory\n";
+        g_resource_state.remove_memory(memory);
+        return;
+    }
+
+    if (remote_memory == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote memory handle missing in vkFreeMemory\n";
+        g_resource_state.remove_memory(memory);
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkFreeMemory(&g_ring, icd_device->remote_handle, remote_memory, pAllocator);
+    g_resource_state.remove_memory(memory);
+    std::cout << "[Client ICD] Memory freed (local=" << memory << ", remote=" << remote_memory << ")\n";
+}
+
+// vkCreateBuffer - Phase 4
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateBuffer(
+    VkDevice device,
+    const VkBufferCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkBuffer* pBuffer) {
+
+    std::cout << "[Client ICD] vkCreateBuffer called\n";
+
+    if (!pCreateInfo || !pBuffer) {
+        std::cerr << "[Client ICD] Invalid parameters for vkCreateBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkCreateBuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkDevice remote_device = icd_device->remote_handle;
+
+    VkBuffer remote_buffer = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateBuffer(&g_ring, remote_device, pCreateInfo, pAllocator, &remote_buffer);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateBuffer failed: " << result << "\n";
+        return result;
+    }
+
+    VkBuffer local_buffer = g_handle_allocator.allocate<VkBuffer>();
+    g_resource_state.add_buffer(device, local_buffer, remote_buffer, *pCreateInfo);
+    *pBuffer = local_buffer;
+
+    std::cout << "[Client ICD] Buffer created (local=" << *pBuffer
+              << ", remote=" << remote_buffer
+              << ", size=" << pCreateInfo->size << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyBuffer - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkDestroyBuffer(
+    VkDevice device,
+    VkBuffer buffer,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyBuffer called\n";
+
+    if (buffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkBuffer remote_buffer = g_resource_state.get_remote_buffer(buffer);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkDestroyBuffer\n";
+        g_resource_state.remove_buffer(buffer);
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDestroyBuffer\n";
+        g_resource_state.remove_buffer(buffer);
+        return;
+    }
+
+    if (remote_buffer == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote buffer handle missing\n";
+        g_resource_state.remove_buffer(buffer);
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyBuffer(&g_ring, icd_device->remote_handle, remote_buffer, pAllocator);
+    g_resource_state.remove_buffer(buffer);
+    std::cout << "[Client ICD] Buffer destroyed (local=" << buffer << ", remote=" << remote_buffer << ")\n";
+}
+
+// vkGetBufferMemoryRequirements - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements(
+    VkDevice device,
+    VkBuffer buffer,
+    VkMemoryRequirements* pMemoryRequirements) {
+
+    std::cout << "[Client ICD] vkGetBufferMemoryRequirements called\n";
+
+    if (!pMemoryRequirements) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkGetBufferMemoryRequirements\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    VkBuffer remote_buffer = g_resource_state.get_remote_buffer(buffer);
+    if (remote_buffer == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Buffer not tracked in vkGetBufferMemoryRequirements\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetBufferMemoryRequirements(&g_ring, icd_device->remote_handle, remote_buffer, pMemoryRequirements);
+    g_resource_state.cache_buffer_requirements(buffer, *pMemoryRequirements);
+
+    std::cout << "[Client ICD] Buffer memory requirements: size=" << pMemoryRequirements->size
+              << ", alignment=" << pMemoryRequirements->alignment << "\n";
+}
+
+static bool validate_memory_offset(const VkMemoryRequirements& requirements,
+                                   VkDeviceSize memory_size,
+                                   VkDeviceSize offset) {
+    if (requirements.alignment != 0 && (offset % requirements.alignment) != 0) {
+        return false;
+    }
+    if (memory_size != 0 && offset + requirements.size > memory_size) {
+        return false;
+    }
+    return true;
+}
+
+// vkBindBufferMemory - Phase 4
+VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(
+    VkDevice device,
+    VkBuffer buffer,
+    VkDeviceMemory memory,
+    VkDeviceSize memoryOffset) {
+
+    std::cout << "[Client ICD] vkBindBufferMemory called\n";
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkBindBufferMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_resource_state.has_buffer(buffer) || !g_resource_state.has_memory(memory)) {
+        std::cerr << "[Client ICD] Buffer or memory not tracked in vkBindBufferMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (g_resource_state.buffer_is_bound(buffer)) {
+        std::cerr << "[Client ICD] Buffer already bound to memory\n";
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    VkMemoryRequirements cached_requirements;
+    if (g_resource_state.get_cached_buffer_requirements(buffer, &cached_requirements)) {
+        VkDeviceSize memory_size = g_resource_state.get_memory_size(memory);
+        if (!validate_memory_offset(cached_requirements, memory_size, memoryOffset)) {
+            std::cerr << "[Client ICD] Buffer bind validation failed (offset=" << memoryOffset << ")\n";
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+
+    VkBuffer remote_buffer = g_resource_state.get_remote_buffer(buffer);
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+    if (remote_buffer == VK_NULL_HANDLE || remote_memory == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote handles missing in vkBindBufferMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkBindBufferMemory(&g_ring, icd_device->remote_handle, remote_buffer, remote_memory, memoryOffset);
+    if (result == VK_SUCCESS) {
+        g_resource_state.bind_buffer(buffer, memory, memoryOffset);
+        std::cout << "[Client ICD] Buffer bound to memory (buffer=" << buffer
+                  << ", memory=" << memory << ", offset=" << memoryOffset << ")\n";
+    } else {
+        std::cerr << "[Client ICD] Server rejected vkBindBufferMemory: " << result << "\n";
+    }
+    return result;
+}
+
+// vkCreateImage - Phase 4
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(
+    VkDevice device,
+    const VkImageCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkImage* pImage) {
+
+    std::cout << "[Client ICD] vkCreateImage called\n";
+
+    if (!pCreateInfo || !pImage) {
+        std::cerr << "[Client ICD] Invalid parameters for vkCreateImage\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkCreateImage\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkDevice remote_device = icd_device->remote_handle;
+
+    VkImage remote_image = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateImage(&g_ring, remote_device, pCreateInfo, pAllocator, &remote_image);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateImage failed: " << result << "\n";
+        return result;
+    }
+
+    VkImage local_image = g_handle_allocator.allocate<VkImage>();
+    g_resource_state.add_image(device, local_image, remote_image, *pCreateInfo);
+    *pImage = local_image;
+
+    std::cout << "[Client ICD] Image created (local=" << *pImage
+              << ", remote=" << remote_image
+              << ", format=" << pCreateInfo->format
+              << ", extent=" << pCreateInfo->extent.width << "x"
+              << pCreateInfo->extent.height << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyImage - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkDestroyImage(
+    VkDevice device,
+    VkImage image,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyImage called\n";
+
+    if (image == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkImage remote_image = g_resource_state.get_remote_image(image);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkDestroyImage\n";
+        g_resource_state.remove_image(image);
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDestroyImage\n";
+        g_resource_state.remove_image(image);
+        return;
+    }
+
+    if (remote_image == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote image handle missing\n";
+        g_resource_state.remove_image(image);
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyImage(&g_ring, icd_device->remote_handle, remote_image, pAllocator);
+    g_resource_state.remove_image(image);
+    std::cout << "[Client ICD] Image destroyed (local=" << image << ", remote=" << remote_image << ")\n";
+}
+
+// vkGetImageMemoryRequirements - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkGetImageMemoryRequirements(
+    VkDevice device,
+    VkImage image,
+    VkMemoryRequirements* pMemoryRequirements) {
+
+    std::cout << "[Client ICD] vkGetImageMemoryRequirements called\n";
+
+    if (!pMemoryRequirements) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkGetImageMemoryRequirements\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    VkImage remote_image = g_resource_state.get_remote_image(image);
+    if (remote_image == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Image not tracked in vkGetImageMemoryRequirements\n";
+        memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetImageMemoryRequirements(&g_ring, icd_device->remote_handle, remote_image, pMemoryRequirements);
+    g_resource_state.cache_image_requirements(image, *pMemoryRequirements);
+
+    std::cout << "[Client ICD] Image memory requirements: size=" << pMemoryRequirements->size
+              << ", alignment=" << pMemoryRequirements->alignment << "\n";
+}
+
+// vkBindImageMemory - Phase 4
+VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory(
+    VkDevice device,
+    VkImage image,
+    VkDeviceMemory memory,
+    VkDeviceSize memoryOffset) {
+
+    std::cout << "[Client ICD] vkBindImageMemory called\n";
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkBindImageMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_resource_state.has_image(image) || !g_resource_state.has_memory(memory)) {
+        std::cerr << "[Client ICD] Image or memory not tracked in vkBindImageMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (g_resource_state.image_is_bound(image)) {
+        std::cerr << "[Client ICD] Image already bound to memory\n";
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    VkMemoryRequirements cached_requirements = {};
+    VkDeviceSize memory_size = g_resource_state.get_memory_size(memory);
+    if (g_resource_state.get_cached_image_requirements(image, &cached_requirements)) {
+        if (!validate_memory_offset(cached_requirements, memory_size, memoryOffset)) {
+            std::cerr << "[Client ICD] Image bind validation failed (offset=" << memoryOffset << ")\n";
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+
+    VkImage remote_image = g_resource_state.get_remote_image(image);
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+    if (remote_image == VK_NULL_HANDLE || remote_memory == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote handles missing in vkBindImageMemory\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkBindImageMemory(&g_ring, icd_device->remote_handle, remote_image, remote_memory, memoryOffset);
+    if (result == VK_SUCCESS) {
+        g_resource_state.bind_image(image, memory, memoryOffset);
+        std::cout << "[Client ICD] Image bound to memory (image=" << image
+                  << ", memory=" << memory << ", offset=" << memoryOffset << ")\n";
+    } else {
+        std::cerr << "[Client ICD] Server rejected vkBindImageMemory: " << result << "\n";
+    }
+    return result;
+}
+
+// vkGetImageSubresourceLayout - Phase 4
+VKAPI_ATTR void VKAPI_CALL vkGetImageSubresourceLayout(
+    VkDevice device,
+    VkImage image,
+    const VkImageSubresource* pSubresource,
+    VkSubresourceLayout* pLayout) {
+
+    std::cout << "[Client ICD] vkGetImageSubresourceLayout called\n";
+
+    if (!pSubresource || !pLayout) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pLayout, 0, sizeof(VkSubresourceLayout));
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkGetImageSubresourceLayout\n";
+        memset(pLayout, 0, sizeof(VkSubresourceLayout));
+        return;
+    }
+
+    VkImage remote_image = g_resource_state.get_remote_image(image);
+    if (remote_image == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Image not tracked in vkGetImageSubresourceLayout\n";
+        memset(pLayout, 0, sizeof(VkSubresourceLayout));
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetImageSubresourceLayout(&g_ring, icd_device->remote_handle, remote_image, pSubresource, pLayout);
 }
 
 } // extern "C"

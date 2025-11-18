@@ -3,6 +3,7 @@ add_library(venus_icd SHARED
     state/handle_allocator.cpp
     state/instance_state.cpp
     state/device_state.cpp
+    state/resource_state.cpp
 )
 
 # Set default symbol visibility to hidden - only VP_PUBLIC symbols should be exported

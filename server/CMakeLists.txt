@@ -4,6 +4,9 @@ add_executable(venus-server
     renderer_decoder.c
     state/fake_gpu_data.cpp
     state/fake_gpu_data_bridge.cpp
+    state/resource_tracker.cpp
+    state/memory_requirements.cpp
+    state/binding_validator.cpp
 )
 
 target_include_directories(venus-server PRIVATE

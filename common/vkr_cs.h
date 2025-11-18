@@ -16,8 +16,8 @@ struct vkr_object {
 };
 
 #ifdef __cplusplus
-using vkr_cs_encoder = vn_cs_encoder;
-using vkr_cs_decoder = vn_cs_decoder;
+#define vkr_cs_encoder vn_cs_encoder
+#define vkr_cs_decoder vn_cs_decoder
 #else
 #define vkr_cs_encoder vn_cs_encoder
 #define vkr_cs_decoder vn_cs_decoder
