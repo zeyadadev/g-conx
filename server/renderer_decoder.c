@@ -645,6 +645,125 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
     printf("[Venus Server]   -> vkCmdClearColorImage validated\n");
 }
 
+static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCreateFence* args) {
+    printf("[Venus Server] Dispatching vkCreateFence\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+    if (!args->pFence || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    VkFence handle = server_state_bridge_create_fence(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    *args->pFence = handle;
+}
+
+static void server_dispatch_vkDestroyFence(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkDestroyFence* args) {
+    printf("[Venus Server] Dispatching vkDestroyFence\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    server_state_bridge_destroy_fence(state, args->fence);
+}
+
+static void server_dispatch_vkGetFenceStatus(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkGetFenceStatus* args) {
+    printf("[Venus Server] Dispatching vkGetFenceStatus\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_get_fence_status(state, args->fence);
+}
+
+static void server_dispatch_vkResetFences(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkResetFences* args) {
+    printf("[Venus Server] Dispatching vkResetFences\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_reset_fences(state, args->fenceCount, args->pFences);
+}
+
+static void server_dispatch_vkWaitForFences(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkWaitForFences* args) {
+    printf("[Venus Server] Dispatching vkWaitForFences\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_wait_for_fences(state,
+                                                    args->fenceCount,
+                                                    args->pFences,
+                                                    args->waitAll,
+                                                    args->timeout);
+}
+
+static void server_dispatch_vkCreateSemaphore(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCreateSemaphore* args) {
+    printf("[Venus Server] Dispatching vkCreateSemaphore\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+    if (!args->pSemaphore || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    VkSemaphore handle = server_state_bridge_create_semaphore(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    *args->pSemaphore = handle;
+}
+
+static void server_dispatch_vkDestroySemaphore(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkDestroySemaphore* args) {
+    printf("[Venus Server] Dispatching vkDestroySemaphore\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    server_state_bridge_destroy_semaphore(state, args->semaphore);
+}
+
+static void server_dispatch_vkGetSemaphoreCounterValue(struct vn_dispatch_context* ctx,
+                                                       struct vn_command_vkGetSemaphoreCounterValue* args) {
+    printf("[Venus Server] Dispatching vkGetSemaphoreCounterValue\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pValue) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    args->ret = server_state_bridge_get_semaphore_counter_value(state, args->semaphore, args->pValue);
+}
+
+static void server_dispatch_vkSignalSemaphore(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkSignalSemaphore* args) {
+    printf("[Venus Server] Dispatching vkSignalSemaphore\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_signal_semaphore(state, args->pSignalInfo);
+}
+
+static void server_dispatch_vkWaitSemaphores(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkWaitSemaphores* args) {
+    printf("[Venus Server] Dispatching vkWaitSemaphores\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_wait_semaphores(state, args->pWaitInfo, args->timeout);
+}
+
+static void server_dispatch_vkQueueSubmit(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkQueueSubmit* args) {
+    printf("[Venus Server] Dispatching vkQueueSubmit (submitCount=%u)\n", args->submitCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_queue_submit(state, args->queue, args->submitCount, args->pSubmits, args->fence);
+}
+
+static void server_dispatch_vkQueueWaitIdle(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkQueueWaitIdle* args) {
+    printf("[Venus Server] Dispatching vkQueueWaitIdle\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_queue_wait_idle(state, args->queue);
+}
+
+static void server_dispatch_vkDeviceWaitIdle(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkDeviceWaitIdle* args) {
+    printf("[Venus Server] Dispatching vkDeviceWaitIdle\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_device_wait_idle(state, args->device);
+}
+
 struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     struct VenusRenderer* renderer = (struct VenusRenderer*)calloc(1, sizeof(*renderer));
     if (!renderer)
@@ -713,6 +832,19 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdFillBuffer = server_dispatch_vkCmdFillBuffer;
     renderer->ctx.dispatch_vkCmdUpdateBuffer = server_dispatch_vkCmdUpdateBuffer;
     renderer->ctx.dispatch_vkCmdClearColorImage = server_dispatch_vkCmdClearColorImage;
+    renderer->ctx.dispatch_vkCreateFence = server_dispatch_vkCreateFence;
+    renderer->ctx.dispatch_vkDestroyFence = server_dispatch_vkDestroyFence;
+    renderer->ctx.dispatch_vkGetFenceStatus = server_dispatch_vkGetFenceStatus;
+    renderer->ctx.dispatch_vkResetFences = server_dispatch_vkResetFences;
+    renderer->ctx.dispatch_vkWaitForFences = server_dispatch_vkWaitForFences;
+    renderer->ctx.dispatch_vkCreateSemaphore = server_dispatch_vkCreateSemaphore;
+    renderer->ctx.dispatch_vkDestroySemaphore = server_dispatch_vkDestroySemaphore;
+    renderer->ctx.dispatch_vkGetSemaphoreCounterValue = server_dispatch_vkGetSemaphoreCounterValue;
+    renderer->ctx.dispatch_vkSignalSemaphore = server_dispatch_vkSignalSemaphore;
+    renderer->ctx.dispatch_vkWaitSemaphores = server_dispatch_vkWaitSemaphores;
+    renderer->ctx.dispatch_vkQueueSubmit = server_dispatch_vkQueueSubmit;
+    renderer->ctx.dispatch_vkQueueWaitIdle = server_dispatch_vkQueueWaitIdle;
+    renderer->ctx.dispatch_vkDeviceWaitIdle = server_dispatch_vkDeviceWaitIdle;
 
     return renderer;
 }

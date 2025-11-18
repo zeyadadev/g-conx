@@ -12,6 +12,28 @@ ServerState::ServerState()
       command_buffer_state(),
       command_validator(&resource_tracker) {}
 
+static const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const void* pNext) {
+    const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(pNext);
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO) {
+            return reinterpret_cast<const VkSemaphoreTypeCreateInfo*>(header);
+        }
+        header = header->pNext;
+    }
+    return nullptr;
+}
+
+static const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void* pNext) {
+    const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(pNext);
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO) {
+            return reinterpret_cast<const VkTimelineSemaphoreSubmitInfo*>(header);
+        }
+        header = header->pNext;
+    }
+    return nullptr;
+}
+
 VkInstance server_state_alloc_instance(ServerState* state) {
     VkInstance handle = reinterpret_cast<VkInstance>(state->next_instance_handle++);
     state->instance_map.insert(handle, handle);
@@ -57,6 +79,7 @@ void server_state_remove_device(ServerState* state, VkDevice device) {
         state->device_info_map.erase(it);
     }
     state->device_map.remove(device);
+    state->sync_manager.remove_device(device);
 }
 
 bool server_state_device_exists(const ServerState* state, VkDevice device) {
@@ -333,6 +356,186 @@ bool server_state_validate_cmd_clear_color_image(ServerState* state,
     return log_validation_result(ok, error);
 }
 
+VkFence server_state_create_fence(ServerState* state, VkDevice device, const VkFenceCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->sync_manager.create_fence(device, *info);
+}
+
+bool server_state_destroy_fence(ServerState* state, VkFence fence) {
+    return state->sync_manager.destroy_fence(fence);
+}
+
+VkResult server_state_get_fence_status(ServerState* state, VkFence fence) {
+    return state->sync_manager.get_fence_status(fence);
+}
+
+VkResult server_state_reset_fences(ServerState* state, uint32_t fenceCount, const VkFence* pFences) {
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    return state->sync_manager.reset_fences(pFences, fenceCount);
+}
+
+VkResult server_state_wait_for_fences(ServerState* state,
+                                      uint32_t fenceCount,
+                                      const VkFence* pFences,
+                                      VkBool32 waitAll,
+                                      uint64_t timeout) {
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    return state->sync_manager.wait_for_fences(pFences, fenceCount, waitAll, timeout);
+}
+
+VkSemaphore server_state_create_semaphore(ServerState* state,
+                                          VkDevice device,
+                                          const VkSemaphoreCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkSemaphoreType type = VK_SEMAPHORE_TYPE_BINARY;
+    uint64_t initial_value = 0;
+    const VkSemaphoreTypeCreateInfo* type_info = find_semaphore_type_info(info->pNext);
+    if (type_info) {
+        type = type_info->semaphoreType;
+        initial_value = type_info->initialValue;
+    }
+    return state->sync_manager.create_semaphore(device, type, initial_value);
+}
+
+bool server_state_destroy_semaphore(ServerState* state, VkSemaphore semaphore) {
+    return state->sync_manager.destroy_semaphore(semaphore);
+}
+
+VkResult server_state_get_semaphore_counter_value(ServerState* state,
+                                                  VkSemaphore semaphore,
+                                                  uint64_t* pValue) {
+    return state->sync_manager.get_timeline_value(semaphore, pValue);
+}
+
+VkResult server_state_signal_semaphore(ServerState* state, const VkSemaphoreSignalInfo* info) {
+    if (!info) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkSemaphoreType type = state->sync_manager.get_semaphore_type(info->semaphore);
+    if (type != VK_SEMAPHORE_TYPE_TIMELINE) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    return state->sync_manager.signal_timeline_value(info->semaphore, info->value);
+}
+
+VkResult server_state_wait_semaphores(ServerState* state,
+                                      const VkSemaphoreWaitInfo* info,
+                                      uint64_t timeout) {
+    (void)timeout;
+    if (!info || info->semaphoreCount == 0 || !info->pSemaphores || !info->pValues) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    for (uint32_t i = 0; i < info->semaphoreCount; ++i) {
+        VkResult result = state->sync_manager.wait_timeline_value(info->pSemaphores[i], info->pValues[i]);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+    return VK_SUCCESS;
+}
+
+VkResult server_state_queue_submit(ServerState* state,
+                                   VkQueue queue,
+                                   uint32_t submitCount,
+                                   const VkSubmitInfo* pSubmits,
+                                   VkFence fence) {
+    if (submitCount > 0 && !pSubmits) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (queue != VK_NULL_HANDLE && !state->queue_map.exists(queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo& submit = pSubmits[i];
+        if (submit.commandBufferCount > 0 && !submit.pCommandBuffers) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        for (uint32_t j = 0; j < submit.commandBufferCount; ++j) {
+            VkCommandBuffer buffer = submit.pCommandBuffers[j];
+            if (!state->command_buffer_state.buffer_exists(buffer)) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            if (state->command_buffer_state.get_state(buffer) != ServerCommandBufferState::EXECUTABLE) {
+                return VK_ERROR_VALIDATION_FAILED_EXT;
+            }
+        }
+        if (submit.waitSemaphoreCount > 0 &&
+            (!submit.pWaitSemaphores || !submit.pWaitDstStageMask)) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (submit.signalSemaphoreCount > 0 && !submit.pSignalSemaphores) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        for (uint32_t j = 0; j < submit.waitSemaphoreCount; ++j) {
+            if (!state->sync_manager.semaphore_exists(submit.pWaitSemaphores[j])) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+        for (uint32_t j = 0; j < submit.signalSemaphoreCount; ++j) {
+            if (!state->sync_manager.semaphore_exists(submit.pSignalSemaphores[j])) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+    }
+
+    if (fence != VK_NULL_HANDLE) {
+        state->sync_manager.signal_fence(fence);
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo& submit = pSubmits[i];
+        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(submit.pNext);
+
+        for (uint32_t j = 0; j < submit.waitSemaphoreCount; ++j) {
+            VkSemaphore wait_sem = submit.pWaitSemaphores[j];
+            VkSemaphoreType type = state->sync_manager.get_semaphore_type(wait_sem);
+            if (type == VK_SEMAPHORE_TYPE_BINARY) {
+                state->sync_manager.consume_binary_semaphore(wait_sem);
+            } else if (timeline && timeline->waitSemaphoreValueCount > j &&
+                       timeline->pWaitSemaphoreValues) {
+                state->sync_manager.wait_timeline_value(wait_sem, timeline->pWaitSemaphoreValues[j]);
+            }
+        }
+
+        for (uint32_t j = 0; j < submit.signalSemaphoreCount; ++j) {
+            VkSemaphore signal_sem = submit.pSignalSemaphores[j];
+            VkSemaphoreType type = state->sync_manager.get_semaphore_type(signal_sem);
+            if (type == VK_SEMAPHORE_TYPE_BINARY) {
+                state->sync_manager.signal_binary_semaphore(signal_sem);
+            } else if (timeline && timeline->signalSemaphoreValueCount > j &&
+                       timeline->pSignalSemaphoreValues) {
+                state->sync_manager.signal_timeline_value(signal_sem, timeline->pSignalSemaphoreValues[j]);
+            }
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue) {
+    if (queue != VK_NULL_HANDLE && !state->queue_map.exists(queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_SUCCESS;
+}
+
+VkResult server_state_device_wait_idle(ServerState* state, VkDevice device) {
+    (void)state;
+    if (device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_SUCCESS;
+}
+
 } // namespace venus_plus
 
 extern "C" {
@@ -535,6 +738,77 @@ bool server_state_bridge_validate_cmd_clear_color_image(struct ServerState* stat
                                                         uint32_t rangeCount,
                                                         const VkImageSubresourceRange* pRanges) {
     return venus_plus::server_state_validate_cmd_clear_color_image(state, image, rangeCount, pRanges);
+}
+
+VkFence server_state_bridge_create_fence(struct ServerState* state,
+                                         VkDevice device,
+                                         const VkFenceCreateInfo* info) {
+    return venus_plus::server_state_create_fence(state, device, info);
+}
+
+bool server_state_bridge_destroy_fence(struct ServerState* state, VkFence fence) {
+    return venus_plus::server_state_destroy_fence(state, fence);
+}
+
+VkResult server_state_bridge_get_fence_status(struct ServerState* state, VkFence fence) {
+    return venus_plus::server_state_get_fence_status(state, fence);
+}
+
+VkResult server_state_bridge_reset_fences(struct ServerState* state,
+                                          uint32_t fenceCount,
+                                          const VkFence* pFences) {
+    return venus_plus::server_state_reset_fences(state, fenceCount, pFences);
+}
+
+VkResult server_state_bridge_wait_for_fences(struct ServerState* state,
+                                             uint32_t fenceCount,
+                                             const VkFence* pFences,
+                                             VkBool32 waitAll,
+                                             uint64_t timeout) {
+    return venus_plus::server_state_wait_for_fences(state, fenceCount, pFences, waitAll, timeout);
+}
+
+VkSemaphore server_state_bridge_create_semaphore(struct ServerState* state,
+                                                 VkDevice device,
+                                                 const VkSemaphoreCreateInfo* info) {
+    return venus_plus::server_state_create_semaphore(state, device, info);
+}
+
+bool server_state_bridge_destroy_semaphore(struct ServerState* state, VkSemaphore semaphore) {
+    return venus_plus::server_state_destroy_semaphore(state, semaphore);
+}
+
+VkResult server_state_bridge_get_semaphore_counter_value(struct ServerState* state,
+                                                         VkSemaphore semaphore,
+                                                         uint64_t* pValue) {
+    return venus_plus::server_state_get_semaphore_counter_value(state, semaphore, pValue);
+}
+
+VkResult server_state_bridge_signal_semaphore(struct ServerState* state,
+                                              const VkSemaphoreSignalInfo* info) {
+    return venus_plus::server_state_signal_semaphore(state, info);
+}
+
+VkResult server_state_bridge_wait_semaphores(struct ServerState* state,
+                                             const VkSemaphoreWaitInfo* info,
+                                             uint64_t timeout) {
+    return venus_plus::server_state_wait_semaphores(state, info, timeout);
+}
+
+VkResult server_state_bridge_queue_submit(struct ServerState* state,
+                                          VkQueue queue,
+                                          uint32_t submitCount,
+                                          const VkSubmitInfo* pSubmits,
+                                          VkFence fence) {
+    return venus_plus::server_state_queue_submit(state, queue, submitCount, pSubmits, fence);
+}
+
+VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue queue) {
+    return venus_plus::server_state_queue_wait_idle(state, queue);
+}
+
+VkResult server_state_bridge_device_wait_idle(struct ServerState* state, VkDevice device) {
+    return venus_plus::server_state_device_wait_idle(state, device);
 }
 
 } // extern "C"

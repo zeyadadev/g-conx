@@ -54,6 +54,38 @@ bool server_state_bridge_validate_cmd_fill_buffer(struct ServerState* state, VkB
 bool server_state_bridge_validate_cmd_update_buffer(struct ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize dataSize, const void* data);
 bool server_state_bridge_validate_cmd_clear_color_image(struct ServerState* state, VkImage image, uint32_t rangeCount, const VkImageSubresourceRange* pRanges);
 
+VkFence server_state_bridge_create_fence(struct ServerState* state,
+                                         VkDevice device,
+                                         const VkFenceCreateInfo* info);
+bool server_state_bridge_destroy_fence(struct ServerState* state, VkFence fence);
+VkResult server_state_bridge_get_fence_status(struct ServerState* state, VkFence fence);
+VkResult server_state_bridge_reset_fences(struct ServerState* state,
+                                          uint32_t fenceCount,
+                                          const VkFence* pFences);
+VkResult server_state_bridge_wait_for_fences(struct ServerState* state,
+                                             uint32_t fenceCount,
+                                             const VkFence* pFences,
+                                             VkBool32 waitAll,
+                                             uint64_t timeout);
+VkSemaphore server_state_bridge_create_semaphore(struct ServerState* state,
+                                                 VkDevice device,
+                                                 const VkSemaphoreCreateInfo* info);
+bool server_state_bridge_destroy_semaphore(struct ServerState* state, VkSemaphore semaphore);
+VkResult server_state_bridge_get_semaphore_counter_value(struct ServerState* state,
+                                                         VkSemaphore semaphore,
+                                                         uint64_t* pValue);
+VkResult server_state_bridge_signal_semaphore(struct ServerState* state, const VkSemaphoreSignalInfo* info);
+VkResult server_state_bridge_wait_semaphores(struct ServerState* state,
+                                             const VkSemaphoreWaitInfo* info,
+                                             uint64_t timeout);
+VkResult server_state_bridge_queue_submit(struct ServerState* state,
+                                          VkQueue queue,
+                                          uint32_t submitCount,
+                                          const VkSubmitInfo* pSubmits,
+                                          VkFence fence);
+VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue queue);
+VkResult server_state_bridge_device_wait_idle(struct ServerState* state, VkDevice device);
+
 #ifdef __cplusplus
 }
 #endif

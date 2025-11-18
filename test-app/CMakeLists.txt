@@ -5,6 +5,7 @@ add_executable(venus-test-app
     phase03/phase03_test.cpp
     phase04/phase04_test.cpp
     phase05/phase05_test.cpp
+    phase06/phase06_test.cpp
 )
 
 target_include_directories(venus-test-app PRIVATE

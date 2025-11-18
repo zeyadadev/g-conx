@@ -176,6 +176,15 @@ bool CommandBufferState::buffer_exists(VkCommandBuffer buffer) const {
     return buffers_.find(handle_key(buffer)) != buffers_.end();
 }
 
+ServerCommandBufferState CommandBufferState::get_state(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return ServerCommandBufferState::INVALID;
+    }
+    return bit->second.state;
+}
+
 void CommandBufferState::invalidate(VkCommandBuffer buffer) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto bit = buffers_.find(handle_key(buffer));

@@ -5,6 +5,7 @@
 #include "state/resource_tracker.h"
 #include "state/command_buffer_state.h"
 #include "state/command_validator.h"
+#include "state/sync_manager.h"
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <unordered_map>
@@ -40,6 +41,7 @@ struct ServerState {
     venus_plus::ResourceTracker resource_tracker;
     venus_plus::CommandBufferState command_buffer_state;
     venus_plus::CommandValidator command_validator;
+    venus_plus::SyncManager sync_manager;
 };
 
 namespace venus_plus {
@@ -90,6 +92,25 @@ bool server_state_validate_cmd_copy_image_to_buffer(ServerState* state, VkImage 
 bool server_state_validate_cmd_fill_buffer(ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size);
 bool server_state_validate_cmd_update_buffer(ServerState* state, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize dataSize, const void* data);
 bool server_state_validate_cmd_clear_color_image(ServerState* state, VkImage image, uint32_t rangeCount, const VkImageSubresourceRange* ranges);
+
+// Phase 6: Sync and submission
+VkFence server_state_create_fence(ServerState* state, VkDevice device, const VkFenceCreateInfo* info);
+bool server_state_destroy_fence(ServerState* state, VkFence fence);
+VkResult server_state_get_fence_status(ServerState* state, VkFence fence);
+VkResult server_state_reset_fences(ServerState* state, uint32_t fenceCount, const VkFence* pFences);
+VkResult server_state_wait_for_fences(ServerState* state,
+                                      uint32_t fenceCount,
+                                      const VkFence* pFences,
+                                      VkBool32 waitAll,
+                                      uint64_t timeout);
+VkSemaphore server_state_create_semaphore(ServerState* state, VkDevice device, const VkSemaphoreCreateInfo* info);
+bool server_state_destroy_semaphore(ServerState* state, VkSemaphore semaphore);
+VkResult server_state_get_semaphore_counter_value(ServerState* state, VkSemaphore semaphore, uint64_t* pValue);
+VkResult server_state_signal_semaphore(ServerState* state, const VkSemaphoreSignalInfo* info);
+VkResult server_state_wait_semaphores(ServerState* state, const VkSemaphoreWaitInfo* info, uint64_t timeout);
+VkResult server_state_queue_submit(ServerState* state, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
+VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue);
+VkResult server_state_device_wait_idle(ServerState* state, VkDevice device);
 
 } // namespace venus_plus
 

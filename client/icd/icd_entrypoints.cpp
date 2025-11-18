@@ -7,6 +7,7 @@
 #include "state/device_state.h"
 #include "state/resource_state.h"
 #include "state/command_buffer_state.h"
+#include "state/sync_state.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include <algorithm>
@@ -70,6 +71,48 @@ static VkCommandBuffer get_remote_command_buffer_handle(VkCommandBuffer commandB
     }
     IcdCommandBuffer* icd_cb = icd_command_buffer_from_handle(commandBuffer);
     return icd_cb ? icd_cb->remote_handle : VK_NULL_HANDLE;
+}
+
+static bool ensure_queue_tracked(VkQueue queue, VkQueue* remote_out) {
+    if (!remote_out) {
+        return false;
+    }
+    if (queue == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Queue handle is NULL\n";
+        return false;
+    }
+    VkQueue remote_queue = g_device_state.get_remote_queue(queue);
+    if (remote_queue == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Queue not tracked on client\n";
+        return false;
+    }
+    *remote_out = remote_queue;
+    return true;
+}
+
+static const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const VkSemaphoreCreateInfo* info) {
+    if (!info) {
+        return nullptr;
+    }
+    const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(info->pNext);
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO) {
+            return reinterpret_cast<const VkSemaphoreTypeCreateInfo*>(header);
+        }
+        header = header->pNext;
+    }
+    return nullptr;
+}
+
+static const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void* pNext) {
+    const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(pNext);
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO) {
+            return reinterpret_cast<const VkTimelineSemaphoreSubmitInfo*>(header);
+        }
+        header = header->pNext;
+    }
+    return nullptr;
 }
 
 extern "C" {
@@ -166,6 +209,58 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
     if (strcmp(pName, "vkGetPhysicalDeviceSparseImageFormatProperties") == 0) {
         std::cout << " -> returning vkGetPhysicalDeviceSparseImageFormatProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceSparseImageFormatProperties;
+    }
+    if (strcmp(pName, "vkCreateFence") == 0) {
+        std::cout << " -> returning vkCreateFence\n";
+        return (PFN_vkVoidFunction)vkCreateFence;
+    }
+    if (strcmp(pName, "vkDestroyFence") == 0) {
+        std::cout << " -> returning vkDestroyFence\n";
+        return (PFN_vkVoidFunction)vkDestroyFence;
+    }
+    if (strcmp(pName, "vkGetFenceStatus") == 0) {
+        std::cout << " -> returning vkGetFenceStatus\n";
+        return (PFN_vkVoidFunction)vkGetFenceStatus;
+    }
+    if (strcmp(pName, "vkResetFences") == 0) {
+        std::cout << " -> returning vkResetFences\n";
+        return (PFN_vkVoidFunction)vkResetFences;
+    }
+    if (strcmp(pName, "vkWaitForFences") == 0) {
+        std::cout << " -> returning vkWaitForFences\n";
+        return (PFN_vkVoidFunction)vkWaitForFences;
+    }
+    if (strcmp(pName, "vkCreateSemaphore") == 0) {
+        std::cout << " -> returning vkCreateSemaphore\n";
+        return (PFN_vkVoidFunction)vkCreateSemaphore;
+    }
+    if (strcmp(pName, "vkDestroySemaphore") == 0) {
+        std::cout << " -> returning vkDestroySemaphore\n";
+        return (PFN_vkVoidFunction)vkDestroySemaphore;
+    }
+    if (strcmp(pName, "vkGetSemaphoreCounterValue") == 0) {
+        std::cout << " -> returning vkGetSemaphoreCounterValue\n";
+        return (PFN_vkVoidFunction)vkGetSemaphoreCounterValue;
+    }
+    if (strcmp(pName, "vkSignalSemaphore") == 0) {
+        std::cout << " -> returning vkSignalSemaphore\n";
+        return (PFN_vkVoidFunction)vkSignalSemaphore;
+    }
+    if (strcmp(pName, "vkWaitSemaphores") == 0) {
+        std::cout << " -> returning vkWaitSemaphores\n";
+        return (PFN_vkVoidFunction)vkWaitSemaphores;
+    }
+    if (strcmp(pName, "vkQueueSubmit") == 0) {
+        std::cout << " -> returning vkQueueSubmit\n";
+        return (PFN_vkVoidFunction)vkQueueSubmit;
+    }
+    if (strcmp(pName, "vkQueueWaitIdle") == 0) {
+        std::cout << " -> returning vkQueueWaitIdle\n";
+        return (PFN_vkVoidFunction)vkQueueWaitIdle;
+    }
+    if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
+        std::cout << " -> returning vkDeviceWaitIdle\n";
+        return (PFN_vkVoidFunction)vkDeviceWaitIdle;
     }
 
     std::cout << " -> NOT FOUND, returning nullptr\n";
@@ -719,10 +814,57 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         std::cout << " -> vkCmdClearColorImage\n";
         return (PFN_vkVoidFunction)vkCmdClearColorImage;
     }
+    if (strcmp(pName, "vkCreateFence") == 0) {
+        std::cout << " -> vkCreateFence\n";
+        return (PFN_vkVoidFunction)vkCreateFence;
+    }
+    if (strcmp(pName, "vkDestroyFence") == 0) {
+        std::cout << " -> vkDestroyFence\n";
+        return (PFN_vkVoidFunction)vkDestroyFence;
+    }
+    if (strcmp(pName, "vkGetFenceStatus") == 0) {
+        std::cout << " -> vkGetFenceStatus\n";
+        return (PFN_vkVoidFunction)vkGetFenceStatus;
+    }
+    if (strcmp(pName, "vkResetFences") == 0) {
+        std::cout << " -> vkResetFences\n";
+        return (PFN_vkVoidFunction)vkResetFences;
+    }
+    if (strcmp(pName, "vkWaitForFences") == 0) {
+        std::cout << " -> vkWaitForFences\n";
+        return (PFN_vkVoidFunction)vkWaitForFences;
+    }
+    if (strcmp(pName, "vkCreateSemaphore") == 0) {
+        std::cout << " -> vkCreateSemaphore\n";
+        return (PFN_vkVoidFunction)vkCreateSemaphore;
+    }
+    if (strcmp(pName, "vkDestroySemaphore") == 0) {
+        std::cout << " -> vkDestroySemaphore\n";
+        return (PFN_vkVoidFunction)vkDestroySemaphore;
+    }
+    if (strcmp(pName, "vkGetSemaphoreCounterValue") == 0) {
+        std::cout << " -> vkGetSemaphoreCounterValue\n";
+        return (PFN_vkVoidFunction)vkGetSemaphoreCounterValue;
+    }
+    if (strcmp(pName, "vkSignalSemaphore") == 0) {
+        std::cout << " -> vkSignalSemaphore\n";
+        return (PFN_vkVoidFunction)vkSignalSemaphore;
+    }
+    if (strcmp(pName, "vkWaitSemaphores") == 0) {
+        std::cout << " -> vkWaitSemaphores\n";
+        return (PFN_vkVoidFunction)vkWaitSemaphores;
+    }
+    if (strcmp(pName, "vkQueueSubmit") == 0) {
+        std::cout << " -> vkQueueSubmit\n";
+        return (PFN_vkVoidFunction)vkQueueSubmit;
+    }
+    if (strcmp(pName, "vkQueueWaitIdle") == 0) {
+        std::cout << " -> vkQueueWaitIdle\n";
+        return (PFN_vkVoidFunction)vkQueueWaitIdle;
+    }
     if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
-        // Return nullptr for now - not implemented in Phase 3
-        std::cout << " -> NOT IMPLEMENTED\n";
-        return nullptr;
+        std::cout << " -> vkDeviceWaitIdle\n";
+        return (PFN_vkVoidFunction)vkDeviceWaitIdle;
     }
 
     std::cout << " -> NOT IMPLEMENTED, returning nullptr\n";
@@ -872,6 +1014,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 
     // Drop resource tracking for this device
     g_resource_state.remove_device_resources(device);
+    g_sync_state.remove_device(device);
 
     // Remove from state
     g_device_state.remove_device(device);
@@ -920,8 +1063,8 @@ VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
     icd_queue->queue_index = queueIndex;
     icd_queue->remote_handle = VK_NULL_HANDLE;
 
-    // Call server to get queue
-    vn_async_vkGetDeviceQueue(&g_ring, icd_device->remote_handle, queueFamilyIndex, queueIndex, &icd_queue->remote_handle);
+    // Call server to get queue (synchronous so we can track remote handle)
+    vn_call_vkGetDeviceQueue(&g_ring, icd_device->remote_handle, queueFamilyIndex, queueIndex, &icd_queue->remote_handle);
 
     // Return the ICD queue as VkQueue handle
     *pQueue = icd_queue_to_handle(icd_queue);
@@ -2194,6 +2337,623 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(
                                   rangeCount,
                                   pRanges);
     std::cout << "[Client ICD] vkCmdClearColorImage recorded\n";
+}
+
+// Synchronization objects - Phase 6
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(
+    VkDevice device,
+    const VkFenceCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkFence* pFence) {
+
+    std::cout << "[Client ICD] vkCreateFence called\n";
+
+    if (!pCreateInfo || !pFence) {
+        std::cerr << "[Client ICD] Invalid parameters for vkCreateFence\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkCreateFence\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkFence remote_fence = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateFence(&g_ring, icd_device->remote_handle, pCreateInfo, pAllocator, &remote_fence);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateFence failed: " << result << "\n";
+        return result;
+    }
+
+    VkFence local_fence = g_handle_allocator.allocate<VkFence>();
+    g_sync_state.add_fence(device, local_fence, remote_fence, (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) != 0);
+    *pFence = local_fence;
+    std::cout << "[Client ICD] Fence created (local=" << *pFence << ", remote=" << remote_fence << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyFence(
+    VkDevice device,
+    VkFence fence,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyFence called\n";
+    if (fence == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkFence remote = g_sync_state.get_remote_fence(fence);
+    g_sync_state.remove_fence(fence);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkDestroyFence\n";
+        return;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDestroyFence\n";
+        return;
+    }
+    if (remote == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote fence missing in vkDestroyFence\n";
+        return;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyFence(&g_ring, icd_device->remote_handle, remote, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence) {
+    std::cout << "[Client ICD] vkGetFenceStatus called\n";
+    if (!g_sync_state.has_fence(fence)) {
+        std::cerr << "[Client ICD] Unknown fence in vkGetFenceStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkGetFenceStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkFence remote = g_sync_state.get_remote_fence(fence);
+    if (remote == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkGetFenceStatus(&g_ring, icd_device->remote_handle, remote);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(
+    VkDevice device,
+    uint32_t fenceCount,
+    const VkFence* pFences) {
+
+    std::cout << "[Client ICD] vkResetFences called\n";
+
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkResetFences\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkFence> remote_fences(fenceCount);
+    for (uint32_t i = 0; i < fenceCount; ++i) {
+        VkFence remote = g_sync_state.get_remote_fence(pFences[i]);
+        if (remote == VK_NULL_HANDLE) {
+            std::cerr << "[Client ICD] vkResetFences: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_fences[i] = remote;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkResetFences(&g_ring,
+                                            icd_device->remote_handle,
+                                            fenceCount,
+                                            remote_fences.data());
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < fenceCount; ++i) {
+            g_sync_state.set_fence_signaled(pFences[i], false);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
+    VkDevice device,
+    uint32_t fenceCount,
+    const VkFence* pFences,
+    VkBool32 waitAll,
+    uint64_t timeout) {
+
+    std::cout << "[Client ICD] vkWaitForFences called\n";
+
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkWaitForFences\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkFence> remote_fences(fenceCount);
+    for (uint32_t i = 0; i < fenceCount; ++i) {
+        VkFence remote = g_sync_state.get_remote_fence(pFences[i]);
+        if (remote == VK_NULL_HANDLE) {
+            std::cerr << "[Client ICD] vkWaitForFences: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_fences[i] = remote;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkWaitForFences(&g_ring,
+                                              icd_device->remote_handle,
+                                              fenceCount,
+                                              remote_fences.data(),
+                                              waitAll,
+                                              timeout);
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < fenceCount; ++i) {
+            g_sync_state.set_fence_signaled(pFences[i], true);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateSemaphore(
+    VkDevice device,
+    const VkSemaphoreCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkSemaphore* pSemaphore) {
+
+    std::cout << "[Client ICD] vkCreateSemaphore called\n";
+
+    if (!pCreateInfo || !pSemaphore) {
+        std::cerr << "[Client ICD] Invalid parameters for vkCreateSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkCreateSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkSemaphore remote_semaphore = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateSemaphore(&g_ring,
+                                                icd_device->remote_handle,
+                                                pCreateInfo,
+                                                pAllocator,
+                                                &remote_semaphore);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateSemaphore failed: " << result << "\n";
+        return result;
+    }
+
+    const VkSemaphoreTypeCreateInfo* type_info = find_semaphore_type_info(pCreateInfo);
+    VkSemaphoreType type = type_info ? type_info->semaphoreType : VK_SEMAPHORE_TYPE_BINARY;
+    uint64_t initial_value = type_info ? type_info->initialValue : 0;
+
+    VkSemaphore local_semaphore = g_handle_allocator.allocate<VkSemaphore>();
+    g_sync_state.add_semaphore(device,
+                               local_semaphore,
+                               remote_semaphore,
+                               type,
+                               false,
+                               initial_value);
+    *pSemaphore = local_semaphore;
+    std::cout << "[Client ICD] Semaphore created (local=" << *pSemaphore
+              << ", remote=" << remote_semaphore
+              << ", type=" << (type == VK_SEMAPHORE_TYPE_TIMELINE ? "timeline" : "binary") << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroySemaphore(
+    VkDevice device,
+    VkSemaphore semaphore,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroySemaphore called\n";
+    if (semaphore == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkSemaphore remote = g_sync_state.get_remote_semaphore(semaphore);
+    g_sync_state.remove_semaphore(semaphore);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server during vkDestroySemaphore\n";
+        return;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDestroySemaphore\n";
+        return;
+    }
+    if (remote == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Remote semaphore missing in vkDestroySemaphore\n";
+        return;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroySemaphore(&g_ring, icd_device->remote_handle, remote, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreCounterValue(
+    VkDevice device,
+    VkSemaphore semaphore,
+    uint64_t* pValue) {
+
+    std::cout << "[Client ICD] vkGetSemaphoreCounterValue called\n";
+
+    if (!pValue) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_sync_state.has_semaphore(semaphore)) {
+        std::cerr << "[Client ICD] Unknown semaphore in vkGetSemaphoreCounterValue\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (g_sync_state.get_semaphore_type(semaphore) != VK_SEMAPHORE_TYPE_TIMELINE) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkGetSemaphoreCounterValue\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkSemaphore remote = g_sync_state.get_remote_semaphore(semaphore);
+    if (remote == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkGetSemaphoreCounterValue(&g_ring,
+                                                         icd_device->remote_handle,
+                                                         remote,
+                                                         pValue);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_timeline_value(semaphore, *pValue);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkSignalSemaphore(
+    VkDevice device,
+    const VkSemaphoreSignalInfo* pSignalInfo) {
+
+    std::cout << "[Client ICD] vkSignalSemaphore called\n";
+
+    if (!pSignalInfo) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkSemaphore semaphore = pSignalInfo->semaphore;
+    if (!g_sync_state.has_semaphore(semaphore)) {
+        std::cerr << "[Client ICD] Unknown semaphore in vkSignalSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (g_sync_state.get_semaphore_type(semaphore) != VK_SEMAPHORE_TYPE_TIMELINE) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkSignalSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkSemaphore remote = g_sync_state.get_remote_semaphore(semaphore);
+    if (remote == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkSemaphoreSignalInfo remote_info = *pSignalInfo;
+    remote_info.semaphore = remote;
+    VkResult result = vn_call_vkSignalSemaphore(&g_ring, icd_device->remote_handle, &remote_info);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_timeline_value(semaphore, pSignalInfo->value);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkWaitSemaphores(
+    VkDevice device,
+    const VkSemaphoreWaitInfo* pWaitInfo,
+    uint64_t timeout) {
+
+    std::cout << "[Client ICD] vkWaitSemaphores called\n";
+
+    if (!pWaitInfo || pWaitInfo->semaphoreCount == 0 ||
+        !pWaitInfo->pSemaphores || !pWaitInfo->pValues) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkWaitSemaphores\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkSemaphore> remote_handles(pWaitInfo->semaphoreCount);
+    for (uint32_t i = 0; i < pWaitInfo->semaphoreCount; ++i) {
+        VkSemaphore sem = pWaitInfo->pSemaphores[i];
+        if (!g_sync_state.has_semaphore(sem) ||
+            g_sync_state.get_semaphore_type(sem) != VK_SEMAPHORE_TYPE_TIMELINE) {
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        VkSemaphore remote = g_sync_state.get_remote_semaphore(sem);
+        if (remote == VK_NULL_HANDLE) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_handles[i] = remote;
+    }
+
+    VkSemaphoreWaitInfo remote_info = *pWaitInfo;
+    remote_info.pSemaphores = remote_handles.data();
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkWaitSemaphores(&g_ring, icd_device->remote_handle, &remote_info, timeout);
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < pWaitInfo->semaphoreCount; ++i) {
+            g_sync_state.set_timeline_value(pWaitInfo->pSemaphores[i], pWaitInfo->pValues[i]);
+        }
+    }
+    return result;
+}
+
+// Queue submission - Phase 6
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
+    VkQueue queue,
+    uint32_t submitCount,
+    const VkSubmitInfo* pSubmits,
+    VkFence fence) {
+
+    std::cout << "[Client ICD] vkQueueSubmit called (submitCount=" << submitCount << ")\n";
+
+    if (submitCount > 0 && !pSubmits) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkFence remote_fence = VK_NULL_HANDLE;
+    if (fence != VK_NULL_HANDLE) {
+        remote_fence = g_sync_state.get_remote_fence(fence);
+        if (remote_fence == VK_NULL_HANDLE) {
+            std::cerr << "[Client ICD] vkQueueSubmit: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    struct SubmitStorage {
+        std::vector<VkSemaphore> wait_local;
+        std::vector<VkSemaphore> signal_local;
+        std::vector<VkSemaphore> wait_remote;
+        std::vector<VkPipelineStageFlags> wait_stages;
+        std::vector<VkCommandBuffer> remote_cbs;
+        std::vector<VkSemaphore> signal_remote;
+        std::vector<uint64_t> wait_values;
+        std::vector<uint64_t> signal_values;
+        VkTimelineSemaphoreSubmitInfo timeline_info{};
+        bool has_timeline = false;
+    };
+
+    std::vector<VkSubmitInfo> remote_submits;
+    std::vector<SubmitStorage> storage;
+    if (submitCount > 0) {
+        remote_submits.resize(submitCount);
+        storage.resize(submitCount);
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo& src = pSubmits[i];
+        VkSubmitInfo& dst = remote_submits[i];
+        SubmitStorage& slot = storage[i];
+        dst = src;
+
+        if (src.waitSemaphoreCount > 0) {
+            if (!src.pWaitSemaphores || !src.pWaitDstStageMask) {
+                std::cerr << "[Client ICD] vkQueueSubmit: invalid wait semaphore arrays\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.wait_local.assign(src.pWaitSemaphores, src.pWaitSemaphores + src.waitSemaphoreCount);
+            slot.wait_remote.resize(src.waitSemaphoreCount);
+            slot.wait_stages.assign(src.pWaitDstStageMask, src.pWaitDstStageMask + src.waitSemaphoreCount);
+            for (uint32_t j = 0; j < src.waitSemaphoreCount; ++j) {
+                VkSemaphore wait_sem = src.pWaitSemaphores[j];
+                if (!g_sync_state.has_semaphore(wait_sem)) {
+                    std::cerr << "[Client ICD] vkQueueSubmit: wait semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.wait_remote[j] = g_sync_state.get_remote_semaphore(wait_sem);
+                if (slot.wait_remote[j] == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+            }
+            dst.pWaitSemaphores = slot.wait_remote.data();
+            dst.pWaitDstStageMask = slot.wait_stages.data();
+        } else {
+            dst.pWaitSemaphores = nullptr;
+            dst.pWaitDstStageMask = nullptr;
+        }
+
+        if (src.commandBufferCount > 0) {
+            if (!src.pCommandBuffers) {
+                std::cerr << "[Client ICD] vkQueueSubmit: command buffers missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.remote_cbs.resize(src.commandBufferCount);
+            for (uint32_t j = 0; j < src.commandBufferCount; ++j) {
+                VkCommandBuffer local_cb = src.pCommandBuffers[j];
+                if (!g_command_buffer_state.has_command_buffer(local_cb)) {
+                    std::cerr << "[Client ICD] vkQueueSubmit: command buffer not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (g_command_buffer_state.get_buffer_state(local_cb) != CommandBufferLifecycleState::EXECUTABLE) {
+                    std::cerr << "[Client ICD] vkQueueSubmit: command buffer not executable\n";
+                    return VK_ERROR_VALIDATION_FAILED_EXT;
+                }
+                VkCommandBuffer remote_cb = get_remote_command_buffer_handle(local_cb);
+                if (remote_cb == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.remote_cbs[j] = remote_cb;
+            }
+            dst.pCommandBuffers = slot.remote_cbs.data();
+        } else {
+            dst.pCommandBuffers = nullptr;
+        }
+
+        if (src.signalSemaphoreCount > 0) {
+            if (!src.pSignalSemaphores) {
+                std::cerr << "[Client ICD] vkQueueSubmit: signal semaphores missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.signal_local.assign(src.pSignalSemaphores, src.pSignalSemaphores + src.signalSemaphoreCount);
+            slot.signal_remote.resize(src.signalSemaphoreCount);
+            for (uint32_t j = 0; j < src.signalSemaphoreCount; ++j) {
+                VkSemaphore signal_sem = src.pSignalSemaphores[j];
+                if (!g_sync_state.has_semaphore(signal_sem)) {
+                    std::cerr << "[Client ICD] vkQueueSubmit: signal semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.signal_remote[j] = g_sync_state.get_remote_semaphore(signal_sem);
+                if (slot.signal_remote[j] == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+            }
+            dst.pSignalSemaphores = slot.signal_remote.data();
+        } else {
+            dst.pSignalSemaphores = nullptr;
+        }
+
+        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(src.pNext);
+        if (timeline) {
+            slot.timeline_info = *timeline;
+            if (timeline->waitSemaphoreValueCount) {
+                slot.wait_values.assign(timeline->pWaitSemaphoreValues,
+                                        timeline->pWaitSemaphoreValues + timeline->waitSemaphoreValueCount);
+                slot.timeline_info.pWaitSemaphoreValues = slot.wait_values.data();
+            }
+            if (timeline->signalSemaphoreValueCount) {
+                slot.signal_values.assign(timeline->pSignalSemaphoreValues,
+                                          timeline->pSignalSemaphoreValues + timeline->signalSemaphoreValueCount);
+                slot.timeline_info.pSignalSemaphoreValues = slot.signal_values.data();
+            }
+            dst.pNext = &slot.timeline_info;
+            slot.has_timeline = true;
+        } else {
+            dst.pNext = nullptr;
+            slot.has_timeline = false;
+        }
+    }
+
+    const VkSubmitInfo* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
+    VkResult result = vn_call_vkQueueSubmit(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkQueueSubmit failed: " << result << "\n";
+        return result;
+    }
+
+    if (fence != VK_NULL_HANDLE) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const SubmitStorage& slot = storage[i];
+        for (VkSemaphore wait_sem : slot.wait_local) {
+            if (g_sync_state.get_semaphore_type(wait_sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(wait_sem, false);
+            }
+        }
+        if (slot.has_timeline && !slot.wait_values.empty()) {
+            for (size_t j = 0; j < slot.wait_local.size() && j < slot.wait_values.size(); ++j) {
+                if (g_sync_state.get_semaphore_type(slot.wait_local[j]) == VK_SEMAPHORE_TYPE_TIMELINE) {
+                    g_sync_state.set_timeline_value(slot.wait_local[j], slot.wait_values[j]);
+                }
+            }
+        }
+        for (size_t j = 0; j < slot.signal_local.size(); ++j) {
+            VkSemaphore signal_sem = slot.signal_local[j];
+            if (g_sync_state.get_semaphore_type(signal_sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(signal_sem, true);
+            } else if (slot.has_timeline && j < slot.signal_values.size()) {
+                g_sync_state.set_timeline_value(signal_sem, slot.signal_values[j]);
+            }
+        }
+    }
+
+    std::cout << "[Client ICD] vkQueueSubmit completed\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
+    std::cout << "[Client ICD] vkQueueWaitIdle called\n";
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult result = vn_call_vkQueueWaitIdle(&g_ring, remote_queue);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkQueueWaitIdle failed: " << result << "\n";
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
+    std::cout << "[Client ICD] vkDeviceWaitIdle called\n";
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        std::cerr << "[Client ICD] Unknown device in vkDeviceWaitIdle\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkDeviceWaitIdle(&g_ring, icd_device->remote_handle);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkDeviceWaitIdle failed: " << result << "\n";
+    }
+    return result;
 }
 
 } // extern "C"
