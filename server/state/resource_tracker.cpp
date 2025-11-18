@@ -2,6 +2,7 @@
 
 #include "binding_validator.h"
 #include <algorithm>
+#include <iostream>
 
 namespace venus_plus {
 
@@ -10,12 +11,26 @@ ResourceTracker::ResourceTracker()
       next_image_handle_(0x50000000ull),
       next_memory_handle_(0x60000000ull) {}
 
-VkBuffer ResourceTracker::create_buffer(VkDevice device, const VkBufferCreateInfo& info) {
+VkBuffer ResourceTracker::create_buffer(VkDevice device,
+                                        VkDevice real_device,
+                                        const VkBufferCreateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkBuffer real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateBuffer(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Venus Server] vkCreateBuffer failed: " << result << "\n";
+        return VK_NULL_HANDLE;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     VkBuffer handle = reinterpret_cast<VkBuffer>(next_buffer_handle_++);
     BufferResource resource = {};
     resource.handle_device = device;
+    resource.real_device = real_device;
     resource.handle = handle;
+    resource.real_handle = real_handle;
     resource.size = info.size;
     resource.usage = info.usage;
     buffers_[handle_key(handle)] = resource;
@@ -28,6 +43,8 @@ bool ResourceTracker::destroy_buffer(VkBuffer buffer) {
     if (it == buffers_.end()) {
         return false;
     }
+    VkBuffer real_handle = it->second.real_handle;
+    VkDevice real_device = it->second.real_device;
     if (it->second.bound && it->second.bound_memory != VK_NULL_HANDLE) {
         auto mem_it = memories_.find(handle_key(it->second.bound_memory));
         if (mem_it != memories_.end()) {
@@ -38,6 +55,9 @@ bool ResourceTracker::destroy_buffer(VkBuffer buffer) {
                                           }),
                            bindings.end());
         }
+    }
+    if (real_handle != VK_NULL_HANDLE) {
+        vkDestroyBuffer(real_device, real_handle, nullptr);
     }
     buffers_.erase(it);
     return true;
@@ -52,20 +72,32 @@ bool ResourceTracker::get_buffer_requirements(VkBuffer buffer, VkMemoryRequireme
     if (it == buffers_.end()) {
         return false;
     }
-    if (!it->second.requirements_valid) {
-        it->second.requirements = make_buffer_memory_requirements(it->second.size);
-        it->second.requirements_valid = true;
-    }
-    *requirements = it->second.requirements;
+    vkGetBufferMemoryRequirements(it->second.real_device, it->second.real_handle, requirements);
+    it->second.requirements = *requirements;
+    it->second.requirements_valid = true;
     return true;
 }
 
-VkImage ResourceTracker::create_image(VkDevice device, const VkImageCreateInfo& info) {
+VkImage ResourceTracker::create_image(VkDevice device,
+                                      VkDevice real_device,
+                                      const VkImageCreateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkImage real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateImage(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Venus Server] vkCreateImage failed: " << result << "\n";
+        return VK_NULL_HANDLE;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     VkImage handle = reinterpret_cast<VkImage>(next_image_handle_++);
     ImageResource resource = {};
     resource.handle_device = device;
+    resource.real_device = real_device;
     resource.handle = handle;
+    resource.real_handle = real_handle;
     resource.type = info.imageType;
     resource.format = info.format;
     resource.extent = info.extent;
@@ -84,6 +116,8 @@ bool ResourceTracker::destroy_image(VkImage image) {
     if (it == images_.end()) {
         return false;
     }
+    VkImage real_handle = it->second.real_handle;
+    VkDevice real_device = it->second.real_device;
     if (it->second.bound && it->second.bound_memory != VK_NULL_HANDLE) {
         auto mem_it = memories_.find(handle_key(it->second.bound_memory));
         if (mem_it != memories_.end()) {
@@ -94,6 +128,9 @@ bool ResourceTracker::destroy_image(VkImage image) {
                                           }),
                            bindings.end());
         }
+    }
+    if (real_handle != VK_NULL_HANDLE) {
+        vkDestroyImage(real_device, real_handle, nullptr);
     }
     images_.erase(it);
     return true;
@@ -108,21 +145,32 @@ bool ResourceTracker::get_image_requirements(VkImage image, VkMemoryRequirements
     if (it == images_.end()) {
         return false;
     }
-    if (!it->second.requirements_valid) {
-        it->second.requirements = make_image_memory_requirements(
-            it->second.format, it->second.extent, it->second.mip_levels, it->second.array_layers, it->second.samples);
-        it->second.requirements_valid = true;
-    }
-    *requirements = it->second.requirements;
+    vkGetImageMemoryRequirements(it->second.real_device, it->second.real_handle, requirements);
+    it->second.requirements = *requirements;
+    it->second.requirements_valid = true;
     return true;
 }
 
-VkDeviceMemory ResourceTracker::allocate_memory(VkDevice device, const VkMemoryAllocateInfo& info) {
+VkDeviceMemory ResourceTracker::allocate_memory(VkDevice device,
+                                                VkDevice real_device,
+                                                const VkMemoryAllocateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkDeviceMemory real_handle = VK_NULL_HANDLE;
+    VkResult result = vkAllocateMemory(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Venus Server] vkAllocateMemory failed: " << result << "\n";
+        return VK_NULL_HANDLE;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     VkDeviceMemory handle = reinterpret_cast<VkDeviceMemory>(next_memory_handle_++);
     MemoryResource resource = {};
     resource.handle_device = device;
+    resource.real_device = real_device;
     resource.handle = handle;
+    resource.real_handle = real_handle;
     resource.size = info.allocationSize;
     resource.type_index = info.memoryTypeIndex;
     memories_[handle_key(handle)] = resource;
@@ -135,6 +183,8 @@ bool ResourceTracker::free_memory(VkDeviceMemory memory) {
     if (it == memories_.end()) {
         return false;
     }
+    VkDeviceMemory real_handle = it->second.real_handle;
+    VkDevice real_device = it->second.real_device;
 
     // Clear bindings referencing this allocation
     for (const auto& binding : it->second.buffer_bindings) {
@@ -154,6 +204,9 @@ bool ResourceTracker::free_memory(VkDeviceMemory memory) {
         }
     }
 
+    if (real_handle != VK_NULL_HANDLE) {
+        vkFreeMemory(real_device, real_handle, nullptr);
+    }
     memories_.erase(it);
     return true;
 }
@@ -198,6 +251,15 @@ bool ResourceTracker::bind_buffer_memory(VkBuffer buffer,
     }
 
     if (!check_memory_overlap_locked(mem, offset, buf.requirements.size, error_message)) {
+        return false;
+    }
+
+    VkResult bind_result =
+        vkBindBufferMemory(buf.real_device, buf.real_handle, mem.real_handle, offset);
+    if (bind_result != VK_SUCCESS) {
+        if (error_message) {
+            *error_message = "vkBindBufferMemory failed: " + std::to_string(bind_result);
+        }
         return false;
     }
 
@@ -252,6 +314,15 @@ bool ResourceTracker::bind_image_memory(VkImage image,
         return false;
     }
 
+    VkResult bind_result =
+        vkBindImageMemory(img.real_device, img.real_handle, mem.real_handle, offset);
+    if (bind_result != VK_SUCCESS) {
+        if (error_message) {
+            *error_message = "vkBindImageMemory failed: " + std::to_string(bind_result);
+        }
+        return false;
+    }
+
     img.bound = true;
     img.bound_memory = memory;
     img.bound_offset = offset;
@@ -273,34 +344,7 @@ bool ResourceTracker::get_image_subresource_layout(VkImage image,
     }
 
     const ImageResource& img = it->second;
-    if (subresource.mipLevel >= img.mip_levels || subresource.arrayLayer >= img.array_layers) {
-        return false;
-    }
-
-    const uint32_t bpp = format_bytes_per_pixel(img.format);
-    const uint32_t mip_level = subresource.mipLevel;
-
-    VkDeviceSize layer_pitch = compute_layer_pitch_locked(img);
-    VkDeviceSize offset = subresource.arrayLayer * layer_pitch;
-    for (uint32_t level = 0; level < mip_level; ++level) {
-        VkDeviceSize mip_size = compute_mip_level_size(img.extent, level, bpp, img.samples);
-        offset += align_up(mip_size, 4096);
-    }
-    offset = align_up(offset, 4096);
-
-    uint32_t width = std::max(1u, img.extent.width >> mip_level);
-    uint32_t height = std::max(1u, img.extent.height >> mip_level);
-    uint32_t depth = std::max(1u, img.extent.depth >> mip_level);
-
-    VkDeviceSize row_pitch = static_cast<VkDeviceSize>(width) * bpp;
-    VkDeviceSize depth_pitch = row_pitch * height;
-    VkDeviceSize size = depth_pitch * depth;
-
-    layout->offset = offset;
-    layout->size = size;
-    layout->rowPitch = row_pitch;
-    layout->depthPitch = depth_pitch;
-    layout->arrayPitch = layer_pitch;
+    vkGetImageSubresourceLayout(img.real_device, img.real_handle, &subresource, layout);
     return true;
 }
 
@@ -309,9 +353,36 @@ bool ResourceTracker::buffer_exists(VkBuffer buffer) const {
     return buffers_.find(handle_key(buffer)) != buffers_.end();
 }
 
+VkBuffer ResourceTracker::get_real_buffer(VkBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(handle_key(buffer));
+    if (it == buffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
 bool ResourceTracker::image_exists(VkImage image) const {
     std::lock_guard<std::mutex> lock(mutex_);
     return images_.find(handle_key(image)) != images_.end();
+}
+
+VkImage ResourceTracker::get_real_image(VkImage image) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = images_.find(handle_key(image));
+    if (it == images_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkDeviceMemory ResourceTracker::get_real_memory(VkDeviceMemory memory) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
 }
 
 bool ResourceTracker::ranges_overlap(VkDeviceSize offset_a, VkDeviceSize size_a, VkDeviceSize offset_b, VkDeviceSize size_b) {

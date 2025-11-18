@@ -6,38 +6,69 @@
 #include "state/command_buffer_state.h"
 #include "state/command_validator.h"
 #include "state/sync_manager.h"
+#include "vulkan/vulkan_context.h"
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
 
 struct QueueInfo {
-    VkQueue handle;
-    uint32_t family_index;
-    uint32_t queue_index;
+    VkQueue client_handle = VK_NULL_HANDLE;
+    VkQueue real_handle = VK_NULL_HANDLE;
+    uint32_t family_index = 0;
+    uint32_t queue_index = 0;
 };
 
 struct DeviceInfo {
-    VkDevice handle;
-    VkPhysicalDevice physical_device;
+    VkDevice client_handle = VK_NULL_HANDLE;
+    VkDevice real_handle = VK_NULL_HANDLE;
+    VkPhysicalDevice client_physical_device = VK_NULL_HANDLE;
+    VkPhysicalDevice real_physical_device = VK_NULL_HANDLE;
     std::vector<QueueInfo> queues;
+};
+
+struct PhysicalDeviceInfo {
+    VkPhysicalDevice client_handle = VK_NULL_HANDLE;
+    VkPhysicalDevice real_handle = VK_NULL_HANDLE;
+    VkPhysicalDeviceProperties properties = {};
+    VkPhysicalDeviceMemoryProperties memory_properties = {};
+    std::vector<VkQueueFamilyProperties> queue_families;
+};
+
+struct InstanceInfo {
+    VkInstance client_handle = VK_NULL_HANDLE;
+    VkInstance real_handle = VK_NULL_HANDLE;
 };
 
 struct ServerState {
     ServerState();
+
+    bool initialize_vulkan(bool enable_validation);
+    void shutdown_vulkan();
+    bool vulkan_ready() const { return real_physical_device != VK_NULL_HANDLE; }
 
     venus_plus::HandleMap<VkInstance> instance_map;
     venus_plus::HandleMap<VkPhysicalDevice> physical_device_map;
     venus_plus::HandleMap<VkDevice> device_map;
     venus_plus::HandleMap<VkQueue> queue_map;
 
+    std::unordered_map<VkInstance, InstanceInfo> instance_info_map;
+    std::unordered_map<VkPhysicalDevice, PhysicalDeviceInfo> physical_device_info_map;
     std::unordered_map<VkDevice, DeviceInfo> device_info_map;
+    std::unordered_map<VkQueue, QueueInfo> queue_info_map;
 
     uint64_t next_instance_handle = 1;
     uint64_t next_physical_device_handle = 0x1000;
     uint64_t next_device_handle = 0x2000;
     uint64_t next_queue_handle = 0x3000;
     VkPhysicalDevice fake_device_handle = VK_NULL_HANDLE;
+    VkPhysicalDevice real_physical_device = VK_NULL_HANDLE;
+    VkInstance real_instance = VK_NULL_HANDLE;
+    VkPhysicalDeviceProperties physical_device_properties = {};
+    VkPhysicalDeviceMemoryProperties physical_device_memory_properties = {};
+    std::vector<VkQueueFamilyProperties> queue_family_properties;
+
+    venus_plus::VulkanContext vulkan_context;
     venus_plus::ResourceTracker resource_tracker;
     venus_plus::CommandBufferState command_buffer_state;
     venus_plus::CommandValidator command_validator;
@@ -49,17 +80,27 @@ namespace venus_plus {
 VkInstance server_state_alloc_instance(ServerState* state);
 void server_state_remove_instance(ServerState* state, VkInstance instance);
 bool server_state_instance_exists(const ServerState* state, VkInstance instance);
+VkInstance server_state_get_real_instance(const ServerState* state, VkInstance instance);
 VkPhysicalDevice server_state_get_fake_device(ServerState* state);
+VkPhysicalDevice server_state_get_real_physical_device(const ServerState* state, VkPhysicalDevice physical_device);
 
 // Phase 3: Device management
-VkDevice server_state_alloc_device(ServerState* state, VkPhysicalDevice physical_device);
+VkDevice server_state_alloc_device(ServerState* state,
+                                   VkPhysicalDevice physical_device,
+                                   VkDevice real_device);
 void server_state_remove_device(ServerState* state, VkDevice device);
 bool server_state_device_exists(const ServerState* state, VkDevice device);
 VkPhysicalDevice server_state_get_device_physical_device(const ServerState* state, VkDevice device);
+VkDevice server_state_get_real_device(const ServerState* state, VkDevice device);
 
 // Phase 3: Queue management
-VkQueue server_state_alloc_queue(ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index);
+VkQueue server_state_alloc_queue(ServerState* state,
+                                 VkDevice device,
+                                 uint32_t family_index,
+                                 uint32_t queue_index,
+                                 VkQueue real_queue);
 VkQueue server_state_find_queue(const ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index);
+VkQueue server_state_get_real_queue(const ServerState* state, VkQueue queue);
 
 // Phase 4: Resource management helpers
 VkDeviceMemory server_state_alloc_memory(ServerState* state, VkDevice device, const VkMemoryAllocateInfo* info);
@@ -73,6 +114,9 @@ bool server_state_destroy_image(ServerState* state, VkImage image);
 bool server_state_get_image_memory_requirements(ServerState* state, VkImage image, VkMemoryRequirements* requirements);
 VkResult server_state_bind_image_memory(ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
 bool server_state_get_image_subresource_layout(ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
+VkBuffer server_state_get_real_buffer(const ServerState* state, VkBuffer buffer);
+VkImage server_state_get_real_image(const ServerState* state, VkImage image);
+VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMemory memory);
 
 VkCommandPool server_state_create_command_pool(ServerState* state, VkDevice device, const VkCommandPoolCreateInfo* info);
 bool server_state_destroy_command_pool(ServerState* state, VkCommandPool pool);
@@ -84,6 +128,7 @@ VkResult server_state_end_command_buffer(ServerState* state, VkCommandBuffer com
 VkResult server_state_reset_command_buffer(ServerState* state, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
 bool server_state_command_buffer_is_recording(const ServerState* state, VkCommandBuffer commandBuffer);
 void server_state_mark_command_buffer_invalid(ServerState* state, VkCommandBuffer commandBuffer);
+VkCommandBuffer server_state_get_real_command_buffer(const ServerState* state, VkCommandBuffer commandBuffer);
 bool server_state_validate_cmd_copy_buffer(ServerState* state, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* regions);
 bool server_state_validate_cmd_copy_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageCopy* regions);
 bool server_state_validate_cmd_blit_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageBlit* regions);

@@ -29,6 +29,33 @@ static bool command_buffer_recording_guard(struct ServerState* state,
     return true;
 }
 
+static VkCommandBuffer get_real_command_buffer(struct ServerState* state,
+                                               VkCommandBuffer command_buffer,
+                                               const char* name) {
+    VkCommandBuffer real = server_state_bridge_get_real_command_buffer(state, command_buffer);
+    if (real == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Failed to translate command buffer for %s\n", name);
+        server_state_bridge_mark_command_buffer_invalid(state, command_buffer);
+    }
+    return real;
+}
+
+static VkBuffer get_real_buffer(struct ServerState* state, VkBuffer buffer, const char* name) {
+    VkBuffer real = server_state_bridge_get_real_buffer(state, buffer);
+    if (real == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Failed to translate buffer for %s\n", name);
+    }
+    return real;
+}
+
+static VkImage get_real_image(struct ServerState* state, VkImage image, const char* name) {
+    VkImage real = server_state_bridge_get_real_image(state, image);
+    if (real == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Failed to translate image for %s\n", name);
+    }
+    return real;
+}
+
 static void server_dispatch_vkCreateInstance(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkCreateInstance* args) {
     printf("[Venus Server] Dispatching vkCreateInstance\n");
@@ -115,30 +142,58 @@ static void server_dispatch_vkGetPhysicalDeviceProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceProperties* args) {
     printf("[Venus Server] Dispatching vkGetPhysicalDeviceProperties\n");
-    (void)ctx;
-    if (args->pProperties) {
-        fake_gpu_data_bridge_get_properties(args->pProperties);
-        printf("[Venus Server]   -> Returned fake properties\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pProperties) {
+        printf("[Venus Server]   -> ERROR: pProperties is NULL\n");
+        return;
     }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+    vkGetPhysicalDeviceProperties(real_device, args->pProperties);
+    printf("[Venus Server]   -> Returned real properties\n");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFeatures(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceFeatures* args) {
     printf("[Venus Server] Dispatching vkGetPhysicalDeviceFeatures\n");
-    (void)ctx;
-    if (args->pFeatures) {
-        fake_gpu_data_bridge_get_features(args->pFeatures);
-        printf("[Venus Server]   -> Returned fake features\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pFeatures) {
+        printf("[Venus Server]   -> ERROR: pFeatures is NULL\n");
+        return;
     }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+    vkGetPhysicalDeviceFeatures(real_device, args->pFeatures);
+    printf("[Venus Server]   -> Returned real features\n");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceQueueFamilyProperties* args) {
     printf("[Venus Server] Dispatching vkGetPhysicalDeviceQueueFamilyProperties\n");
-    (void)ctx;
-    fake_gpu_data_bridge_get_queue_families(args->pQueueFamilyPropertyCount, args->pQueueFamilyProperties);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pQueueFamilyPropertyCount) {
+        printf("[Venus Server]   -> ERROR: pQueueFamilyPropertyCount is NULL\n");
+        return;
+    }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+    vkGetPhysicalDeviceQueueFamilyProperties(real_device,
+                                             args->pQueueFamilyPropertyCount,
+                                             args->pQueueFamilyProperties);
     if (args->pQueueFamilyProperties) {
         printf("[Venus Server]   -> Returned %u queue families\n", *args->pQueueFamilyPropertyCount);
     } else {
@@ -150,23 +205,38 @@ static void server_dispatch_vkGetPhysicalDeviceMemoryProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceMemoryProperties* args) {
     printf("[Venus Server] Dispatching vkGetPhysicalDeviceMemoryProperties\n");
-    (void)ctx;
-    if (args->pMemoryProperties) {
-        fake_gpu_data_bridge_get_memory_properties(args->pMemoryProperties);
-        printf("[Venus Server]   -> Returned fake memory properties\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pMemoryProperties) {
+        printf("[Venus Server]   -> ERROR: pMemoryProperties is NULL\n");
+        return;
     }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+    vkGetPhysicalDeviceMemoryProperties(real_device, args->pMemoryProperties);
+    printf("[Venus Server]   -> Returned real memory properties\n");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFormatProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceFormatProperties* args) {
     printf("[Venus Server] Dispatching vkGetPhysicalDeviceFormatProperties (format: %d)\n", args->format);
-    (void)ctx;
-    if (args->pFormatProperties) {
-        // For Phase 3, return empty format properties (no format support)
-        memset(args->pFormatProperties, 0, sizeof(VkFormatProperties));
-        printf("[Venus Server]   -> Returned empty format properties\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pFormatProperties) {
+        printf("[Venus Server]   -> ERROR: pFormatProperties is NULL\n");
+        return;
     }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+    vkGetPhysicalDeviceFormatProperties(real_device, args->format, args->pFormatProperties);
+    printf("[Venus Server]   -> Returned real format properties\n");
 }
 
 // Phase 3: Device creation/destruction handlers
@@ -177,14 +247,38 @@ static void server_dispatch_vkCreateDevice(
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
-    if (!args->pDevice) {
+    if (!args->pDevice || !args->pCreateInfo) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pDevice is NULL\n");
+        printf("[Venus Server]   -> ERROR: pDevice or pCreateInfo is NULL\n");
         return;
     }
 
-    // Allocate device handle
-    *args->pDevice = server_state_bridge_alloc_device(state, args->physicalDevice);
+    VkPhysicalDevice real_physical =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_physical == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        return;
+    }
+
+    VkDevice real_device = VK_NULL_HANDLE;
+    VkResult create_result = vkCreateDevice(real_physical, args->pCreateInfo, args->pAllocator, &real_device);
+    if (create_result != VK_SUCCESS) {
+        args->ret = create_result;
+        printf("[Venus Server]   -> ERROR: vkCreateDevice failed: %d\n", create_result);
+        return;
+    }
+
+    VkDevice client_handle =
+        server_state_bridge_alloc_device(state, args->physicalDevice, real_device);
+    if (client_handle == VK_NULL_HANDLE) {
+        vkDestroyDevice(real_device, args->pAllocator);
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Failed to allocate server device handle\n");
+        return;
+    }
+
+    *args->pDevice = client_handle;
     printf("[Venus Server]   -> Created device handle: %p\n", (void*)*args->pDevice);
 }
 
@@ -194,6 +288,11 @@ static void server_dispatch_vkDestroyDevice(
     printf("[Venus Server] Dispatching vkDestroyDevice (handle: %p)\n", (void*)args->device);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->device != VK_NULL_HANDLE && server_state_bridge_device_exists(state, args->device)) {
+        VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+        if (real_device != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(real_device);
+            vkDestroyDevice(real_device, args->pAllocator);
+        }
         server_state_bridge_remove_device(state, args->device);
         printf("[Venus Server]   -> Device destroyed\n");
     } else {
@@ -219,8 +318,19 @@ static void server_dispatch_vkGetDeviceQueue(
         *args->pQueue = existing;
         printf("[Venus Server]   -> Returned existing queue: %p\n", (void*)existing);
     } else {
-        // Allocate new queue
-        *args->pQueue = server_state_bridge_alloc_queue(state, args->device, args->queueFamilyIndex, args->queueIndex);
+        VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+        if (real_device == VK_NULL_HANDLE) {
+            printf("[Venus Server]   -> ERROR: Unknown device\n");
+            return;
+        }
+        VkQueue real_queue = VK_NULL_HANDLE;
+        vkGetDeviceQueue(real_device, args->queueFamilyIndex, args->queueIndex, &real_queue);
+        if (real_queue == VK_NULL_HANDLE) {
+            printf("[Venus Server]   -> ERROR: vkGetDeviceQueue failed\n");
+            return;
+        }
+        *args->pQueue = server_state_bridge_alloc_queue(
+            state, args->device, args->queueFamilyIndex, args->queueIndex, real_queue);
         printf("[Venus Server]   -> Created new queue: %p\n", (void*)*args->pQueue);
     }
 }
@@ -521,7 +631,15 @@ static void server_dispatch_vkCmdCopyBuffer(struct vn_dispatch_context* ctx,
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdCopyBuffer validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdCopyBuffer");
+    VkBuffer real_src = get_real_buffer(state, args->srcBuffer, "vkCmdCopyBuffer");
+    VkBuffer real_dst = get_real_buffer(state, args->dstBuffer, "vkCmdCopyBuffer");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdCopyBuffer(real_cb, real_src, real_dst, args->regionCount, args->pRegions);
+    printf("[Venus Server]   -> vkCmdCopyBuffer recorded\n");
 }
 
 static void server_dispatch_vkCmdCopyImage(struct vn_dispatch_context* ctx,
@@ -539,7 +657,21 @@ static void server_dispatch_vkCmdCopyImage(struct vn_dispatch_context* ctx,
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdCopyImage validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdCopyImage");
+    VkImage real_src = get_real_image(state, args->srcImage, "vkCmdCopyImage");
+    VkImage real_dst = get_real_image(state, args->dstImage, "vkCmdCopyImage");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdCopyImage(real_cb,
+                   real_src,
+                   args->srcImageLayout,
+                   real_dst,
+                   args->dstImageLayout,
+                   args->regionCount,
+                   args->pRegions);
+    printf("[Venus Server]   -> vkCmdCopyImage recorded\n");
 }
 
 static void server_dispatch_vkCmdBlitImage(struct vn_dispatch_context* ctx,
@@ -557,7 +689,22 @@ static void server_dispatch_vkCmdBlitImage(struct vn_dispatch_context* ctx,
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdBlitImage validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBlitImage");
+    VkImage real_src = get_real_image(state, args->srcImage, "vkCmdBlitImage");
+    VkImage real_dst = get_real_image(state, args->dstImage, "vkCmdBlitImage");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdBlitImage(real_cb,
+                   real_src,
+                   args->srcImageLayout,
+                   real_dst,
+                   args->dstImageLayout,
+                   args->regionCount,
+                   args->pRegions,
+                   args->filter);
+    printf("[Venus Server]   -> vkCmdBlitImage recorded\n");
 }
 
 static void server_dispatch_vkCmdCopyBufferToImage(struct vn_dispatch_context* ctx,
@@ -575,7 +722,20 @@ static void server_dispatch_vkCmdCopyBufferToImage(struct vn_dispatch_context* c
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdCopyBufferToImage validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdCopyBufferToImage");
+    VkBuffer real_src = get_real_buffer(state, args->srcBuffer, "vkCmdCopyBufferToImage");
+    VkImage real_dst = get_real_image(state, args->dstImage, "vkCmdCopyBufferToImage");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdCopyBufferToImage(real_cb,
+                           real_src,
+                           real_dst,
+                           args->dstImageLayout,
+                           args->regionCount,
+                           args->pRegions);
+    printf("[Venus Server]   -> vkCmdCopyBufferToImage recorded\n");
 }
 
 static void server_dispatch_vkCmdCopyImageToBuffer(struct vn_dispatch_context* ctx,
@@ -593,7 +753,20 @@ static void server_dispatch_vkCmdCopyImageToBuffer(struct vn_dispatch_context* c
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdCopyImageToBuffer validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdCopyImageToBuffer");
+    VkImage real_src = get_real_image(state, args->srcImage, "vkCmdCopyImageToBuffer");
+    VkBuffer real_dst = get_real_buffer(state, args->dstBuffer, "vkCmdCopyImageToBuffer");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdCopyImageToBuffer(real_cb,
+                           real_src,
+                           args->srcImageLayout,
+                           real_dst,
+                           args->regionCount,
+                           args->pRegions);
+    printf("[Venus Server]   -> vkCmdCopyImageToBuffer recorded\n");
 }
 
 static void server_dispatch_vkCmdFillBuffer(struct vn_dispatch_context* ctx,
@@ -607,7 +780,14 @@ static void server_dispatch_vkCmdFillBuffer(struct vn_dispatch_context* ctx,
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdFillBuffer validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdFillBuffer");
+    VkBuffer real_dst = get_real_buffer(state, args->dstBuffer, "vkCmdFillBuffer");
+    if (real_cb == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdFillBuffer(real_cb, real_dst, args->dstOffset, args->size, args->data);
+    printf("[Venus Server]   -> vkCmdFillBuffer recorded\n");
 }
 
 static void server_dispatch_vkCmdUpdateBuffer(struct vn_dispatch_context* ctx,
@@ -625,7 +805,14 @@ static void server_dispatch_vkCmdUpdateBuffer(struct vn_dispatch_context* ctx,
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdUpdateBuffer validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdUpdateBuffer");
+    VkBuffer real_dst = get_real_buffer(state, args->dstBuffer, "vkCmdUpdateBuffer");
+    if (real_cb == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdUpdateBuffer(real_cb, real_dst, args->dstOffset, args->dataSize, args->pData);
+    printf("[Venus Server]   -> vkCmdUpdateBuffer recorded\n");
 }
 
 static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx,
@@ -642,7 +829,19 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
     }
-    printf("[Venus Server]   -> vkCmdClearColorImage validated\n");
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdClearColorImage");
+    VkImage real_image = get_real_image(state, args->image, "vkCmdClearColorImage");
+    if (real_cb == VK_NULL_HANDLE || real_image == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdClearColorImage(real_cb,
+                         real_image,
+                         args->imageLayout,
+                         args->pColor,
+                         args->rangeCount,
+                         args->pRanges);
+    printf("[Venus Server]   -> vkCmdClearColorImage recorded\n");
 }
 
 static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,

@@ -19,11 +19,14 @@ class CommandBufferState {
 public:
     CommandBufferState();
 
-    VkCommandPool create_pool(VkDevice device, const VkCommandPoolCreateInfo& info);
+    VkCommandPool create_pool(VkDevice device,
+                              VkDevice real_device,
+                              const VkCommandPoolCreateInfo& info);
     bool destroy_pool(VkCommandPool pool);
     VkResult reset_pool(VkCommandPool pool, VkCommandPoolResetFlags flags);
 
     VkResult allocate_command_buffers(VkDevice device,
+                                      VkDevice real_device,
                                       const VkCommandBufferAllocateInfo& info,
                                       std::vector<VkCommandBuffer>* out_buffers);
     void free_command_buffers(VkCommandPool pool, const std::vector<VkCommandBuffer>& buffers);
@@ -36,10 +39,14 @@ public:
     bool buffer_exists(VkCommandBuffer buffer) const;
     void invalidate(VkCommandBuffer buffer);
     ServerCommandBufferState get_state(VkCommandBuffer buffer) const;
+    VkCommandBuffer get_real_buffer(VkCommandBuffer buffer) const;
+    VkCommandPool get_real_pool(VkCommandPool pool) const;
 
 private:
     struct PoolEntry {
         VkDevice device = VK_NULL_HANDLE;
+        VkDevice real_device = VK_NULL_HANDLE;
+        VkCommandPool real_pool = VK_NULL_HANDLE;
         VkCommandPoolCreateFlags flags = 0;
         uint32_t queue_family_index = 0;
         std::vector<VkCommandBuffer> buffers;
@@ -47,7 +54,9 @@ private:
 
     struct BufferEntry {
         VkDevice device = VK_NULL_HANDLE;
+        VkDevice real_device = VK_NULL_HANDLE;
         VkCommandPool pool = VK_NULL_HANDLE;
+        VkCommandBuffer real_buffer = VK_NULL_HANDLE;
         VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         ServerCommandBufferState state = ServerCommandBufferState::INITIAL;
     };

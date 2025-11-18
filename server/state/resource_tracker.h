@@ -14,17 +14,26 @@ class ResourceTracker {
 public:
     ResourceTracker();
 
-    VkBuffer create_buffer(VkDevice device, const VkBufferCreateInfo& info);
+    VkBuffer create_buffer(VkDevice client_device,
+                           VkDevice real_device,
+                           const VkBufferCreateInfo& info);
     bool destroy_buffer(VkBuffer buffer);
     bool get_buffer_requirements(VkBuffer buffer, VkMemoryRequirements* requirements);
+    VkBuffer get_real_buffer(VkBuffer buffer) const;
 
-    VkImage create_image(VkDevice device, const VkImageCreateInfo& info);
+    VkImage create_image(VkDevice client_device,
+                         VkDevice real_device,
+                         const VkImageCreateInfo& info);
     bool destroy_image(VkImage image);
     bool get_image_requirements(VkImage image, VkMemoryRequirements* requirements);
     bool get_image_subresource_layout(VkImage image, const VkImageSubresource& subresource, VkSubresourceLayout* layout) const;
+    VkImage get_real_image(VkImage image) const;
 
-    VkDeviceMemory allocate_memory(VkDevice device, const VkMemoryAllocateInfo& info);
+    VkDeviceMemory allocate_memory(VkDevice client_device,
+                                   VkDevice real_device,
+                                   const VkMemoryAllocateInfo& info);
     bool free_memory(VkDeviceMemory memory);
+    VkDeviceMemory get_real_memory(VkDeviceMemory memory) const;
 
     bool bind_buffer_memory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);
     bool bind_image_memory(VkImage image, VkDeviceMemory memory, VkDeviceSize offset, std::string* error_message);
@@ -35,7 +44,9 @@ public:
 private:
     struct BufferResource {
         VkDevice handle_device;
+        VkDevice real_device;
         VkBuffer handle;
+        VkBuffer real_handle;
         VkDeviceSize size;
         VkBufferUsageFlags usage;
         bool bound = false;
@@ -47,7 +58,9 @@ private:
 
     struct ImageResource {
         VkDevice handle_device;
+        VkDevice real_device;
         VkImage handle;
+        VkImage real_handle;
         VkImageType type;
         VkFormat format;
         VkExtent3D extent;
@@ -77,7 +90,9 @@ private:
 
     struct MemoryResource {
         VkDevice handle_device;
+        VkDevice real_device;
         VkDeviceMemory handle;
+        VkDeviceMemory real_handle;
         VkDeviceSize size;
         uint32_t type_index;
         std::vector<BufferBinding> buffer_bindings;

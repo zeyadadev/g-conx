@@ -14,12 +14,28 @@ VkInstance server_state_bridge_alloc_instance(struct ServerState* state);
 void server_state_bridge_remove_instance(struct ServerState* state, VkInstance instance);
 bool server_state_bridge_instance_exists(const struct ServerState* state, VkInstance instance);
 VkPhysicalDevice server_state_bridge_get_fake_device(struct ServerState* state);
+VkInstance server_state_bridge_get_real_instance(const struct ServerState* state, VkInstance instance);
+VkPhysicalDevice server_state_bridge_get_real_physical_device(const struct ServerState* state,
+                                                              VkPhysicalDevice physical_device);
+VkDevice server_state_bridge_get_real_device(const struct ServerState* state, VkDevice device);
+VkQueue server_state_bridge_get_real_queue(const struct ServerState* state, VkQueue queue);
+VkBuffer server_state_bridge_get_real_buffer(const struct ServerState* state, VkBuffer buffer);
+VkImage server_state_bridge_get_real_image(const struct ServerState* state, VkImage image);
+VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* state, VkDeviceMemory memory);
+VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
+                                                            VkCommandBuffer commandBuffer);
 
 // Phase 3: Device and queue management
-VkDevice server_state_bridge_alloc_device(struct ServerState* state, VkPhysicalDevice physical_device);
+VkDevice server_state_bridge_alloc_device(struct ServerState* state,
+                                          VkPhysicalDevice physical_device,
+                                          VkDevice real_device);
 void server_state_bridge_remove_device(struct ServerState* state, VkDevice device);
 bool server_state_bridge_device_exists(const struct ServerState* state, VkDevice device);
-VkQueue server_state_bridge_alloc_queue(struct ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index);
+VkQueue server_state_bridge_alloc_queue(struct ServerState* state,
+                                        VkDevice device,
+                                        uint32_t family_index,
+                                        uint32_t queue_index,
+                                        VkQueue real_queue);
 VkQueue server_state_bridge_find_queue(const struct ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index);
 
 // Phase 4: Resource management bridge

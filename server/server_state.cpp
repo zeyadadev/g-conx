@@ -4,13 +4,86 @@
 #include <string>
 #include <vector>
 #include <cstdio>
-
-namespace venus_plus {
+#include <iostream>
 
 ServerState::ServerState()
     : resource_tracker(),
       command_buffer_state(),
       command_validator(&resource_tracker) {}
+
+bool ServerState::initialize_vulkan(bool enable_validation) {
+    venus_plus::VulkanContextCreateInfo info = {};
+    info.enable_validation = enable_validation;
+    if (!vulkan_context.initialize(info)) {
+        std::cerr << "[Venus Server] Failed to initialize Vulkan context\n";
+        return false;
+    }
+
+    real_instance = vulkan_context.instance();
+
+    uint32_t physical_count = 0;
+    VkResult result = vkEnumeratePhysicalDevices(real_instance, &physical_count, nullptr);
+    if (result != VK_SUCCESS || physical_count == 0) {
+        std::cerr << "[Venus Server] No physical devices available (result=" << result << ")\n";
+        return false;
+    }
+
+    std::vector<VkPhysicalDevice> physical_devices(physical_count);
+    result = vkEnumeratePhysicalDevices(real_instance, &physical_count, physical_devices.data());
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Venus Server] Failed to enumerate physical devices (result=" << result << ")\n";
+        return false;
+    }
+
+    VkPhysicalDeviceProperties chosen_props = {};
+    VkPhysicalDevice chosen_device = VK_NULL_HANDLE;
+    for (VkPhysicalDevice device : physical_devices) {
+        VkPhysicalDeviceProperties props = {};
+        vkGetPhysicalDeviceProperties(device, &props);
+        if (chosen_device == VK_NULL_HANDLE) {
+            chosen_device = device;
+            chosen_props = props;
+        }
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            chosen_device = device;
+            chosen_props = props;
+            break;
+        }
+    }
+
+    if (chosen_device == VK_NULL_HANDLE) {
+        std::cerr << "[Venus Server] Failed to pick a physical device\n";
+        return false;
+    }
+
+    real_physical_device = chosen_device;
+    physical_device_properties = chosen_props;
+    vkGetPhysicalDeviceMemoryProperties(real_physical_device, &physical_device_memory_properties);
+
+    uint32_t queue_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(real_physical_device, &queue_count, nullptr);
+    queue_family_properties.resize(queue_count);
+    if (queue_count > 0) {
+        vkGetPhysicalDeviceQueueFamilyProperties(real_physical_device,
+                                                 &queue_count,
+                                                 queue_family_properties.data());
+    }
+
+    std::cout << "[Venus Server] Selected GPU: " << physical_device_properties.deviceName << "\n";
+    return true;
+}
+
+void ServerState::shutdown_vulkan() {
+    queue_family_properties.clear();
+    physical_device_info_map.clear();
+    instance_info_map.clear();
+    real_physical_device = VK_NULL_HANDLE;
+    real_instance = VK_NULL_HANDLE;
+    fake_device_handle = VK_NULL_HANDLE;
+    vulkan_context.shutdown();
+}
+
+namespace venus_plus {
 
 static const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const void* pNext) {
     const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(pNext);
@@ -35,35 +108,71 @@ static const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void
 }
 
 VkInstance server_state_alloc_instance(ServerState* state) {
+    if (state->real_instance == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
     VkInstance handle = reinterpret_cast<VkInstance>(state->next_instance_handle++);
-    state->instance_map.insert(handle, handle);
+    state->instance_map.insert(handle, state->real_instance);
+    InstanceInfo info = {};
+    info.client_handle = handle;
+    info.real_handle = state->real_instance;
+    state->instance_info_map[handle] = info;
     return handle;
 }
 
 void server_state_remove_instance(ServerState* state, VkInstance instance) {
     state->instance_map.remove(instance);
+    state->instance_info_map.erase(instance);
 }
 
 bool server_state_instance_exists(const ServerState* state, VkInstance instance) {
     return state->instance_map.exists(instance);
 }
 
+VkInstance server_state_get_real_instance(const ServerState* state, VkInstance instance) {
+    return state->instance_map.lookup(instance);
+}
+
 VkPhysicalDevice server_state_get_fake_device(ServerState* state) {
     if (state->fake_device_handle == VK_NULL_HANDLE) {
-        state->fake_device_handle = reinterpret_cast<VkPhysicalDevice>(state->next_physical_device_handle++);
-        state->physical_device_map.insert(state->fake_device_handle, state->fake_device_handle);
+        if (state->real_physical_device == VK_NULL_HANDLE) {
+            return VK_NULL_HANDLE;
+        }
+        state->fake_device_handle =
+            reinterpret_cast<VkPhysicalDevice>(state->next_physical_device_handle++);
+        state->physical_device_map.insert(state->fake_device_handle, state->real_physical_device);
+
+        PhysicalDeviceInfo info = {};
+        info.client_handle = state->fake_device_handle;
+        info.real_handle = state->real_physical_device;
+        info.properties = state->physical_device_properties;
+        info.memory_properties = state->physical_device_memory_properties;
+        info.queue_families = state->queue_family_properties;
+        state->physical_device_info_map[info.client_handle] = info;
     }
     return state->fake_device_handle;
 }
 
-// Phase 3: Device management
-VkDevice server_state_alloc_device(ServerState* state, VkPhysicalDevice physical_device) {
-    VkDevice handle = reinterpret_cast<VkDevice>(state->next_device_handle++);
-    state->device_map.insert(handle, handle);
+VkPhysicalDevice server_state_get_real_physical_device(const ServerState* state,
+                                                       VkPhysicalDevice physical_device) {
+    return state->physical_device_map.lookup(physical_device);
+}
 
-    DeviceInfo info;
-    info.handle = handle;
-    info.physical_device = physical_device;
+// Phase 3: Device management
+VkDevice server_state_alloc_device(ServerState* state,
+                                   VkPhysicalDevice physical_device,
+                                   VkDevice real_device) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice handle = reinterpret_cast<VkDevice>(state->next_device_handle++);
+    state->device_map.insert(handle, real_device);
+
+    DeviceInfo info = {};
+    info.client_handle = handle;
+    info.real_handle = real_device;
+    info.client_physical_device = physical_device;
+    info.real_physical_device = server_state_get_real_physical_device(state, physical_device);
     state->device_info_map[handle] = info;
 
     return handle;
@@ -74,7 +183,8 @@ void server_state_remove_device(ServerState* state, VkDevice device) {
     auto it = state->device_info_map.find(device);
     if (it != state->device_info_map.end()) {
         for (const auto& queue_info : it->second.queues) {
-            state->queue_map.remove(queue_info.handle);
+            state->queue_map.remove(queue_info.client_handle);
+            state->queue_info_map.erase(queue_info.client_handle);
         }
         state->device_info_map.erase(it);
     }
@@ -89,22 +199,36 @@ bool server_state_device_exists(const ServerState* state, VkDevice device) {
 VkPhysicalDevice server_state_get_device_physical_device(const ServerState* state, VkDevice device) {
     auto it = state->device_info_map.find(device);
     if (it != state->device_info_map.end()) {
-        return it->second.physical_device;
+        return it->second.client_physical_device;
     }
     return VK_NULL_HANDLE;
 }
 
+VkDevice server_state_get_real_device(const ServerState* state, VkDevice device) {
+    return state->device_map.lookup(device);
+}
+
 // Phase 3: Queue management
-VkQueue server_state_alloc_queue(ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index) {
+VkQueue server_state_alloc_queue(ServerState* state,
+                                 VkDevice device,
+                                 uint32_t family_index,
+                                 uint32_t queue_index,
+                                 VkQueue real_queue) {
+    if (real_queue == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
     VkQueue handle = reinterpret_cast<VkQueue>(state->next_queue_handle++);
-    state->queue_map.insert(handle, handle);
+    state->queue_map.insert(handle, real_queue);
+
+    QueueInfo queue_info = {};
+    queue_info.client_handle = handle;
+    queue_info.real_handle = real_queue;
+    queue_info.family_index = family_index;
+    queue_info.queue_index = queue_index;
+    state->queue_info_map[handle] = queue_info;
 
     auto it = state->device_info_map.find(device);
     if (it != state->device_info_map.end()) {
-        QueueInfo queue_info;
-        queue_info.handle = handle;
-        queue_info.family_index = family_index;
-        queue_info.queue_index = queue_index;
         it->second.queues.push_back(queue_info);
     }
 
@@ -116,18 +240,23 @@ VkQueue server_state_find_queue(const ServerState* state, VkDevice device, uint3
     if (it != state->device_info_map.end()) {
         for (const auto& queue_info : it->second.queues) {
             if (queue_info.family_index == family_index && queue_info.queue_index == queue_index) {
-                return queue_info.handle;
+                return queue_info.client_handle;
             }
         }
     }
     return VK_NULL_HANDLE;
 }
 
+VkQueue server_state_get_real_queue(const ServerState* state, VkQueue queue) {
+    return state->queue_map.lookup(queue);
+}
+
 VkDeviceMemory server_state_alloc_memory(ServerState* state, VkDevice device, const VkMemoryAllocateInfo* info) {
     if (!info) {
         return VK_NULL_HANDLE;
     }
-    return state->resource_tracker.allocate_memory(device, *info);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.allocate_memory(device, real_device, *info);
 }
 
 bool server_state_free_memory(ServerState* state, VkDeviceMemory memory) {
@@ -138,7 +267,8 @@ VkBuffer server_state_create_buffer(ServerState* state, VkDevice device, const V
     if (!info) {
         return VK_NULL_HANDLE;
     }
-    return state->resource_tracker.create_buffer(device, *info);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_buffer(device, real_device, *info);
 }
 
 bool server_state_destroy_buffer(ServerState* state, VkBuffer buffer) {
@@ -167,7 +297,8 @@ VkImage server_state_create_image(ServerState* state, VkDevice device, const VkI
     if (!info) {
         return VK_NULL_HANDLE;
     }
-    return state->resource_tracker.create_image(device, *info);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_image(device, real_device, *info);
 }
 
 bool server_state_destroy_image(ServerState* state, VkImage image) {
@@ -199,13 +330,26 @@ bool server_state_get_image_subresource_layout(ServerState* state,
     return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
 }
 
+VkBuffer server_state_get_real_buffer(const ServerState* state, VkBuffer buffer) {
+    return state->resource_tracker.get_real_buffer(buffer);
+}
+
+VkImage server_state_get_real_image(const ServerState* state, VkImage image) {
+    return state->resource_tracker.get_real_image(image);
+}
+
+VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMemory memory) {
+    return state->resource_tracker.get_real_memory(memory);
+}
+
 VkCommandPool server_state_create_command_pool(ServerState* state,
                                                VkDevice device,
                                                const VkCommandPoolCreateInfo* info) {
     if (!info) {
         return VK_NULL_HANDLE;
     }
-    return state->command_buffer_state.create_pool(device, *info);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->command_buffer_state.create_pool(device, real_device, *info);
 }
 
 bool server_state_destroy_command_pool(ServerState* state, VkCommandPool pool) {
@@ -226,7 +370,8 @@ VkResult server_state_allocate_command_buffers(ServerState* state,
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     std::vector<VkCommandBuffer> temp;
-    VkResult result = state->command_buffer_state.allocate_command_buffers(device, *info, &temp);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkResult result = state->command_buffer_state.allocate_command_buffers(device, real_device, *info, &temp);
     if (result != VK_SUCCESS) {
         return result;
     }
@@ -269,6 +414,10 @@ bool server_state_command_buffer_is_recording(const ServerState* state, VkComman
 
 void server_state_mark_command_buffer_invalid(ServerState* state, VkCommandBuffer commandBuffer) {
     state->command_buffer_state.invalidate(commandBuffer);
+}
+
+VkCommandBuffer server_state_get_real_command_buffer(const ServerState* state, VkCommandBuffer commandBuffer) {
+    return state->command_buffer_state.get_real_buffer(commandBuffer);
 }
 
 static bool log_validation_result(bool result, const std::string& error_message) {
@@ -360,7 +509,8 @@ VkFence server_state_create_fence(ServerState* state, VkDevice device, const VkF
     if (!info) {
         return VK_NULL_HANDLE;
     }
-    return state->sync_manager.create_fence(device, *info);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->sync_manager.create_fence(device, real_device, *info);
 }
 
 bool server_state_destroy_fence(ServerState* state, VkFence fence) {
@@ -375,7 +525,11 @@ VkResult server_state_reset_fences(ServerState* state, uint32_t fenceCount, cons
     if (!fenceCount || !pFences) {
         return VK_SUCCESS;
     }
-    return state->sync_manager.reset_fences(pFences, fenceCount);
+    VkDevice real_device = state->sync_manager.get_fence_real_device(pFences[0]);
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return state->sync_manager.reset_fences(real_device, pFences, fenceCount);
 }
 
 VkResult server_state_wait_for_fences(ServerState* state,
@@ -386,7 +540,11 @@ VkResult server_state_wait_for_fences(ServerState* state,
     if (!fenceCount || !pFences) {
         return VK_SUCCESS;
     }
-    return state->sync_manager.wait_for_fences(pFences, fenceCount, waitAll, timeout);
+    VkDevice real_device = state->sync_manager.get_fence_real_device(pFences[0]);
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return state->sync_manager.wait_for_fences(real_device, pFences, fenceCount, waitAll, timeout);
 }
 
 VkSemaphore server_state_create_semaphore(ServerState* state,
@@ -402,7 +560,8 @@ VkSemaphore server_state_create_semaphore(ServerState* state,
         type = type_info->semaphoreType;
         initial_value = type_info->initialValue;
     }
-    return state->sync_manager.create_semaphore(device, type, initial_value);
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->sync_manager.create_semaphore(device, real_device, type, initial_value);
 }
 
 bool server_state_destroy_semaphore(ServerState* state, VkSemaphore semaphore) {
@@ -487,53 +646,80 @@ VkResult server_state_queue_submit(ServerState* state,
         }
     }
 
-    if (fence != VK_NULL_HANDLE) {
-        state->sync_manager.signal_fence(fence);
+    VkQueue real_queue = server_state_get_real_queue(state, queue);
+    if (queue != VK_NULL_HANDLE && real_queue == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
+    VkFence real_fence = state->sync_manager.get_real_fence(fence);
+
+    std::vector<VkSubmitInfo> real_submits(submitCount);
+    std::vector<std::vector<VkSemaphore>> wait_semaphores(submitCount);
+    std::vector<std::vector<VkSemaphore>> signal_semaphores(submitCount);
+    std::vector<std::vector<VkCommandBuffer>> command_buffers(submitCount);
+    std::vector<std::vector<VkPipelineStageFlags>> wait_stages(submitCount);
 
     for (uint32_t i = 0; i < submitCount; ++i) {
         const VkSubmitInfo& submit = pSubmits[i];
-        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(submit.pNext);
+        VkSubmitInfo& real_submit = real_submits[i];
+        real_submit = submit;
 
-        for (uint32_t j = 0; j < submit.waitSemaphoreCount; ++j) {
-            VkSemaphore wait_sem = submit.pWaitSemaphores[j];
-            VkSemaphoreType type = state->sync_manager.get_semaphore_type(wait_sem);
-            if (type == VK_SEMAPHORE_TYPE_BINARY) {
-                state->sync_manager.consume_binary_semaphore(wait_sem);
-            } else if (timeline && timeline->waitSemaphoreValueCount > j &&
-                       timeline->pWaitSemaphoreValues) {
-                state->sync_manager.wait_timeline_value(wait_sem, timeline->pWaitSemaphoreValues[j]);
+        if (submit.waitSemaphoreCount > 0) {
+            wait_semaphores[i].resize(submit.waitSemaphoreCount);
+            wait_stages[i].assign(submit.pWaitDstStageMask,
+                                  submit.pWaitDstStageMask + submit.waitSemaphoreCount);
+            for (uint32_t j = 0; j < submit.waitSemaphoreCount; ++j) {
+                wait_semaphores[i][j] =
+                    state->sync_manager.get_real_semaphore(submit.pWaitSemaphores[j]);
             }
+            real_submit.pWaitSemaphores = wait_semaphores[i].data();
+            real_submit.pWaitDstStageMask = wait_stages[i].data();
         }
 
-        for (uint32_t j = 0; j < submit.signalSemaphoreCount; ++j) {
-            VkSemaphore signal_sem = submit.pSignalSemaphores[j];
-            VkSemaphoreType type = state->sync_manager.get_semaphore_type(signal_sem);
-            if (type == VK_SEMAPHORE_TYPE_BINARY) {
-                state->sync_manager.signal_binary_semaphore(signal_sem);
-            } else if (timeline && timeline->signalSemaphoreValueCount > j &&
-                       timeline->pSignalSemaphoreValues) {
-                state->sync_manager.signal_timeline_value(signal_sem, timeline->pSignalSemaphoreValues[j]);
+        if (submit.commandBufferCount > 0) {
+            command_buffers[i].resize(submit.commandBufferCount);
+            for (uint32_t j = 0; j < submit.commandBufferCount; ++j) {
+                command_buffers[i][j] =
+                    server_state_get_real_command_buffer(state, submit.pCommandBuffers[j]);
             }
+            real_submit.pCommandBuffers = command_buffers[i].data();
+        }
+
+        if (submit.signalSemaphoreCount > 0) {
+            signal_semaphores[i].resize(submit.signalSemaphoreCount);
+            for (uint32_t j = 0; j < submit.signalSemaphoreCount; ++j) {
+                signal_semaphores[i][j] =
+                    state->sync_manager.get_real_semaphore(submit.pSignalSemaphores[j]);
+            }
+            real_submit.pSignalSemaphores = signal_semaphores[i].data();
         }
     }
 
-    return VK_SUCCESS;
+    return vkQueueSubmit(real_queue, submitCount, real_submits.data(), real_fence);
 }
 
 VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue) {
-    if (queue != VK_NULL_HANDLE && !state->queue_map.exists(queue)) {
+    if (queue == VK_NULL_HANDLE) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    return VK_SUCCESS;
+    if (!state->queue_map.exists(queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkQueue real_queue = server_state_get_real_queue(state, queue);
+    if (real_queue == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return vkQueueWaitIdle(real_queue);
 }
 
 VkResult server_state_device_wait_idle(ServerState* state, VkDevice device) {
-    (void)state;
     if (device == VK_NULL_HANDLE) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    return VK_SUCCESS;
+    VkDevice real_device = server_state_get_real_device(state, device);
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return vkDeviceWaitIdle(real_device);
 }
 
 } // namespace venus_plus
@@ -556,9 +742,45 @@ VkPhysicalDevice server_state_bridge_get_fake_device(struct ServerState* state) 
     return venus_plus::server_state_get_fake_device(state);
 }
 
+VkInstance server_state_bridge_get_real_instance(const struct ServerState* state, VkInstance instance) {
+    return venus_plus::server_state_get_real_instance(state, instance);
+}
+
+VkPhysicalDevice server_state_bridge_get_real_physical_device(const struct ServerState* state,
+                                                              VkPhysicalDevice physical_device) {
+    return venus_plus::server_state_get_real_physical_device(state, physical_device);
+}
+
+VkDevice server_state_bridge_get_real_device(const struct ServerState* state, VkDevice device) {
+    return venus_plus::server_state_get_real_device(state, device);
+}
+
+VkQueue server_state_bridge_get_real_queue(const struct ServerState* state, VkQueue queue) {
+    return venus_plus::server_state_get_real_queue(state, queue);
+}
+
+VkBuffer server_state_bridge_get_real_buffer(const struct ServerState* state, VkBuffer buffer) {
+    return venus_plus::server_state_get_real_buffer(state, buffer);
+}
+
+VkImage server_state_bridge_get_real_image(const struct ServerState* state, VkImage image) {
+    return venus_plus::server_state_get_real_image(state, image);
+}
+
+VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* state, VkDeviceMemory memory) {
+    return venus_plus::server_state_get_real_memory(state, memory);
+}
+
+VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
+                                                            VkCommandBuffer commandBuffer) {
+    return venus_plus::server_state_get_real_command_buffer(state, commandBuffer);
+}
+
 // Phase 3: C bridge functions for device management
-VkDevice server_state_bridge_alloc_device(struct ServerState* state, VkPhysicalDevice physical_device) {
-    return venus_plus::server_state_alloc_device(state, physical_device);
+VkDevice server_state_bridge_alloc_device(struct ServerState* state,
+                                          VkPhysicalDevice physical_device,
+                                          VkDevice real_device) {
+    return venus_plus::server_state_alloc_device(state, physical_device, real_device);
 }
 
 void server_state_bridge_remove_device(struct ServerState* state, VkDevice device) {
@@ -569,8 +791,12 @@ bool server_state_bridge_device_exists(const struct ServerState* state, VkDevice
     return venus_plus::server_state_device_exists(state, device);
 }
 
-VkQueue server_state_bridge_alloc_queue(struct ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index) {
-    return venus_plus::server_state_alloc_queue(state, device, family_index, queue_index);
+VkQueue server_state_bridge_alloc_queue(struct ServerState* state,
+                                        VkDevice device,
+                                        uint32_t family_index,
+                                        uint32_t queue_index,
+                                        VkQueue real_queue) {
+    return venus_plus::server_state_alloc_queue(state, device, family_index, queue_index, real_queue);
 }
 
 VkQueue server_state_bridge_find_queue(const struct ServerState* state, VkDevice device, uint32_t family_index, uint32_t queue_index) {

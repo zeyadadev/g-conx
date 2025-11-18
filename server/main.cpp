@@ -40,27 +40,48 @@ int main(int argc, char** argv) {
     std::cout << "Venus Plus Server v0.1\n";
     std::cout << "======================\n\n";
 
+    bool enable_validation = false;
+    int port = 5556;
+
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--validation") == 0) {
+            enable_validation = true;
+        } else if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
+            port = std::atoi(argv[++i]);
+        }
+    }
+
+    if (!g_server_state.initialize_vulkan(enable_validation)) {
+        std::cerr << "Failed to initialize Vulkan on server\n";
+        return 1;
+    }
+
     NetworkServer server;
 
     g_renderer = venus_renderer_create(&g_server_state);
     if (!g_renderer) {
         std::cerr << "Failed to initialize renderer decoder\n";
+        g_server_state.shutdown_vulkan();
         return 1;
     }
 
-    if (!server.start(5556)) {
-        std::cerr << "Failed to start server\n";
+    if (!server.start(port)) {
+        std::cerr << "Failed to start server on port " << port << "\n";
         venus_renderer_destroy(g_renderer);
         g_renderer = nullptr;
+        g_server_state.shutdown_vulkan();
         return 1;
     }
 
-    std::cout << "Waiting for clients...\n\n";
+    std::cout << "Listening on port " << port
+              << (enable_validation ? " (validation enabled)\n\n" : "\n\n");
 
     server.run(handle_client_message);
 
     venus_renderer_destroy(g_renderer);
     g_renderer = nullptr;
+
+    g_server_state.shutdown_vulkan();
 
     return 0;
 }
