@@ -2,7 +2,6 @@
 
 #include "renderer_decoder.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +9,7 @@
 #include "state/fake_gpu_data_bridge.h"
 #include "vn_protocol_renderer.h"
 #include "vn_cs.h"
+#include "utils/logging_c.h"
 
 struct VenusRenderer {
     struct vn_dispatch_context ctx;
@@ -22,7 +22,7 @@ static bool command_buffer_recording_guard(struct ServerState* state,
                                            VkCommandBuffer command_buffer,
                                            const char* name) {
     if (!server_state_bridge_command_buffer_is_recording(state, command_buffer)) {
-        printf("[Venus Server]   -> ERROR: %s requires command buffer in RECORDING state\n", name);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: %s requires command buffer in RECORDING state", name);
         server_state_bridge_mark_command_buffer_invalid(state, command_buffer);
         return false;
     }
@@ -34,7 +34,7 @@ static VkCommandBuffer get_real_command_buffer(struct ServerState* state,
                                                const char* name) {
     VkCommandBuffer real = server_state_bridge_get_real_command_buffer(state, command_buffer);
     if (real == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Failed to translate command buffer for %s\n", name);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to translate command buffer for %s", name);
         server_state_bridge_mark_command_buffer_invalid(state, command_buffer);
     }
     return real;
@@ -43,7 +43,7 @@ static VkCommandBuffer get_real_command_buffer(struct ServerState* state,
 static VkBuffer get_real_buffer(struct ServerState* state, VkBuffer buffer, const char* name) {
     VkBuffer real = server_state_bridge_get_real_buffer(state, buffer);
     if (real == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Failed to translate buffer for %s\n", name);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to translate buffer for %s", name);
     }
     return real;
 }
@@ -51,75 +51,75 @@ static VkBuffer get_real_buffer(struct ServerState* state, VkBuffer buffer, cons
 static VkImage get_real_image(struct ServerState* state, VkImage image, const char* name) {
     VkImage real = server_state_bridge_get_real_image(state, image);
     if (real == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Failed to translate image for %s\n", name);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to translate image for %s", name);
     }
     return real;
 }
 
 static void server_dispatch_vkCreateInstance(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkCreateInstance* args) {
-    printf("[Venus Server] Dispatching vkCreateInstance\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateInstance");
     args->ret = VK_SUCCESS;
     if (!args->pInstance) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pInstance is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pInstance is NULL");
         return;
     }
     *args->pInstance = server_state_bridge_alloc_instance((struct ServerState*)ctx->data);
-    printf("[Venus Server]   -> Created instance handle: %p\n", (void*)*args->pInstance);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created instance handle: %p", (void*)*args->pInstance);
 }
 
 static void server_dispatch_vkDestroyInstance(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkDestroyInstance* args) {
-    printf("[Venus Server] Dispatching vkDestroyInstance (handle: %p)\n", (void*)args->instance);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyInstance (handle: %p)", (void*)args->instance);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (server_state_bridge_instance_exists(state, args->instance)) {
         server_state_bridge_remove_instance(state, args->instance);
-        printf("[Venus Server]   -> Instance destroyed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Instance destroyed");
     } else {
-        printf("[Venus Server]   -> Warning: Instance not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Instance not found");
     }
 }
 
 static void server_dispatch_vkEnumerateInstanceVersion(struct vn_dispatch_context* ctx,
                                                        struct vn_command_vkEnumerateInstanceVersion* args) {
-    printf("[Venus Server] Dispatching vkEnumerateInstanceVersion\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateInstanceVersion");
     (void)ctx;
     args->ret = VK_SUCCESS;
     if (args->pApiVersion) {
         *args->pApiVersion = VK_API_VERSION_1_3;
-        printf("[Venus Server]   -> Returning API version: 1.3\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning API version: 1.3");
     }
 }
 
 static void server_dispatch_vkEnumerateInstanceExtensionProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkEnumerateInstanceExtensionProperties* args) {
-    printf("[Venus Server] Dispatching vkEnumerateInstanceExtensionProperties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateInstanceExtensionProperties");
     (void)ctx;
     args->ret = VK_SUCCESS;
     if (args->pPropertyCount) {
         *args->pPropertyCount = 0;
-        printf("[Venus Server]   -> Returning 0 extensions\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning 0 extensions");
     }
 }
 
 static void server_dispatch_vkEnumeratePhysicalDevices(struct vn_dispatch_context* ctx,
                                                        struct vn_command_vkEnumeratePhysicalDevices* args) {
-    printf("[Venus Server] Dispatching vkEnumeratePhysicalDevices (instance: %p)\n", (void*)args->instance);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumeratePhysicalDevices (instance: %p)", (void*)args->instance);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pPhysicalDeviceCount) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pPhysicalDeviceCount is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPhysicalDeviceCount is NULL");
         return;
     }
 
     const uint32_t available_devices = 1;
     if (!args->pPhysicalDevices) {
         *args->pPhysicalDeviceCount = available_devices;
-        printf("[Venus Server]   -> Returning device count: %u\n", available_devices);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning device count: %u", available_devices);
         return;
     }
 
@@ -127,13 +127,13 @@ static void server_dispatch_vkEnumeratePhysicalDevices(struct vn_dispatch_contex
     const uint32_t to_write = available_devices < max_out ? available_devices : max_out;
     for (uint32_t i = 0; i < to_write; ++i) {
         args->pPhysicalDevices[i] = server_state_bridge_get_fake_device(state);
-        printf("[Venus Server]   -> Device %u: %p\n", i, (void*)args->pPhysicalDevices[i]);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Device %u: %p", i, (void*)args->pPhysicalDevices[i]);
     }
     *args->pPhysicalDeviceCount = to_write;
 
     if (max_out < available_devices) {
         args->ret = VK_INCOMPLETE;
-        printf("[Venus Server]   -> Returning VK_INCOMPLETE\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning VK_INCOMPLETE");
     }
 }
 
@@ -141,115 +141,115 @@ static void server_dispatch_vkEnumeratePhysicalDevices(struct vn_dispatch_contex
 static void server_dispatch_vkGetPhysicalDeviceProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceProperties* args) {
-    printf("[Venus Server] Dispatching vkGetPhysicalDeviceProperties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceProperties");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pProperties) {
-        printf("[Venus Server]   -> ERROR: pProperties is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pProperties is NULL");
         return;
     }
     VkPhysicalDevice real_device =
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
     vkGetPhysicalDeviceProperties(real_device, args->pProperties);
-    printf("[Venus Server]   -> Returned real properties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real properties");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFeatures(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceFeatures* args) {
-    printf("[Venus Server] Dispatching vkGetPhysicalDeviceFeatures\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceFeatures");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pFeatures) {
-        printf("[Venus Server]   -> ERROR: pFeatures is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pFeatures is NULL");
         return;
     }
     VkPhysicalDevice real_device =
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
     vkGetPhysicalDeviceFeatures(real_device, args->pFeatures);
-    printf("[Venus Server]   -> Returned real features\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real features");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceQueueFamilyProperties* args) {
-    printf("[Venus Server] Dispatching vkGetPhysicalDeviceQueueFamilyProperties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceQueueFamilyProperties");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pQueueFamilyPropertyCount) {
-        printf("[Venus Server]   -> ERROR: pQueueFamilyPropertyCount is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pQueueFamilyPropertyCount is NULL");
         return;
     }
     VkPhysicalDevice real_device =
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
     vkGetPhysicalDeviceQueueFamilyProperties(real_device,
                                              args->pQueueFamilyPropertyCount,
                                              args->pQueueFamilyProperties);
     if (args->pQueueFamilyProperties) {
-        printf("[Venus Server]   -> Returned %u queue families\n", *args->pQueueFamilyPropertyCount);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned %u queue families", *args->pQueueFamilyPropertyCount);
     } else {
-        printf("[Venus Server]   -> Returned count: %u\n", *args->pQueueFamilyPropertyCount);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned count: %u", *args->pQueueFamilyPropertyCount);
     }
 }
 
 static void server_dispatch_vkGetPhysicalDeviceMemoryProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceMemoryProperties* args) {
-    printf("[Venus Server] Dispatching vkGetPhysicalDeviceMemoryProperties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceMemoryProperties");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pMemoryProperties) {
-        printf("[Venus Server]   -> ERROR: pMemoryProperties is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pMemoryProperties is NULL");
         return;
     }
     VkPhysicalDevice real_device =
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
     vkGetPhysicalDeviceMemoryProperties(real_device, args->pMemoryProperties);
-    printf("[Venus Server]   -> Returned real memory properties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real memory properties");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFormatProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceFormatProperties* args) {
-    printf("[Venus Server] Dispatching vkGetPhysicalDeviceFormatProperties (format: %d)\n", args->format);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceFormatProperties (format: %d)", args->format);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pFormatProperties) {
-        printf("[Venus Server]   -> ERROR: pFormatProperties is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pFormatProperties is NULL");
         return;
     }
     VkPhysicalDevice real_device =
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
     vkGetPhysicalDeviceFormatProperties(real_device, args->format, args->pFormatProperties);
-    printf("[Venus Server]   -> Returned real format properties\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real format properties");
 }
 
 // Phase 3: Device creation/destruction handlers
 static void server_dispatch_vkCreateDevice(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkCreateDevice* args) {
-    printf("[Venus Server] Dispatching vkCreateDevice (physical device: %p)\n", (void*)args->physicalDevice);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateDevice (physical device: %p)", (void*)args->physicalDevice);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pDevice || !args->pCreateInfo) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pDevice or pCreateInfo is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pDevice or pCreateInfo is NULL");
         return;
     }
 
@@ -257,7 +257,7 @@ static void server_dispatch_vkCreateDevice(
         server_state_bridge_get_real_physical_device(state, args->physicalDevice);
     if (real_physical == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Unknown physical device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
         return;
     }
 
@@ -265,7 +265,7 @@ static void server_dispatch_vkCreateDevice(
     VkResult create_result = vkCreateDevice(real_physical, args->pCreateInfo, args->pAllocator, &real_device);
     if (create_result != VK_SUCCESS) {
         args->ret = create_result;
-        printf("[Venus Server]   -> ERROR: vkCreateDevice failed: %d\n", create_result);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCreateDevice failed: %d", create_result);
         return;
     }
 
@@ -274,18 +274,18 @@ static void server_dispatch_vkCreateDevice(
     if (client_handle == VK_NULL_HANDLE) {
         vkDestroyDevice(real_device, args->pAllocator);
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Failed to allocate server device handle\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to allocate server device handle");
         return;
     }
 
     *args->pDevice = client_handle;
-    printf("[Venus Server]   -> Created device handle: %p\n", (void*)*args->pDevice);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created device handle: %p", (void*)*args->pDevice);
 }
 
 static void server_dispatch_vkDestroyDevice(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkDestroyDevice* args) {
-    printf("[Venus Server] Dispatching vkDestroyDevice (handle: %p)\n", (void*)args->device);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyDevice (handle: %p)", (void*)args->device);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->device != VK_NULL_HANDLE && server_state_bridge_device_exists(state, args->device)) {
         VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
@@ -294,21 +294,21 @@ static void server_dispatch_vkDestroyDevice(
             vkDestroyDevice(real_device, args->pAllocator);
         }
         server_state_bridge_remove_device(state, args->device);
-        printf("[Venus Server]   -> Device destroyed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Device destroyed");
     } else {
-        printf("[Venus Server]   -> Warning: Device not found or NULL\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Device not found or NULL");
     }
 }
 
 static void server_dispatch_vkGetDeviceQueue(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetDeviceQueue* args) {
-    printf("[Venus Server] Dispatching vkGetDeviceQueue (device: %p, family: %u, index: %u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetDeviceQueue (device: %p, family: %u, index: %u)",
            (void*)args->device, args->queueFamilyIndex, args->queueIndex);
     struct ServerState* state = (struct ServerState*)ctx->data;
 
     if (!args->pQueue) {
-        printf("[Venus Server]   -> ERROR: pQueue is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pQueue is NULL");
         return;
     }
 
@@ -316,108 +316,108 @@ static void server_dispatch_vkGetDeviceQueue(
     VkQueue existing = server_state_bridge_find_queue(state, args->device, args->queueFamilyIndex, args->queueIndex);
     if (existing != VK_NULL_HANDLE) {
         *args->pQueue = existing;
-        printf("[Venus Server]   -> Returned existing queue: %p\n", (void*)existing);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned existing queue: %p", (void*)existing);
     } else {
         VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
         if (real_device == VK_NULL_HANDLE) {
-            printf("[Venus Server]   -> ERROR: Unknown device\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
             return;
         }
         VkQueue real_queue = VK_NULL_HANDLE;
         vkGetDeviceQueue(real_device, args->queueFamilyIndex, args->queueIndex, &real_queue);
         if (real_queue == VK_NULL_HANDLE) {
-            printf("[Venus Server]   -> ERROR: vkGetDeviceQueue failed\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkGetDeviceQueue failed");
             return;
         }
         *args->pQueue = server_state_bridge_alloc_queue(
             state, args->device, args->queueFamilyIndex, args->queueIndex, real_queue);
-        printf("[Venus Server]   -> Created new queue: %p\n", (void*)*args->pQueue);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Created new queue: %p", (void*)*args->pQueue);
     }
 }
 
 // Phase 4: Resource and memory management
 static void server_dispatch_vkAllocateMemory(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkAllocateMemory* args) {
-    printf("[Venus Server] Dispatching vkAllocateMemory\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkAllocateMemory");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pMemory || !args->pAllocateInfo) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pMemory or pAllocateInfo is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pMemory or pAllocateInfo is NULL");
         return;
     }
 
     VkDeviceMemory handle = server_state_bridge_alloc_memory(state, args->device, args->pAllocateInfo);
     if (handle == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
-        printf("[Venus Server]   -> ERROR: Failed to allocate memory\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to allocate memory");
         return;
     }
 
     *args->pMemory = handle;
-    printf("[Venus Server]   -> Allocated memory handle: %p (size=%llu)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Allocated memory handle: %p (size=%llu)",
            (void*)handle, (unsigned long long)args->pAllocateInfo->allocationSize);
 }
 
 static void server_dispatch_vkFreeMemory(struct vn_dispatch_context* ctx,
                                          struct vn_command_vkFreeMemory* args) {
-    printf("[Venus Server] Dispatching vkFreeMemory (memory: %p)\n", (void*)args->memory);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkFreeMemory (memory: %p)", (void*)args->memory);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->memory == VK_NULL_HANDLE) {
         return;
     }
 
     if (!server_state_bridge_free_memory(state, args->memory)) {
-        printf("[Venus Server]   -> Warning: Memory handle not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Memory handle not found");
     } else {
-        printf("[Venus Server]   -> Memory freed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Memory freed");
     }
 }
 
 static void server_dispatch_vkCreateBuffer(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkCreateBuffer* args) {
-    printf("[Venus Server] Dispatching vkCreateBuffer (device: %p)\n", (void*)args->device);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateBuffer (device: %p)", (void*)args->device);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pBuffer || !args->pCreateInfo) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pBuffer or pCreateInfo is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pBuffer or pCreateInfo is NULL");
         return;
     }
 
     VkBuffer handle = server_state_bridge_create_buffer(state, args->device, args->pCreateInfo);
     *args->pBuffer = handle;
-    printf("[Venus Server]   -> Created buffer handle: %p (size=%llu)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created buffer handle: %p (size=%llu)",
            (void*)handle, (unsigned long long)args->pCreateInfo->size);
 }
 
 static void server_dispatch_vkDestroyBuffer(struct vn_dispatch_context* ctx,
                                             struct vn_command_vkDestroyBuffer* args) {
-    printf("[Venus Server] Dispatching vkDestroyBuffer (buffer: %p)\n", (void*)args->buffer);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyBuffer (buffer: %p)", (void*)args->buffer);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!server_state_bridge_destroy_buffer(state, args->buffer)) {
-        printf("[Venus Server]   -> Warning: Buffer not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Buffer not found");
     } else {
-        printf("[Venus Server]   -> Buffer destroyed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Buffer destroyed");
     }
 }
 
 static void server_dispatch_vkGetBufferMemoryRequirements(struct vn_dispatch_context* ctx,
                                                           struct vn_command_vkGetBufferMemoryRequirements* args) {
-    printf("[Venus Server] Dispatching vkGetBufferMemoryRequirements\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetBufferMemoryRequirements");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pMemoryRequirements) {
-        printf("[Venus Server]   -> ERROR: pMemoryRequirements is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pMemoryRequirements is NULL");
         return;
     }
 
     if (!server_state_bridge_get_buffer_memory_requirements(state, args->buffer, args->pMemoryRequirements)) {
         memset(args->pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
-        printf("[Venus Server]   -> Warning: Buffer not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Buffer not found");
     } else {
-        printf("[Venus Server]   -> Requirements: size=%llu alignment=%llu\n",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Requirements: size=%llu alignment=%llu",
                (unsigned long long)args->pMemoryRequirements->size,
                (unsigned long long)args->pMemoryRequirements->alignment);
     }
@@ -425,55 +425,55 @@ static void server_dispatch_vkGetBufferMemoryRequirements(struct vn_dispatch_con
 
 static void server_dispatch_vkBindBufferMemory(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkBindBufferMemory* args) {
-    printf("[Venus Server] Dispatching vkBindBufferMemory (buffer: %p)\n", (void*)args->buffer);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkBindBufferMemory (buffer: %p)", (void*)args->buffer);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_bind_buffer_memory(state, args->buffer, args->memory, args->memoryOffset);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Buffer bound (memory=%p, offset=%llu)\n",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Buffer bound (memory=%p, offset=%llu)",
                (void*)args->memory, (unsigned long long)args->memoryOffset);
     } else {
-        printf("[Venus Server]   -> Failed to bind buffer (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to bind buffer (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkCreateImage(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCreateImage* args) {
-    printf("[Venus Server] Dispatching vkCreateImage (device: %p)\n", (void*)args->device);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateImage (device: %p)", (void*)args->device);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pImage || !args->pCreateInfo) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: pImage or pCreateInfo is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pImage or pCreateInfo is NULL");
         return;
     }
 
     VkImage handle = server_state_bridge_create_image(state, args->device, args->pCreateInfo);
     *args->pImage = handle;
-    printf("[Venus Server]   -> Created image handle: %p (format=%d)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created image handle: %p (format=%d)",
            (void*)handle, args->pCreateInfo->format);
 }
 
 static void server_dispatch_vkDestroyImage(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkDestroyImage* args) {
-    printf("[Venus Server] Dispatching vkDestroyImage (image: %p)\n", (void*)args->image);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyImage (image: %p)", (void*)args->image);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!server_state_bridge_destroy_image(state, args->image)) {
-        printf("[Venus Server]   -> Warning: Image not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image not found");
     } else {
-        printf("[Venus Server]   -> Image destroyed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Image destroyed");
     }
 }
 
 static void server_dispatch_vkCreateShaderModule(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkCreateShaderModule* args) {
-    printf("[Venus Server] Dispatching vkCreateShaderModule\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateShaderModule");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfo || !args->pShaderModule) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
         return;
     }
 
@@ -481,17 +481,17 @@ static void server_dispatch_vkCreateShaderModule(struct vn_dispatch_context* ctx
         server_state_bridge_create_shader_module(state, args->device, args->pCreateInfo);
     if (handle == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Failed to create shader module\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create shader module");
         return;
     }
 
     *args->pShaderModule = handle;
-    printf("[Venus Server]   -> Shader module created: %p\n", (void*)handle);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Shader module created: %p", (void*)handle);
 }
 
 static void server_dispatch_vkDestroyShaderModule(struct vn_dispatch_context* ctx,
                                                   struct vn_command_vkDestroyShaderModule* args) {
-    printf("[Venus Server] Dispatching vkDestroyShaderModule (module: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyShaderModule (module: %p)",
            (void*)args->shaderModule);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->shaderModule != VK_NULL_HANDLE) {
@@ -502,13 +502,13 @@ static void server_dispatch_vkDestroyShaderModule(struct vn_dispatch_context* ct
 static void server_dispatch_vkCreateDescriptorSetLayout(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkCreateDescriptorSetLayout* args) {
-    printf("[Venus Server] Dispatching vkCreateDescriptorSetLayout\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateDescriptorSetLayout");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfo || !args->pSetLayout) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
         return;
     }
 
@@ -516,17 +516,17 @@ static void server_dispatch_vkCreateDescriptorSetLayout(
         server_state_bridge_create_descriptor_set_layout(state, args->device, args->pCreateInfo);
     if (layout == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Failed to create descriptor set layout\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create descriptor set layout");
         return;
     }
     *args->pSetLayout = layout;
-    printf("[Venus Server]   -> Descriptor set layout created: %p\n", (void*)layout);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Descriptor set layout created: %p", (void*)layout);
 }
 
 static void server_dispatch_vkDestroyDescriptorSetLayout(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkDestroyDescriptorSetLayout* args) {
-    printf("[Venus Server] Dispatching vkDestroyDescriptorSetLayout (layout: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyDescriptorSetLayout (layout: %p)",
            (void*)args->descriptorSetLayout);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->descriptorSetLayout != VK_NULL_HANDLE) {
@@ -536,13 +536,13 @@ static void server_dispatch_vkDestroyDescriptorSetLayout(
 
 static void server_dispatch_vkCreateDescriptorPool(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCreateDescriptorPool* args) {
-    printf("[Venus Server] Dispatching vkCreateDescriptorPool\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateDescriptorPool");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfo || !args->pDescriptorPool) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
         return;
     }
 
@@ -550,16 +550,16 @@ static void server_dispatch_vkCreateDescriptorPool(struct vn_dispatch_context* c
         server_state_bridge_create_descriptor_pool(state, args->device, args->pCreateInfo);
     if (pool == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Failed to create descriptor pool\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create descriptor pool");
         return;
     }
     *args->pDescriptorPool = pool;
-    printf("[Venus Server]   -> Descriptor pool created: %p\n", (void*)pool);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Descriptor pool created: %p", (void*)pool);
 }
 
 static void server_dispatch_vkDestroyDescriptorPool(struct vn_dispatch_context* ctx,
                                                     struct vn_command_vkDestroyDescriptorPool* args) {
-    printf("[Venus Server] Dispatching vkDestroyDescriptorPool (pool: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyDescriptorPool (pool: %p)",
            (void*)args->descriptorPool);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->descriptorPool != VK_NULL_HANDLE) {
@@ -569,7 +569,7 @@ static void server_dispatch_vkDestroyDescriptorPool(struct vn_dispatch_context* 
 
 static void server_dispatch_vkResetDescriptorPool(struct vn_dispatch_context* ctx,
                                                   struct vn_command_vkResetDescriptorPool* args) {
-    printf("[Venus Server] Dispatching vkResetDescriptorPool (pool: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetDescriptorPool (pool: %p)",
            (void*)args->descriptorPool);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_reset_descriptor_pool(state,
@@ -579,14 +579,14 @@ static void server_dispatch_vkResetDescriptorPool(struct vn_dispatch_context* ct
 
 static void server_dispatch_vkAllocateDescriptorSets(struct vn_dispatch_context* ctx,
                                                      struct vn_command_vkAllocateDescriptorSets* args) {
-    printf("[Venus Server] Dispatching vkAllocateDescriptorSets (count=%u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkAllocateDescriptorSets (count=%u)",
            args->pAllocateInfo ? args->pAllocateInfo->descriptorSetCount : 0);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pAllocateInfo || !args->pDescriptorSets) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing allocate info or output pointer\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing allocate info or output pointer");
         return;
     }
 
@@ -595,15 +595,15 @@ static void server_dispatch_vkAllocateDescriptorSets(struct vn_dispatch_context*
                                                              args->pAllocateInfo,
                                                              args->pDescriptorSets);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Descriptor sets allocated\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Descriptor sets allocated");
     } else {
-        printf("[Venus Server]   -> ERROR: Allocation failed (%d)\n", args->ret);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Allocation failed (%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkFreeDescriptorSets(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkFreeDescriptorSets* args) {
-    printf("[Venus Server] Dispatching vkFreeDescriptorSets (count=%u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkFreeDescriptorSets (count=%u)",
            args->descriptorSetCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_free_descriptor_sets(state,
@@ -612,7 +612,7 @@ static void server_dispatch_vkFreeDescriptorSets(struct vn_dispatch_context* ctx
                                                          args->descriptorSetCount,
                                                          args->pDescriptorSets);
     if (args->ret != VK_SUCCESS) {
-        printf("[Venus Server]   -> ERROR: Free descriptor sets failed (%d)\n", args->ret);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Free descriptor sets failed (%d)", args->ret);
     }
 }
 
@@ -634,13 +634,13 @@ static bool write_uses_buffer(VkDescriptorType type) {
 
 static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkUpdateDescriptorSets* args) {
-    printf("[Venus Server] Dispatching vkUpdateDescriptorSets (writes=%u, copies=%u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkUpdateDescriptorSets (writes=%u, copies=%u)",
            args->descriptorWriteCount,
            args->descriptorCopyCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
     if (real_device == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown device\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
         return;
     }
 
@@ -653,7 +653,7 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
         writes = calloc(args->descriptorWriteCount, sizeof(*writes));
         buffer_arrays = calloc(args->descriptorWriteCount, sizeof(*buffer_arrays));
         if (!writes || !buffer_arrays) {
-            printf("[Venus Server]   -> ERROR: Out of memory for descriptor writes\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for descriptor writes");
             result = VK_ERROR_OUT_OF_HOST_MEMORY;
             goto cleanup;
         }
@@ -664,21 +664,21 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
         writes[i] = *src;
         writes[i].dstSet = server_state_bridge_get_real_descriptor_set(state, src->dstSet);
         if (writes[i].dstSet == VK_NULL_HANDLE) {
-            printf("[Venus Server]   -> ERROR: Unknown descriptor set in write %u\n", i);
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown descriptor set in write %u", i);
             result = VK_ERROR_INITIALIZATION_FAILED;
             goto cleanup;
         }
 
         if (write_uses_buffer(src->descriptorType)) {
             if (!src->pBufferInfo) {
-                printf("[Venus Server]   -> ERROR: Missing buffer info in write %u\n", i);
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing buffer info in write %u", i);
                 result = VK_ERROR_INITIALIZATION_FAILED;
                 goto cleanup;
             }
             buffer_arrays[i] =
                 calloc(src->descriptorCount ? src->descriptorCount : 1, sizeof(VkDescriptorBufferInfo));
             if (!buffer_arrays[i]) {
-                printf("[Venus Server]   -> ERROR: Out of memory for buffer infos\n");
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for buffer infos");
                 result = VK_ERROR_OUT_OF_HOST_MEMORY;
                 goto cleanup;
             }
@@ -687,7 +687,7 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
                 buffer_arrays[i][j].buffer =
                     server_state_bridge_get_real_buffer(state, src->pBufferInfo[j].buffer);
                 if (buffer_arrays[i][j].buffer == VK_NULL_HANDLE) {
-                    printf("[Venus Server]   -> ERROR: Unknown buffer in write %u\n", i);
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown buffer in write %u", i);
                     result = VK_ERROR_INITIALIZATION_FAILED;
                     goto cleanup;
                 }
@@ -701,7 +701,7 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
     if (args->descriptorCopyCount > 0) {
         copies = calloc(args->descriptorCopyCount, sizeof(*copies));
         if (!copies) {
-            printf("[Venus Server]   -> ERROR: Out of memory for descriptor copies\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for descriptor copies");
             result = VK_ERROR_OUT_OF_HOST_MEMORY;
             goto cleanup;
         }
@@ -714,7 +714,7 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
         copies[i].dstSet =
             server_state_bridge_get_real_descriptor_set(state, args->pDescriptorCopies[i].dstSet);
         if (copies[i].srcSet == VK_NULL_HANDLE || copies[i].dstSet == VK_NULL_HANDLE) {
-            printf("[Venus Server]   -> ERROR: Unknown descriptor set in copy %u\n", i);
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown descriptor set in copy %u", i);
             result = VK_ERROR_INITIALIZATION_FAILED;
             goto cleanup;
         }
@@ -725,7 +725,7 @@ static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* c
                            writes,
                            args->descriptorCopyCount,
                            copies);
-    printf("[Venus Server]   -> Descriptor sets updated\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Descriptor sets updated");
 
 cleanup:
     if (buffer_arrays) {
@@ -741,13 +741,13 @@ cleanup:
 
 static void server_dispatch_vkCreatePipelineLayout(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCreatePipelineLayout* args) {
-    printf("[Venus Server] Dispatching vkCreatePipelineLayout\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreatePipelineLayout");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfo || !args->pPipelineLayout) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
         return;
     }
 
@@ -755,16 +755,16 @@ static void server_dispatch_vkCreatePipelineLayout(struct vn_dispatch_context* c
         server_state_bridge_create_pipeline_layout(state, args->device, args->pCreateInfo);
     if (layout == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Failed to create pipeline layout\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create pipeline layout");
         return;
     }
     *args->pPipelineLayout = layout;
-    printf("[Venus Server]   -> Pipeline layout created: %p\n", (void*)layout);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Pipeline layout created: %p", (void*)layout);
 }
 
 static void server_dispatch_vkDestroyPipelineLayout(struct vn_dispatch_context* ctx,
                                                     struct vn_command_vkDestroyPipelineLayout* args) {
-    printf("[Venus Server] Dispatching vkDestroyPipelineLayout (layout: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyPipelineLayout (layout: %p)",
            (void*)args->pipelineLayout);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->pipelineLayout != VK_NULL_HANDLE) {
@@ -774,14 +774,14 @@ static void server_dispatch_vkDestroyPipelineLayout(struct vn_dispatch_context* 
 
 static void server_dispatch_vkCreateComputePipelines(struct vn_dispatch_context* ctx,
                                                      struct vn_command_vkCreateComputePipelines* args) {
-    printf("[Venus Server] Dispatching vkCreateComputePipelines (count=%u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateComputePipelines (count=%u)",
            args->createInfoCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfos || !args->pPipelines) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Missing create infos or output array\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create infos or output array");
         return;
     }
 
@@ -792,15 +792,15 @@ static void server_dispatch_vkCreateComputePipelines(struct vn_dispatch_context*
                                                              args->pCreateInfos,
                                                              args->pPipelines);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Compute pipeline(s) created\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Compute pipeline(s) created");
     } else {
-        printf("[Venus Server]   -> ERROR: Compute pipeline creation failed (%d)\n", args->ret);
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Compute pipeline creation failed (%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkDestroyPipeline(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkDestroyPipeline* args) {
-    printf("[Venus Server] Dispatching vkDestroyPipeline (pipeline: %p)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyPipeline (pipeline: %p)",
            (void*)args->pipeline);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (args->pipeline != VK_NULL_HANDLE) {
@@ -812,18 +812,18 @@ static void server_dispatch_vkDestroyPipeline(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkGetImageMemoryRequirements(struct vn_dispatch_context* ctx,
                                                          struct vn_command_vkGetImageMemoryRequirements* args) {
-    printf("[Venus Server] Dispatching vkGetImageMemoryRequirements\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetImageMemoryRequirements");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pMemoryRequirements) {
-        printf("[Venus Server]   -> ERROR: pMemoryRequirements is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pMemoryRequirements is NULL");
         return;
     }
 
     if (!server_state_bridge_get_image_memory_requirements(state, args->image, args->pMemoryRequirements)) {
         memset(args->pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
-        printf("[Venus Server]   -> Warning: Image not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image not found");
     } else {
-        printf("[Venus Server]   -> Requirements: size=%llu alignment=%llu\n",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Requirements: size=%llu alignment=%llu",
                (unsigned long long)args->pMemoryRequirements->size,
                (unsigned long long)args->pMemoryRequirements->alignment);
     }
@@ -831,139 +831,139 @@ static void server_dispatch_vkGetImageMemoryRequirements(struct vn_dispatch_cont
 
 static void server_dispatch_vkBindImageMemory(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkBindImageMemory* args) {
-    printf("[Venus Server] Dispatching vkBindImageMemory (image: %p)\n", (void*)args->image);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkBindImageMemory (image: %p)", (void*)args->image);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_bind_image_memory(state, args->image, args->memory, args->memoryOffset);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Image bound (memory=%p, offset=%llu)\n",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Image bound (memory=%p, offset=%llu)",
                (void*)args->memory, (unsigned long long)args->memoryOffset);
     } else {
-        printf("[Venus Server]   -> Failed to bind image (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to bind image (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkGetImageSubresourceLayout(struct vn_dispatch_context* ctx,
                                                         struct vn_command_vkGetImageSubresourceLayout* args) {
-    printf("[Venus Server] Dispatching vkGetImageSubresourceLayout\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetImageSubresourceLayout");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pLayout || !args->pSubresource) {
-        printf("[Venus Server]   -> ERROR: pLayout or pSubresource is NULL\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pLayout or pSubresource is NULL");
         return;
     }
 
     if (!server_state_bridge_get_image_subresource_layout(state, args->image, args->pSubresource, args->pLayout)) {
         memset(args->pLayout, 0, sizeof(VkSubresourceLayout));
-        printf("[Venus Server]   -> Warning: Image not found or invalid subresource\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image not found or invalid subresource");
     } else {
-        printf("[Venus Server]   -> Returned subresource layout (offset=%llu)\n",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned subresource layout (offset=%llu)",
                (unsigned long long)args->pLayout->offset);
     }
 }
 
 static void server_dispatch_vkCreateCommandPool(struct vn_dispatch_context* ctx,
                                                 struct vn_command_vkCreateCommandPool* args) {
-    printf("[Venus Server] Dispatching vkCreateCommandPool\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateCommandPool");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
 
     if (!args->pCreateInfo || !args->pCommandPool) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> ERROR: Invalid parameters\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters");
         return;
     }
 
     VkCommandPool handle = server_state_bridge_create_command_pool(state, args->device, args->pCreateInfo);
     if (handle == VK_NULL_HANDLE) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
-        printf("[Venus Server]   -> Failed to allocate command pool\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to allocate command pool");
         return;
     }
     *args->pCommandPool = handle;
-    printf("[Venus Server]   -> Created command pool: %p\n", (void*)handle);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created command pool: %p", (void*)handle);
 }
 
 static void server_dispatch_vkDestroyCommandPool(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkDestroyCommandPool* args) {
-    printf("[Venus Server] Dispatching vkDestroyCommandPool\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyCommandPool");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!server_state_bridge_destroy_command_pool(state, args->commandPool)) {
-        printf("[Venus Server]   -> Warning: Command pool not found\n");
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Command pool not found");
     } else {
-        printf("[Venus Server]   -> Command pool destroyed\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command pool destroyed");
     }
 }
 
 static void server_dispatch_vkResetCommandPool(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkResetCommandPool* args) {
-    printf("[Venus Server] Dispatching vkResetCommandPool\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetCommandPool");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_reset_command_pool(state, args->commandPool, args->flags);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Command pool reset\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command pool reset");
     } else {
-        printf("[Venus Server]   -> Failed to reset command pool (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to reset command pool (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkAllocateCommandBuffers(struct vn_dispatch_context* ctx,
                                                      struct vn_command_vkAllocateCommandBuffers* args) {
-    printf("[Venus Server] Dispatching vkAllocateCommandBuffers (count=%u)\n", args->pAllocateInfo ? args->pAllocateInfo->commandBufferCount : 0);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkAllocateCommandBuffers (count=%u)", args->pAllocateInfo ? args->pAllocateInfo->commandBufferCount : 0);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_allocate_command_buffers(state, args->device, args->pAllocateInfo, args->pCommandBuffers);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Command buffers allocated\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command buffers allocated");
     } else {
-        printf("[Venus Server]   -> Allocation failed (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Allocation failed (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkFreeCommandBuffers(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkFreeCommandBuffers* args) {
-    printf("[Venus Server] Dispatching vkFreeCommandBuffers (count=%u)\n", args->commandBufferCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkFreeCommandBuffers (count=%u)", args->commandBufferCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     server_state_bridge_free_command_buffers(state, args->commandPool, args->commandBufferCount, args->pCommandBuffers);
-    printf("[Venus Server]   -> Command buffers freed\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Command buffers freed");
 }
 
 static void server_dispatch_vkBeginCommandBuffer(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkBeginCommandBuffer* args) {
-    printf("[Venus Server] Dispatching vkBeginCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkBeginCommandBuffer (%p)", (void*)args->commandBuffer);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_begin_command_buffer(state, args->commandBuffer, args->pBeginInfo);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Command buffer recording started\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command buffer recording started");
     } else {
-        printf("[Venus Server]   -> Failed to begin command buffer (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to begin command buffer (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkEndCommandBuffer(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkEndCommandBuffer* args) {
-    printf("[Venus Server] Dispatching vkEndCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEndCommandBuffer (%p)", (void*)args->commandBuffer);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_end_command_buffer(state, args->commandBuffer);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Command buffer ended\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command buffer ended");
     } else {
-        printf("[Venus Server]   -> Failed to end command buffer (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to end command buffer (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkResetCommandBuffer(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkResetCommandBuffer* args) {
-    printf("[Venus Server] Dispatching vkResetCommandBuffer (%p)\n", (void*)args->commandBuffer);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetCommandBuffer (%p)", (void*)args->commandBuffer);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_reset_command_buffer(state, args->commandBuffer, args->flags);
     if (args->ret == VK_SUCCESS) {
-        printf("[Venus Server]   -> Command buffer reset\n");
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Command buffer reset");
     } else {
-        printf("[Venus Server]   -> Failed to reset command buffer (result=%d)\n", args->ret);
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to reset command buffer (result=%d)", args->ret);
     }
 }
 
 static void server_dispatch_vkCmdCopyBuffer(struct vn_dispatch_context* ctx,
                                             struct vn_command_vkCmdCopyBuffer* args) {
-    printf("[Venus Server] Dispatching vkCmdCopyBuffer (%u regions)\n", args->regionCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdCopyBuffer (%u regions)", args->regionCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyBuffer")) {
         return;
@@ -984,12 +984,12 @@ static void server_dispatch_vkCmdCopyBuffer(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdCopyBuffer(real_cb, real_src, real_dst, args->regionCount, args->pRegions);
-    printf("[Venus Server]   -> vkCmdCopyBuffer recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdCopyBuffer recorded");
 }
 
 static void server_dispatch_vkCmdCopyImage(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkCmdCopyImage* args) {
-    printf("[Venus Server] Dispatching vkCmdCopyImage (%u regions)\n", args->regionCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdCopyImage (%u regions)", args->regionCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyImage")) {
         return;
@@ -1016,12 +1016,12 @@ static void server_dispatch_vkCmdCopyImage(struct vn_dispatch_context* ctx,
                    args->dstImageLayout,
                    args->regionCount,
                    args->pRegions);
-    printf("[Venus Server]   -> vkCmdCopyImage recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdCopyImage recorded");
 }
 
 static void server_dispatch_vkCmdBlitImage(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkCmdBlitImage* args) {
-    printf("[Venus Server] Dispatching vkCmdBlitImage (%u regions)\n", args->regionCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBlitImage (%u regions)", args->regionCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBlitImage")) {
         return;
@@ -1049,12 +1049,12 @@ static void server_dispatch_vkCmdBlitImage(struct vn_dispatch_context* ctx,
                    args->regionCount,
                    args->pRegions,
                    args->filter);
-    printf("[Venus Server]   -> vkCmdBlitImage recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBlitImage recorded");
 }
 
 static void server_dispatch_vkCmdCopyBufferToImage(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCmdCopyBufferToImage* args) {
-    printf("[Venus Server] Dispatching vkCmdCopyBufferToImage (%u regions)\n", args->regionCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdCopyBufferToImage (%u regions)", args->regionCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyBufferToImage")) {
         return;
@@ -1080,12 +1080,12 @@ static void server_dispatch_vkCmdCopyBufferToImage(struct vn_dispatch_context* c
                            args->dstImageLayout,
                            args->regionCount,
                            args->pRegions);
-    printf("[Venus Server]   -> vkCmdCopyBufferToImage recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdCopyBufferToImage recorded");
 }
 
 static void server_dispatch_vkCmdCopyImageToBuffer(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCmdCopyImageToBuffer* args) {
-    printf("[Venus Server] Dispatching vkCmdCopyImageToBuffer (%u regions)\n", args->regionCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdCopyImageToBuffer (%u regions)", args->regionCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyImageToBuffer")) {
         return;
@@ -1111,12 +1111,12 @@ static void server_dispatch_vkCmdCopyImageToBuffer(struct vn_dispatch_context* c
                            real_dst,
                            args->regionCount,
                            args->pRegions);
-    printf("[Venus Server]   -> vkCmdCopyImageToBuffer recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdCopyImageToBuffer recorded");
 }
 
 static void server_dispatch_vkCmdFillBuffer(struct vn_dispatch_context* ctx,
                                             struct vn_command_vkCmdFillBuffer* args) {
-    printf("[Venus Server] Dispatching vkCmdFillBuffer\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdFillBuffer");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdFillBuffer")) {
         return;
@@ -1132,12 +1132,12 @@ static void server_dispatch_vkCmdFillBuffer(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdFillBuffer(real_cb, real_dst, args->dstOffset, args->size, args->data);
-    printf("[Venus Server]   -> vkCmdFillBuffer recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdFillBuffer recorded");
 }
 
 static void server_dispatch_vkCmdUpdateBuffer(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkCmdUpdateBuffer* args) {
-    printf("[Venus Server] Dispatching vkCmdUpdateBuffer (size=%llu)\n", (unsigned long long)args->dataSize);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdUpdateBuffer (size=%llu)", (unsigned long long)args->dataSize);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdUpdateBuffer")) {
         return;
@@ -1157,12 +1157,12 @@ static void server_dispatch_vkCmdUpdateBuffer(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdUpdateBuffer(real_cb, real_dst, args->dstOffset, args->dataSize, args->pData);
-    printf("[Venus Server]   -> vkCmdUpdateBuffer recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdUpdateBuffer recorded");
 }
 
 static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkCmdClearColorImage* args) {
-    printf("[Venus Server] Dispatching vkCmdClearColorImage (ranges=%u)\n", args->rangeCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdClearColorImage (ranges=%u)", args->rangeCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdClearColorImage")) {
         return;
@@ -1186,12 +1186,12 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
                          args->pColor,
                          args->rangeCount,
                          args->pRanges);
-    printf("[Venus Server]   -> vkCmdClearColorImage recorded\n");
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdClearColorImage recorded");
 }
 
 static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkCmdBindPipeline* args) {
-    printf("[Venus Server] Dispatching vkCmdBindPipeline\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindPipeline");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindPipeline")) {
         return;
@@ -1202,7 +1202,7 @@ static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
     }
     VkPipeline real_pipeline = server_state_bridge_get_real_pipeline(state, args->pipeline);
     if (real_pipeline == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown pipeline\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown pipeline");
         return;
     }
     vkCmdBindPipeline(real_cb, args->pipelineBindPoint, real_pipeline);
@@ -1210,7 +1210,7 @@ static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* ctx,
                                                     struct vn_command_vkCmdBindDescriptorSets* args) {
-    printf("[Venus Server] Dispatching vkCmdBindDescriptorSets (count=%u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindDescriptorSets (count=%u)",
            args->descriptorSetCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindDescriptorSets")) {
@@ -1224,21 +1224,21 @@ static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* 
     VkPipelineLayout real_layout =
         server_state_bridge_get_real_pipeline_layout(state, args->layout);
     if (real_layout == VK_NULL_HANDLE) {
-        printf("[Venus Server]   -> ERROR: Unknown pipeline layout\n");
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown pipeline layout");
         return;
     }
     VkDescriptorSet* real_sets = NULL;
     if (args->descriptorSetCount > 0) {
         real_sets = calloc(args->descriptorSetCount, sizeof(*real_sets));
         if (!real_sets) {
-            printf("[Venus Server]   -> ERROR: Out of memory for descriptor sets\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for descriptor sets");
             return;
         }
         for (uint32_t i = 0; i < args->descriptorSetCount; ++i) {
             real_sets[i] =
                 server_state_bridge_get_real_descriptor_set(state, args->pDescriptorSets[i]);
             if (real_sets[i] == VK_NULL_HANDLE) {
-                printf("[Venus Server]   -> ERROR: Unknown descriptor set %u\n", i);
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown descriptor set %u", i);
                 free(real_sets);
                 return;
             }
@@ -1257,7 +1257,7 @@ static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* 
 
 static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCmdDispatch* args) {
-    printf("[Venus Server] Dispatching vkCmdDispatch (%u, %u, %u)\n",
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDispatch (%u, %u, %u)",
            args->groupCountX, args->groupCountY, args->groupCountZ);
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDispatch")) {
@@ -1272,7 +1272,7 @@ static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkCmdPipelineBarrier* args) {
-    printf("[Venus Server] Dispatching vkCmdPipelineBarrier\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPipelineBarrier");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdPipelineBarrier")) {
         return;
@@ -1290,7 +1290,7 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
         buffer_barriers =
             calloc(args->bufferMemoryBarrierCount, sizeof(*buffer_barriers));
         if (!buffer_barriers) {
-            printf("[Venus Server]   -> ERROR: Out of memory for buffer barriers\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for buffer barriers");
             return;
         }
         for (uint32_t i = 0; i < args->bufferMemoryBarrierCount; ++i) {
@@ -1298,7 +1298,7 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
             buffer_barriers[i].buffer = server_state_bridge_get_real_buffer(
                 state, args->pBufferMemoryBarriers[i].buffer);
             if (buffer_barriers[i].buffer == VK_NULL_HANDLE) {
-                printf("[Venus Server]   -> ERROR: Unknown buffer in barrier %u\n", i);
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown buffer in barrier %u", i);
                 free(buffer_barriers);
                 return;
             }
@@ -1309,7 +1309,7 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
         image_barriers =
             calloc(args->imageMemoryBarrierCount, sizeof(*image_barriers));
         if (!image_barriers) {
-            printf("[Venus Server]   -> ERROR: Out of memory for image barriers\n");
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for image barriers");
             free(buffer_barriers);
             return;
         }
@@ -1318,7 +1318,7 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
             image_barriers[i].image = server_state_bridge_get_real_image(
                 state, args->pImageMemoryBarriers[i].image);
             if (image_barriers[i].image == VK_NULL_HANDLE) {
-                printf("[Venus Server]   -> ERROR: Unknown image in barrier %u\n", i);
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown image in barrier %u", i);
                 free(buffer_barriers);
                 free(image_barriers);
                 return;
@@ -1342,7 +1342,7 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
 
 static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCreateFence* args) {
-    printf("[Venus Server] Dispatching vkCreateFence\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateFence");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
     if (!args->pFence || !args->pCreateInfo) {
@@ -1359,28 +1359,28 @@ static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkDestroyFence(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkDestroyFence* args) {
-    printf("[Venus Server] Dispatching vkDestroyFence\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyFence");
     struct ServerState* state = (struct ServerState*)ctx->data;
     server_state_bridge_destroy_fence(state, args->fence);
 }
 
 static void server_dispatch_vkGetFenceStatus(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkGetFenceStatus* args) {
-    printf("[Venus Server] Dispatching vkGetFenceStatus\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetFenceStatus");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_get_fence_status(state, args->fence);
 }
 
 static void server_dispatch_vkResetFences(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkResetFences* args) {
-    printf("[Venus Server] Dispatching vkResetFences\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetFences");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_reset_fences(state, args->fenceCount, args->pFences);
 }
 
 static void server_dispatch_vkWaitForFences(struct vn_dispatch_context* ctx,
                                             struct vn_command_vkWaitForFences* args) {
-    printf("[Venus Server] Dispatching vkWaitForFences\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkWaitForFences");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_wait_for_fences(state,
                                                     args->fenceCount,
@@ -1391,7 +1391,7 @@ static void server_dispatch_vkWaitForFences(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkCreateSemaphore(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkCreateSemaphore* args) {
-    printf("[Venus Server] Dispatching vkCreateSemaphore\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateSemaphore");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = VK_SUCCESS;
     if (!args->pSemaphore || !args->pCreateInfo) {
@@ -1408,14 +1408,14 @@ static void server_dispatch_vkCreateSemaphore(struct vn_dispatch_context* ctx,
 
 static void server_dispatch_vkDestroySemaphore(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkDestroySemaphore* args) {
-    printf("[Venus Server] Dispatching vkDestroySemaphore\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroySemaphore");
     struct ServerState* state = (struct ServerState*)ctx->data;
     server_state_bridge_destroy_semaphore(state, args->semaphore);
 }
 
 static void server_dispatch_vkGetSemaphoreCounterValue(struct vn_dispatch_context* ctx,
                                                        struct vn_command_vkGetSemaphoreCounterValue* args) {
-    printf("[Venus Server] Dispatching vkGetSemaphoreCounterValue\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetSemaphoreCounterValue");
     struct ServerState* state = (struct ServerState*)ctx->data;
     if (!args->pValue) {
         args->ret = VK_ERROR_INITIALIZATION_FAILED;
@@ -1426,35 +1426,35 @@ static void server_dispatch_vkGetSemaphoreCounterValue(struct vn_dispatch_contex
 
 static void server_dispatch_vkSignalSemaphore(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkSignalSemaphore* args) {
-    printf("[Venus Server] Dispatching vkSignalSemaphore\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkSignalSemaphore");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_signal_semaphore(state, args->pSignalInfo);
 }
 
 static void server_dispatch_vkWaitSemaphores(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkWaitSemaphores* args) {
-    printf("[Venus Server] Dispatching vkWaitSemaphores\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkWaitSemaphores");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_wait_semaphores(state, args->pWaitInfo, args->timeout);
 }
 
 static void server_dispatch_vkQueueSubmit(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkQueueSubmit* args) {
-    printf("[Venus Server] Dispatching vkQueueSubmit (submitCount=%u)\n", args->submitCount);
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkQueueSubmit (submitCount=%u)", args->submitCount);
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_queue_submit(state, args->queue, args->submitCount, args->pSubmits, args->fence);
 }
 
 static void server_dispatch_vkQueueWaitIdle(struct vn_dispatch_context* ctx,
                                             struct vn_command_vkQueueWaitIdle* args) {
-    printf("[Venus Server] Dispatching vkQueueWaitIdle\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkQueueWaitIdle");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_queue_wait_idle(state, args->queue);
 }
 
 static void server_dispatch_vkDeviceWaitIdle(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkDeviceWaitIdle* args) {
-    printf("[Venus Server] Dispatching vkDeviceWaitIdle\n");
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDeviceWaitIdle");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_device_wait_idle(state, args->device);
 }

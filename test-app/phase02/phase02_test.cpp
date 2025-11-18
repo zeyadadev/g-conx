@@ -1,20 +1,20 @@
 #include "phase02_test.h"
+#include "logging.h"
 #include <vulkan/vulkan.h>
-#include <iostream>
 #include <vector>
 
 namespace phase02 {
 
 int run_test() {
-    std::cout << "\n";
-    std::cout << "=================================================\n";
-    std::cout << "Phase 2: Fake Instance Creation\n";
-    std::cout << "=================================================\n\n";
+    TEST_LOG_INFO() << "\n";
+    TEST_LOG_INFO() << "=================================================\n";
+    TEST_LOG_INFO() << "Phase 2: Fake Instance Creation\n";
+    TEST_LOG_INFO() << "=================================================\n\n";
 
     VkResult result;
 
     // Step 1: Create Instance
-    std::cout << "Step 1: Creating Vulkan instance...\n";
+    TEST_LOG_INFO() << "Step 1: Creating Vulkan instance...\n";
 
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -34,70 +34,70 @@ int run_test() {
     result = vkCreateInstance(&createInfo, nullptr, &instance);
 
     if (result != VK_SUCCESS) {
-        std::cerr << "  FAILED: vkCreateInstance returned " << result << "\n";
+        TEST_LOG_ERROR() << "  FAILED: vkCreateInstance returned " << result << "\n";
         return 1;
     }
 
     if (instance == VK_NULL_HANDLE) {
-        std::cerr << "  FAILED: Instance handle is NULL\n";
+        TEST_LOG_ERROR() << "  FAILED: Instance handle is NULL\n";
         return 1;
     }
 
-    std::cout << "  SUCCESS: Instance created\n";
-    std::cout << "  Instance handle: " << instance << "\n\n";
+    TEST_LOG_INFO() << "  SUCCESS: Instance created\n";
+    TEST_LOG_INFO() << "  Instance handle: " << instance << "\n\n";
 
     // Step 2: Enumerate Physical Devices (first call - get count)
-    std::cout << "Step 2: Enumerating physical devices (get count)...\n";
+    TEST_LOG_INFO() << "Step 2: Enumerating physical devices (get count)...\n";
 
     uint32_t deviceCount = 0;
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
     if (result != VK_SUCCESS) {
-        std::cerr << "  FAILED: vkEnumeratePhysicalDevices (count) returned " << result << "\n";
+        TEST_LOG_ERROR() << "  FAILED: vkEnumeratePhysicalDevices (count) returned " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return 1;
     }
 
-    std::cout << "  SUCCESS: Found " << deviceCount << " physical device(s)\n\n";
+    TEST_LOG_INFO() << "  SUCCESS: Found " << deviceCount << " physical device(s)\n\n";
 
     if (deviceCount == 0) {
-        std::cerr << "  FAILED: No physical devices found\n";
+        TEST_LOG_ERROR() << "  FAILED: No physical devices found\n";
         vkDestroyInstance(instance, nullptr);
         return 1;
     }
 
     // Step 3: Enumerate Physical Devices (second call - get devices)
-    std::cout << "Step 3: Enumerating physical devices (get devices)...\n";
+    TEST_LOG_INFO() << "Step 3: Enumerating physical devices (get devices)...\n";
 
     std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data());
 
     if (result != VK_SUCCESS) {
-        std::cerr << "  FAILED: vkEnumeratePhysicalDevices (devices) returned " << result << "\n";
+        TEST_LOG_ERROR() << "  FAILED: vkEnumeratePhysicalDevices (devices) returned " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return 1;
     }
 
-    std::cout << "  SUCCESS: Retrieved physical devices\n";
+    TEST_LOG_INFO() << "  SUCCESS: Retrieved physical devices\n";
     for (uint32_t i = 0; i < deviceCount; i++) {
-        std::cout << "  Physical device " << i << ": " << physicalDevices[i] << "\n";
+        TEST_LOG_INFO() << "  Physical device " << i << ": " << physicalDevices[i] << "\n";
         if (physicalDevices[i] == VK_NULL_HANDLE) {
-            std::cerr << "  FAILED: Physical device " << i << " is NULL\n";
+            TEST_LOG_ERROR() << "  FAILED: Physical device " << i << " is NULL\n";
             vkDestroyInstance(instance, nullptr);
             return 1;
         }
     }
-    std::cout << "\n";
+    TEST_LOG_INFO() << "\n";
 
     // Step 4: Destroy Instance
-    std::cout << "Step 4: Destroying instance...\n";
+    TEST_LOG_INFO() << "Step 4: Destroying instance...\n";
     vkDestroyInstance(instance, nullptr);
-    std::cout << "  SUCCESS: Instance destroyed\n\n";
+    TEST_LOG_INFO() << "  SUCCESS: Instance destroyed\n\n";
 
     // Summary
-    std::cout << "=================================================\n";
-    std::cout << "Phase 2 PASSED\n";
-    std::cout << "=================================================\n\n";
+    TEST_LOG_INFO() << "=================================================\n";
+    TEST_LOG_INFO() << "Phase 2 PASSED\n";
+    TEST_LOG_INFO() << "=================================================\n\n";
 
     return 0;
 }

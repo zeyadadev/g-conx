@@ -1,8 +1,9 @@
 #include "vn_ring.h"
 
-#include <iostream>
-
 #include "network/network_client.h"
+#include "utils/logging.h"
+
+#define CLIENT_LOG_ERROR() VP_LOG_STREAM_ERROR(CLIENT)
 
 using namespace venus_plus;
 
@@ -30,12 +31,12 @@ void vn_ring_submit_command(struct vn_ring* ring, struct vn_ring_submit_command*
 
     const size_t payload_size = vn_cs_encoder_get_len(&submit->encoder);
     if (!payload_size) {
-        std::cerr << "[Client] Attempted to send empty Venus command\n";
+        CLIENT_LOG_ERROR() << "Attempted to send empty Venus command";
         return;
     }
 
     if (!ring->client->send(submit->cmd_data, payload_size)) {
-        std::cerr << "[Client] Failed to send Venus command\n";
+        CLIENT_LOG_ERROR() << "Failed to send Venus command";
     }
 }
 
@@ -48,7 +49,7 @@ vn_cs_decoder* vn_ring_get_command_reply(struct vn_ring* ring, struct vn_ring_su
 
     std::vector<uint8_t> reply;
     if (!ring->client->receive(reply)) {
-        std::cerr << "[Client] Failed to receive Venus reply\n";
+        CLIENT_LOG_ERROR() << "Failed to receive Venus reply";
         return nullptr;
     }
 

@@ -13,6 +13,7 @@ add_executable(venus-test-app
 
 target_include_directories(venus-test-app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/common
 )
 
 target_link_libraries(venus-test-app PRIVATE
@@ -27,4 +28,9 @@ add_executable(venus-network-test
 target_link_libraries(venus-network-test PRIVATE
     venus_common
     Vulkan::Vulkan
+)
+
+target_include_directories(venus-network-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/common
 )

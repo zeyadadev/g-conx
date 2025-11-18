@@ -1,12 +1,17 @@
 #include "network_server.h"
 #include "message.h"
 #include "socket_utils.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
-#include <iostream>
+
+#include "utils/logging.h"
+
+#define NETWORK_LOG_ERROR() VP_LOG_STREAM_ERROR(NETWORK)
+#define NETWORK_LOG_INFO() VP_LOG_STREAM_INFO(NETWORK)
 
 namespace venus_plus {
 
@@ -20,14 +25,14 @@ bool NetworkServer::start(uint16_t port, const std::string& bind_addr) {
     // Create socket
     server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd_ < 0) {
-        std::cerr << "Failed to create server socket\n";
+        NETWORK_LOG_ERROR() << "Failed to create server socket";
         return false;
     }
 
     // Set socket options
     int opt = 1;
     if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        std::cerr << "setsockopt failed\n";
+        NETWORK_LOG_ERROR() << "setsockopt failed";
         close(server_fd_);
         server_fd_ = -1;
         return false;
@@ -41,7 +46,7 @@ bool NetworkServer::start(uint16_t port, const std::string& bind_addr) {
     inet_pton(AF_INET, bind_addr.c_str(), &addr.sin_addr);
 
     if (bind(server_fd_, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "Bind failed on port " << port << "\n";
+        NETWORK_LOG_ERROR() << "Bind failed on port " << port;
         close(server_fd_);
         server_fd_ = -1;
         return false;
@@ -49,14 +54,14 @@ bool NetworkServer::start(uint16_t port, const std::string& bind_addr) {
 
     // Listen
     if (listen(server_fd_, 5) < 0) {
-        std::cerr << "Listen failed\n";
+        NETWORK_LOG_ERROR() << "Listen failed";
         close(server_fd_);
         server_fd_ = -1;
         return false;
     }
 
     running_ = true;
-    std::cout << "Server listening on " << bind_addr << ":" << port << "\n";
+    NETWORK_LOG_INFO() << "Server listening on " << bind_addr << ":" << port;
     return true;
 }
 
@@ -69,14 +74,14 @@ void NetworkServer::run(ClientHandler handler) {
         int client_fd = accept(server_fd_, (struct sockaddr*)&client_addr, &client_len);
         if (client_fd < 0) {
             if (running_) {
-                std::cerr << "Accept failed\n";
+                NETWORK_LOG_ERROR() << "Accept failed";
             }
             continue;
         }
 
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
-        std::cout << "Client connected from " << client_ip << "\n";
+        NETWORK_LOG_INFO() << "Client connected from " << client_ip;
 
         // Handle client (inline for Phase 1, will thread later)
         handle_client(client_fd, handler);
@@ -103,7 +108,7 @@ void NetworkServer::handle_client(int client_fd, ClientHandler handler) {
 
         // Validate magic
         if (header.magic != MESSAGE_MAGIC) {
-            std::cerr << "Invalid message magic from client\n";
+            NETWORK_LOG_ERROR() << "Invalid message magic from client";
             break;
         }
 
@@ -119,7 +124,7 @@ void NetworkServer::handle_client(int client_fd, ClientHandler handler) {
         }
     }
 
-    std::cout << "Client disconnected\n";
+    NETWORK_LOG_INFO() << "Client disconnected";
     close(client_fd);
 }
 

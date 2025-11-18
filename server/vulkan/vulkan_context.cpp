@@ -1,9 +1,13 @@
 #include "vulkan_context.h"
+#include "utils/logging.h"
 
 #include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <vector>
+
+#define VULKAN_LOG_ERROR() VP_LOG_STREAM_ERROR(VULKAN)
+#define VULKAN_LOG_WARN() VP_LOG_STREAM_WARN(VULKAN)
+#define VULKAN_LOG_INFO() VP_LOG_STREAM_INFO(VULKAN)
 
 namespace venus_plus {
 
@@ -14,10 +18,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBit
                                               const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
                                               void* /*pUserData*/) {
     const char* severity = "INFO";
+    venus_plus::LogLevel level = venus_plus::LogLevel::INFO;
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         severity = "ERROR";
+        level = venus_plus::LogLevel::ERROR;
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
         severity = "WARNING";
+        level = venus_plus::LogLevel::WARN;
     }
 
     const char* type = "GENERAL";
@@ -27,9 +34,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBit
         type = "PERF";
     }
 
-    std::cerr << "[Vulkan][" << severity << "][" << type << "] "
-              << (callbackData && callbackData->pMessage ? callbackData->pMessage : "Unknown message")
-              << "\n";
+    const char* message = callbackData && callbackData->pMessage ? callbackData->pMessage : "Unknown message";
+    VP_LOG(level, venus_plus::LogCategory::VULKAN, "[Vulkan][%s][%s] %s", severity, type, message);
     return VK_FALSE;
 }
 
@@ -58,7 +64,7 @@ bool VulkanContext::initialize(const VulkanContextCreateInfo& info) {
 
     if (validation_enabled_) {
         if (!create_debug_messenger()) {
-            std::cerr << "[Vulkan] Failed to create debug messenger (validation enabled)\n";
+            VULKAN_LOG_ERROR() << "Failed to create debug messenger (validation enabled)";
         }
     }
 
@@ -98,14 +104,14 @@ void VulkanContext::populate_layer_list() {
 
     uint32_t layer_count = 0;
     if (vkEnumerateInstanceLayerProperties(&layer_count, nullptr) != VK_SUCCESS || layer_count == 0) {
-        std::cerr << "[Vulkan] No instance layers available, disabling validation\n";
+        VULKAN_LOG_WARN() << "No instance layers available, disabling validation";
         validation_enabled_ = false;
         return;
     }
 
     std::vector<VkLayerProperties> layers(layer_count);
     if (vkEnumerateInstanceLayerProperties(&layer_count, layers.data()) != VK_SUCCESS) {
-        std::cerr << "[Vulkan] Failed to enumerate instance layers, disabling validation\n";
+        VULKAN_LOG_WARN() << "Failed to enumerate instance layers, disabling validation";
         validation_enabled_ = false;
         return;
     }
@@ -117,7 +123,7 @@ void VulkanContext::populate_layer_list() {
                            });
 
     if (it == layers.end()) {
-        std::cerr << "[Vulkan] Validation layer not available, disabling validation\n";
+        VULKAN_LOG_WARN() << "Validation layer not available, disabling validation";
         validation_enabled_ = false;
         return;
     }
@@ -141,14 +147,14 @@ void VulkanContext::populate_extension_list() {
 
     uint32_t count = 0;
     if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS) {
-        std::cerr << "[Vulkan] Failed to enumerate instance extensions\n";
+        VULKAN_LOG_ERROR() << "Failed to enumerate instance extensions";
         return;
     }
 
     std::vector<VkExtensionProperties> props(count);
     if (count > 0 &&
         vkEnumerateInstanceExtensionProperties(nullptr, &count, props.data()) != VK_SUCCESS) {
-        std::cerr << "[Vulkan] Failed to enumerate instance extensions (pass 2)\n";
+        VULKAN_LOG_ERROR() << "Failed to enumerate instance extensions (pass 2)";
         return;
     }
 
@@ -158,7 +164,7 @@ void VulkanContext::populate_extension_list() {
             owned_extension_names_.push_back(debug_utils);
             extension_name_ptrs_.push_back(owned_extension_names_.back().c_str());
         } else {
-            std::cerr << "[Vulkan] VK_EXT_debug_utils missing, disabling validation messenger\n";
+            VULKAN_LOG_WARN() << "VK_EXT_debug_utils missing, disabling validation messenger";
         }
     }
 
@@ -191,13 +197,13 @@ bool VulkanContext::create_instance() {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, &instance_);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Vulkan] vkCreateInstance failed: " << result << "\n";
+        VULKAN_LOG_ERROR() << "vkCreateInstance failed: " << result;
         instance_ = VK_NULL_HANDLE;
         return false;
     }
 
-    std::cout << "[Vulkan] Instance created (validation="
-              << (validation_enabled_ ? "on" : "off") << ")\n";
+    VULKAN_LOG_INFO() << "Instance created (validation="
+                      << (validation_enabled_ ? "on" : "off") << ")";
     return true;
 }
 
@@ -209,7 +215,7 @@ bool VulkanContext::create_debug_messenger() {
     auto create_fn = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
         vkGetInstanceProcAddr(instance_, "vkCreateDebugUtilsMessengerEXT"));
     if (!create_fn) {
-        std::cerr << "[Vulkan] vkCreateDebugUtilsMessengerEXT not found\n";
+        VULKAN_LOG_ERROR() << "vkCreateDebugUtilsMessengerEXT not found";
         return false;
     }
 
@@ -224,7 +230,7 @@ bool VulkanContext::create_debug_messenger() {
 
     VkResult result = create_fn(instance_, &info, nullptr, &debug_messenger_);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Vulkan] Failed to create debug messenger: " << result << "\n";
+        VULKAN_LOG_ERROR() << "Failed to create debug messenger: " << result;
         debug_messenger_ = VK_NULL_HANDLE;
         return false;
     }

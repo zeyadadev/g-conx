@@ -1,39 +1,40 @@
 #include "phase03_test.h"
+#include "logging.h"
 #include <cstring>
-#include <iostream>
 #include <vector>
+#include <iomanip>
 
 static void print_properties(const VkPhysicalDeviceProperties& props) {
-    std::cout << "  Device Name: " << props.deviceName << "\n";
-    std::cout << "  Device Type: ";
+    TEST_LOG_INFO() << "  Device Name: " << props.deviceName << "\n";
+    TEST_LOG_INFO() << "  Device Type: ";
     switch (props.deviceType) {
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
-            std::cout << "Discrete GPU";
+            TEST_LOG_INFO() << "Discrete GPU";
             break;
         case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
-            std::cout << "Integrated GPU";
+            TEST_LOG_INFO() << "Integrated GPU";
             break;
         case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
-            std::cout << "Virtual GPU";
+            TEST_LOG_INFO() << "Virtual GPU";
             break;
         case VK_PHYSICAL_DEVICE_TYPE_CPU:
-            std::cout << "CPU";
+            TEST_LOG_INFO() << "CPU";
             break;
         default:
-            std::cout << "Other";
+            TEST_LOG_INFO() << "Other";
             break;
     }
-    std::cout << "\n";
+    TEST_LOG_INFO() << "\n";
 
     uint32_t major = VK_VERSION_MAJOR(props.apiVersion);
     uint32_t minor = VK_VERSION_MINOR(props.apiVersion);
     uint32_t patch = VK_VERSION_PATCH(props.apiVersion);
-    std::cout << "  API Version: " << major << "." << minor << "." << patch << "\n";
-    std::cout << "  Driver Version: " << VK_VERSION_MAJOR(props.driverVersion) << "."
+    TEST_LOG_INFO() << "  API Version: " << major << "." << minor << "." << patch << "\n";
+    TEST_LOG_INFO() << "  Driver Version: " << VK_VERSION_MAJOR(props.driverVersion) << "."
               << VK_VERSION_MINOR(props.driverVersion) << "."
               << VK_VERSION_PATCH(props.driverVersion) << "\n";
-    std::cout << "  Vendor ID: 0x" << std::hex << props.vendorID << std::dec << "\n";
-    std::cout << "  Device ID: 0x" << std::hex << props.deviceID << std::dec << "\n";
+    TEST_LOG_INFO() << "  Vendor ID: 0x" << std::hex << props.vendorID << std::dec << "\n";
+    TEST_LOG_INFO() << "  Device ID: 0x" << std::hex << props.deviceID << std::dec << "\n";
 }
 
 static uint32_t count_enabled_features(const VkPhysicalDeviceFeatures& features) {
@@ -50,33 +51,33 @@ static uint32_t count_enabled_features(const VkPhysicalDeviceFeatures& features)
 }
 
 static void print_queue_family(uint32_t index, const VkQueueFamilyProperties& props) {
-    std::cout << "  Family " << index << ": ";
+    TEST_LOG_INFO() << "  Family " << index << ": ";
 
     if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-        std::cout << "Graphics | ";
+        TEST_LOG_INFO() << "Graphics | ";
     }
     if (props.queueFlags & VK_QUEUE_COMPUTE_BIT) {
-        std::cout << "Compute | ";
+        TEST_LOG_INFO() << "Compute | ";
     }
     if (props.queueFlags & VK_QUEUE_TRANSFER_BIT) {
-        std::cout << "Transfer | ";
+        TEST_LOG_INFO() << "Transfer | ";
     }
     if (props.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
-        std::cout << "Sparse | ";
+        TEST_LOG_INFO() << "Sparse | ";
     }
 
-    std::cout << props.queueCount << " queues\n";
+    TEST_LOG_INFO() << props.queueCount << " queues\n";
 }
 
 bool run_phase03_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 3: Fake Device Creation\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 3: Fake Device Creation\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkResult result;
 
     // Step 1: Create instance
-    std::cout << "[1] Creating instance...\n";
+    TEST_LOG_INFO() << "[1] Creating instance...\n";
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Phase 3 Test";
@@ -92,17 +93,17 @@ bool run_phase03_test() {
     VkInstance instance = VK_NULL_HANDLE;
     result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✓ Instance created\n\n";
+    TEST_LOG_INFO() << "✓ Instance created\n\n";
 
     // Step 2: Enumerate physical devices
-    std::cout << "[2] Enumerating physical devices...\n";
+    TEST_LOG_INFO() << "[2] Enumerating physical devices...\n";
     uint32_t deviceCount = 0;
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (result != VK_SUCCESS || deviceCount == 0) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices failed or no devices\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices failed or no devices\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
@@ -110,49 +111,49 @@ bool run_phase03_test() {
     std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data());
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Found " << deviceCount << " physical device(s)\n\n";
+    TEST_LOG_INFO() << "✓ Found " << deviceCount << " physical device(s)\n\n";
 
     VkPhysicalDevice physicalDevice = physicalDevices[0];
 
     // Step 3: Get physical device properties
-    std::cout << "[3] Querying physical device properties...\n";
+    TEST_LOG_INFO() << "[3] Querying physical device properties...\n";
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
     print_properties(properties);
 
     // Verify the device name
     if (strcmp(properties.deviceName, "Venus Plus Virtual GPU") != 0) {
-        std::cerr << "✗ Unexpected device name: " << properties.deviceName << "\n";
+        TEST_LOG_ERROR() << "✗ Unexpected device name: " << properties.deviceName << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Physical device properties retrieved\n\n";
+    TEST_LOG_INFO() << "✓ Physical device properties retrieved\n\n";
 
     // Step 4: Get physical device features
-    std::cout << "[4] Querying physical device features...\n";
+    TEST_LOG_INFO() << "[4] Querying physical device features...\n";
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physicalDevice, &features);
     uint32_t enabledFeatureCount = count_enabled_features(features);
-    std::cout << "  Enabled features: " << enabledFeatureCount << "\n";
+    TEST_LOG_INFO() << "  Enabled features: " << enabledFeatureCount << "\n";
 
     if (enabledFeatureCount == 0) {
-        std::cerr << "✗ No features enabled (expected some features)\n";
+        TEST_LOG_ERROR() << "✗ No features enabled (expected some features)\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Physical device features retrieved\n\n";
+    TEST_LOG_INFO() << "✓ Physical device features retrieved\n\n";
 
     // Step 5: Get queue family properties
-    std::cout << "[5] Querying queue family properties...\n";
+    TEST_LOG_INFO() << "[5] Querying queue family properties...\n";
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
 
     if (queueFamilyCount == 0) {
-        std::cerr << "✗ No queue families found\n";
+        TEST_LOG_ERROR() << "✗ No queue families found\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
@@ -160,7 +161,7 @@ bool run_phase03_test() {
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    std::cout << "  Queue families: " << queueFamilyCount << "\n";
+    TEST_LOG_INFO() << "  Queue families: " << queueFamilyCount << "\n";
     for (uint32_t i = 0; i < queueFamilyCount; i++) {
         print_queue_family(i, queueFamilies[i]);
     }
@@ -169,29 +170,29 @@ bool run_phase03_test() {
     if (!(queueFamilies[0].queueFlags & VK_QUEUE_GRAPHICS_BIT) ||
         !(queueFamilies[0].queueFlags & VK_QUEUE_COMPUTE_BIT) ||
         !(queueFamilies[0].queueFlags & VK_QUEUE_TRANSFER_BIT)) {
-        std::cerr << "✗ Queue family 0 missing expected flags\n";
+        TEST_LOG_ERROR() << "✗ Queue family 0 missing expected flags\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Queue family properties retrieved\n\n";
+    TEST_LOG_INFO() << "✓ Queue family properties retrieved\n\n";
 
     // Step 6: Get memory properties
-    std::cout << "[6] Querying memory properties...\n";
+    TEST_LOG_INFO() << "[6] Querying memory properties...\n";
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
-    std::cout << "  Memory types: " << memProperties.memoryTypeCount << "\n";
-    std::cout << "  Memory heaps: " << memProperties.memoryHeapCount << "\n";
+    TEST_LOG_INFO() << "  Memory types: " << memProperties.memoryTypeCount << "\n";
+    TEST_LOG_INFO() << "  Memory heaps: " << memProperties.memoryHeapCount << "\n";
 
     if (memProperties.memoryTypeCount < 2 || memProperties.memoryHeapCount < 2) {
-        std::cerr << "✗ Expected at least 2 memory types and 2 heaps\n";
+        TEST_LOG_ERROR() << "✗ Expected at least 2 memory types and 2 heaps\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Memory properties retrieved\n\n";
+    TEST_LOG_INFO() << "✓ Memory properties retrieved\n\n";
 
     // Step 7: Create device
-    std::cout << "[7] Creating logical device...\n";
+    TEST_LOG_INFO() << "[7] Creating logical device...\n";
 
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -211,38 +212,38 @@ bool run_phase03_test() {
     VkDevice device = VK_NULL_HANDLE;
     result = vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Logical device created\n\n";
+    TEST_LOG_INFO() << "✓ Logical device created\n\n";
 
     // Step 8: Get device queue
-    std::cout << "[8] Getting device queue...\n";
+    TEST_LOG_INFO() << "[8] Getting device queue...\n";
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
 
     if (queue == VK_NULL_HANDLE) {
-        std::cerr << "✗ vkGetDeviceQueue returned NULL\n";
+        TEST_LOG_ERROR() << "✗ vkGetDeviceQueue returned NULL\n";
         vkDestroyDevice(device, nullptr);
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✓ Device queue retrieved (handle: " << queue << ")\n\n";
+    TEST_LOG_INFO() << "✓ Device queue retrieved (handle: " << queue << ")\n\n";
 
     // Step 9: Destroy device
-    std::cout << "[9] Destroying device...\n";
+    TEST_LOG_INFO() << "[9] Destroying device...\n";
     vkDestroyDevice(device, nullptr);
-    std::cout << "✓ Device destroyed\n\n";
+    TEST_LOG_INFO() << "✓ Device destroyed\n\n";
 
     // Step 10: Destroy instance
-    std::cout << "[10] Destroying instance...\n";
+    TEST_LOG_INFO() << "[10] Destroying instance...\n";
     vkDestroyInstance(instance, nullptr);
-    std::cout << "✓ Instance destroyed\n\n";
+    TEST_LOG_INFO() << "✓ Instance destroyed\n\n";
 
-    std::cout << "========================================\n";
-    std::cout << "✓ Phase 3 PASSED\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "========================================\n";
+    TEST_LOG_INFO() << "✓ Phase 3 PASSED\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     return true;
 }

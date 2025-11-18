@@ -1,8 +1,10 @@
 #include "resource_tracker.h"
 
 #include "binding_validator.h"
+#include "utils/logging.h"
 #include <algorithm>
-#include <iostream>
+
+#define RESOURCE_LOG_ERROR() VP_LOG_STREAM_ERROR(SERVER)
 
 namespace venus_plus {
 
@@ -26,7 +28,7 @@ VkBuffer ResourceTracker::create_buffer(VkDevice device,
     VkBuffer real_handle = VK_NULL_HANDLE;
     VkResult result = vkCreateBuffer(real_device, &info, nullptr, &real_handle);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreateBuffer failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreateBuffer failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -93,7 +95,7 @@ VkImage ResourceTracker::create_image(VkDevice device,
     VkImage real_handle = VK_NULL_HANDLE;
     VkResult result = vkCreateImage(real_device, &info, nullptr, &real_handle);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreateImage failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreateImage failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -166,7 +168,7 @@ VkDeviceMemory ResourceTracker::allocate_memory(VkDevice device,
     VkDeviceMemory real_handle = VK_NULL_HANDLE;
     VkResult result = vkAllocateMemory(real_device, &info, nullptr, &real_handle);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkAllocateMemory failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkAllocateMemory failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -467,7 +469,7 @@ VkShaderModule ResourceTracker::create_shader_module(VkDevice device,
     VkShaderModule real_module = VK_NULL_HANDLE;
     VkResult result = vkCreateShaderModule(real_device, &info, nullptr, &real_module);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreateShaderModule failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreateShaderModule failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -517,7 +519,7 @@ VkDescriptorSetLayout ResourceTracker::create_descriptor_set_layout(
     VkDescriptorSetLayout real_layout = VK_NULL_HANDLE;
     VkResult result = vkCreateDescriptorSetLayout(real_device, &info, nullptr, &real_layout);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreateDescriptorSetLayout failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreateDescriptorSetLayout failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -568,7 +570,7 @@ VkDescriptorPool ResourceTracker::create_descriptor_pool(
     VkDescriptorPool real_pool = VK_NULL_HANDLE;
     VkResult result = vkCreateDescriptorPool(real_device, &info, nullptr, &real_pool);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreateDescriptorPool failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreateDescriptorPool failed: " << result;
         return VK_NULL_HANDLE;
     }
 
@@ -778,7 +780,7 @@ VkPipelineLayout ResourceTracker::create_pipeline_layout(
     VkPipelineLayout real_layout = VK_NULL_HANDLE;
     VkResult result = vkCreatePipelineLayout(real_device, &real_info, nullptr, &real_layout);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkCreatePipelineLayout failed: " << result << "\n";
+        RESOURCE_LOG_ERROR() << "vkCreatePipelineLayout failed: " << result;
         return VK_NULL_HANDLE;
     }
 

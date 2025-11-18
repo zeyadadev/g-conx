@@ -4,6 +4,7 @@ add_library(venus_common STATIC
     network/network_server.cpp
     protocol/venus_cs.cpp
     protocol/venus_ring.cpp
+    utils/logging_bridge.cpp
 )
 
 # Enable position-independent code for static library

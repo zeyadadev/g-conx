@@ -1,0 +1,8 @@
+#pragma once
+
+#include "utils/logging.h"
+
+#define TEST_LOG_INFO() VP_LOG_STREAM_INFO(GENERAL)
+#define TEST_LOG_WARN() VP_LOG_STREAM_WARN(GENERAL)
+#define TEST_LOG_ERROR() VP_LOG_STREAM_ERROR(GENERAL)
+

@@ -1,7 +1,7 @@
 #include "phase07_test.h"
 
 #include <chrono>
-#include <iostream>
+#include "logging.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -34,10 +34,10 @@ bool create_instance(VkInstance* instance) {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ vkCreateInstance succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateInstance succeeded\n";
     return true;
 }
 
@@ -45,13 +45,13 @@ bool pick_physical_device(VkInstance instance, VkPhysicalDevice* out_device) {
     uint32_t count = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
     if (result != VK_SUCCESS || count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         return false;
     }
     std::vector<VkPhysicalDevice> devices(count);
     result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
     if (result != VK_SUCCESS || devices.empty()) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices (2nd call) failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices (2nd call) failed: " << result << "\n";
         return false;
     }
     *out_device = devices[0];
@@ -74,9 +74,9 @@ uint32_t select_queue_family(VkPhysicalDevice physical_device) {
 } // namespace
 
 bool run_phase07_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 7: Real GPU Execution\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 7: Real GPU Execution\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
@@ -117,14 +117,14 @@ bool run_phase07_test() {
 
         VkResult result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateDevice succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateDevice succeeded\n";
 
         vkGetDeviceQueue(device, queue_family_index, 0, &queue);
         if (queue == VK_NULL_HANDLE) {
-            std::cerr << "✗ vkGetDeviceQueue returned NULL\n";
+            TEST_LOG_ERROR() << "✗ vkGetDeviceQueue returned NULL\n";
             break;
         }
 
@@ -136,10 +136,10 @@ bool run_phase07_test() {
 
         result = vkCreateBuffer(device, &buffer_info, nullptr, &test_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateBuffer failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ Buffer created\n";
+        TEST_LOG_INFO() << "✅ Buffer created\n";
 
         VkMemoryRequirements requirements = {};
         vkGetBufferMemoryRequirements(device, test_buffer, &requirements);
@@ -149,7 +149,7 @@ bool run_phase07_test() {
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                              mem_props);
         if (memory_type == UINT32_MAX) {
-            std::cerr << "✗ Failed to find DEVICE_LOCAL memory type\n";
+            TEST_LOG_ERROR() << "✗ Failed to find DEVICE_LOCAL memory type\n";
             break;
         }
 
@@ -160,17 +160,17 @@ bool run_phase07_test() {
 
         result = vkAllocateMemory(device, &alloc_info, nullptr, &buffer_memory);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateMemory failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateMemory failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ Device memory allocated\n";
+        TEST_LOG_INFO() << "✅ Device memory allocated\n";
 
         result = vkBindBufferMemory(device, test_buffer, buffer_memory, 0);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkBindBufferMemory failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkBindBufferMemory failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ Buffer memory bound\n";
+        TEST_LOG_INFO() << "✅ Buffer memory bound\n";
 
         VkCommandPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -178,7 +178,7 @@ bool run_phase07_test() {
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         result = vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateCommandPool failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateCommandPool failed: " << result << "\n";
             break;
         }
 
@@ -189,7 +189,7 @@ bool run_phase07_test() {
         alloc_cb.commandBufferCount = 1;
         result = vkAllocateCommandBuffers(device, &alloc_cb, &command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
             break;
         }
 
@@ -197,7 +197,7 @@ bool run_phase07_test() {
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         result = vkBeginCommandBuffer(command_buffer, &begin_info);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkBeginCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkBeginCommandBuffer failed: " << result << "\n";
             break;
         }
 
@@ -205,7 +205,7 @@ bool run_phase07_test() {
 
         result = vkEndCommandBuffer(command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkEndCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkEndCommandBuffer failed: " << result << "\n";
             break;
         }
 
@@ -213,7 +213,7 @@ bool run_phase07_test() {
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         result = vkCreateFence(device, &fence_info, nullptr, &fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateFence failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateFence failed: " << result << "\n";
             break;
         }
 
@@ -225,27 +225,27 @@ bool run_phase07_test() {
         auto start = std::chrono::high_resolution_clock::now();
         result = vkQueueSubmit(queue, 1, &submit, fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkQueueSubmit failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkQueueSubmit failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkQueueSubmit issued real GPU work\n";
+        TEST_LOG_INFO() << "✅ vkQueueSubmit issued real GPU work\n";
 
         result = vkWaitForFences(device, 1, &fence, VK_TRUE, 5'000'000'000ull);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkWaitForFences timed out or failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkWaitForFences timed out or failed: " << result << "\n";
             break;
         }
         auto end = std::chrono::high_resolution_clock::now();
         auto duration_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        std::cout << "✅ Fence signaled after GPU execution (" << duration_ms << " ms)\n";
+        TEST_LOG_INFO() << "✅ Fence signaled after GPU execution (" << duration_ms << " ms)\n";
 
         result = vkGetFenceStatus(device, fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkGetFenceStatus did not report success: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkGetFenceStatus did not report success: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkGetFenceStatus reports success\n";
+        TEST_LOG_INFO() << "✅ vkGetFenceStatus reports success\n";
 
         success = true;
     } while (false);
@@ -273,7 +273,7 @@ bool run_phase07_test() {
     }
 
     if (success) {
-        std::cout << "✅ Phase 7 PASSED\n";
+        TEST_LOG_INFO() << "✅ Phase 7 PASSED\n";
     }
     return success;
 }

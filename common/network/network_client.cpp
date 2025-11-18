@@ -1,12 +1,17 @@
 #include "network_client.h"
 #include "message.h"
 #include "socket_utils.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
-#include <iostream>
+
+#include "utils/logging.h"
+
+#define NETWORK_LOG_ERROR() VP_LOG_STREAM_ERROR(NETWORK)
+#define NETWORK_LOG_INFO() VP_LOG_STREAM_INFO(NETWORK)
 
 namespace venus_plus {
 
@@ -20,7 +25,7 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
     // Create socket
     fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (fd_ < 0) {
-        std::cerr << "Failed to create socket\n";
+        NETWORK_LOG_ERROR() << "Failed to create socket";
         return false;
     }
 
@@ -31,7 +36,7 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
     server_addr.sin_port = htons(port);
 
     if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
-        std::cerr << "Invalid address: " << host << "\n";
+        NETWORK_LOG_ERROR() << "Invalid address: " << host;
         close(fd_);
         fd_ = -1;
         return false;
@@ -39,19 +44,19 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
 
     // Connect
     if (::connect(fd_, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Connection failed to " << host << ":" << port << "\n";
+        NETWORK_LOG_ERROR() << "Connection failed to " << host << ":" << port;
         close(fd_);
         fd_ = -1;
         return false;
     }
 
-    std::cout << "Connected to " << host << ":" << port << "\n";
+    NETWORK_LOG_INFO() << "Connected to " << host << ":" << port;
     return true;
 }
 
 bool NetworkClient::send(const void* data, size_t size) {
     if (fd_ < 0) {
-        std::cerr << "Not connected\n";
+        NETWORK_LOG_ERROR() << "Not connected";
         return false;
     }
 
@@ -74,7 +79,7 @@ bool NetworkClient::send(const void* data, size_t size) {
 
 bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
     if (fd_ < 0) {
-        std::cerr << "Not connected\n";
+        NETWORK_LOG_ERROR() << "Not connected";
         return false;
     }
 
@@ -86,7 +91,7 @@ bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
 
     // Validate magic
     if (header.magic != MESSAGE_MAGIC) {
-        std::cerr << "Invalid message magic\n";
+        NETWORK_LOG_ERROR() << "Invalid message magic";
         return false;
     }
 

@@ -1,10 +1,12 @@
 #include "memory_transfer.h"
 
 #include <cstring>
-#include <iostream>
 #include <limits>
 
 #include "server_state.h"
+#include "utils/logging.h"
+
+#define MEMORY_LOG_ERROR() VP_LOG_STREAM_ERROR(MEMORY)
 
 namespace venus_plus {
 
@@ -24,7 +26,7 @@ VkResult MemoryTransferHandler::handle_transfer_command(const void* data, size_t
 
     const size_t payload_size = size - sizeof(header);
     if (header.size != static_cast<uint64_t>(payload_size)) {
-        std::cerr << "[Venus Server] Transfer payload size mismatch\n";
+        MEMORY_LOG_ERROR() << "Transfer payload size mismatch";
         return VK_ERROR_UNKNOWN;
     }
 
@@ -65,13 +67,13 @@ VkResult MemoryTransferHandler::write_memory(const TransferMemoryDataHeader& hea
                                                   &real_device,
                                                   &allocation_size,
                                                   &type_index)) {
-        std::cerr << "[Venus Server] Unknown memory handle in transfer\n";
+        MEMORY_LOG_ERROR() << "Unknown memory handle in transfer";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
     const uint64_t end = header.offset + header.size;
     if (end > allocation_size) {
-        std::cerr << "[Venus Server] Transfer range exceeds allocation\n";
+        MEMORY_LOG_ERROR() << "Transfer range exceeds allocation";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -87,7 +89,7 @@ VkResult MemoryTransferHandler::write_memory(const TransferMemoryDataHeader& hea
                                   0,
                                   &mapped);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkMapMemory failed for transfer: " << result << "\n";
+        MEMORY_LOG_ERROR() << "vkMapMemory failed for transfer: " << result;
         return result;
     }
 
@@ -118,13 +120,13 @@ VkResult MemoryTransferHandler::read_memory(const ReadMemoryDataRequest& request
                                                   &real_device,
                                                   &allocation_size,
                                                   &type_index)) {
-        std::cerr << "[Venus Server] Unknown memory handle in read\n";
+        MEMORY_LOG_ERROR() << "Unknown memory handle in read";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
     const uint64_t end = request.offset + request.size;
     if (end > allocation_size) {
-        std::cerr << "[Venus Server] Read range exceeds allocation\n";
+        MEMORY_LOG_ERROR() << "Read range exceeds allocation";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
@@ -146,7 +148,7 @@ VkResult MemoryTransferHandler::read_memory(const ReadMemoryDataRequest& request
                                   0,
                                   &mapped);
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] vkMapMemory failed for read: " << result << "\n";
+        MEMORY_LOG_ERROR() << "vkMapMemory failed for read: " << result;
         out_payload->clear();
         return result;
     }

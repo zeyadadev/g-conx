@@ -1,10 +1,12 @@
 #include "server_state.h"
 #include "server_state_bridge.h"
+#include "utils/logging.h"
 #include <algorithm>
 #include <string>
 #include <vector>
-#include <cstdio>
-#include <iostream>
+
+#define SERVER_LOG_ERROR() VP_LOG_STREAM_ERROR(SERVER)
+#define SERVER_LOG_INFO() VP_LOG_STREAM_INFO(SERVER)
 
 ServerState::ServerState()
     : resource_tracker(),
@@ -15,7 +17,7 @@ bool ServerState::initialize_vulkan(bool enable_validation) {
     venus_plus::VulkanContextCreateInfo info = {};
     info.enable_validation = enable_validation;
     if (!vulkan_context.initialize(info)) {
-        std::cerr << "[Venus Server] Failed to initialize Vulkan context\n";
+        SERVER_LOG_ERROR() << "Failed to initialize Vulkan context";
         return false;
     }
 
@@ -24,14 +26,14 @@ bool ServerState::initialize_vulkan(bool enable_validation) {
     uint32_t physical_count = 0;
     VkResult result = vkEnumeratePhysicalDevices(real_instance, &physical_count, nullptr);
     if (result != VK_SUCCESS || physical_count == 0) {
-        std::cerr << "[Venus Server] No physical devices available (result=" << result << ")\n";
+        SERVER_LOG_ERROR() << "No physical devices available (result=" << result << ")";
         return false;
     }
 
     std::vector<VkPhysicalDevice> physical_devices(physical_count);
     result = vkEnumeratePhysicalDevices(real_instance, &physical_count, physical_devices.data());
     if (result != VK_SUCCESS) {
-        std::cerr << "[Venus Server] Failed to enumerate physical devices (result=" << result << ")\n";
+        SERVER_LOG_ERROR() << "Failed to enumerate physical devices (result=" << result << ")";
         return false;
     }
 
@@ -52,7 +54,7 @@ bool ServerState::initialize_vulkan(bool enable_validation) {
     }
 
     if (chosen_device == VK_NULL_HANDLE) {
-        std::cerr << "[Venus Server] Failed to pick a physical device\n";
+        SERVER_LOG_ERROR() << "Failed to pick a physical device";
         return false;
     }
 
@@ -69,7 +71,7 @@ bool ServerState::initialize_vulkan(bool enable_validation) {
                                                  queue_family_properties.data());
     }
 
-    std::cout << "[Venus Server] Selected GPU: " << physical_device_properties.deviceName << "\n";
+    SERVER_LOG_INFO() << "Selected GPU: " << physical_device_properties.deviceName;
     return true;
 }
 
@@ -286,7 +288,7 @@ VkResult server_state_bind_buffer_memory(ServerState* state,
     std::string error;
     if (!state->resource_tracker.bind_buffer_memory(buffer, memory, offset, &error)) {
         if (!error.empty()) {
-            printf("[Venus Server]   -> %s\n", error.c_str());
+            SERVER_LOG_ERROR() << error;
         }
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
@@ -316,7 +318,7 @@ VkResult server_state_bind_image_memory(ServerState* state,
     std::string error;
     if (!state->resource_tracker.bind_image_memory(image, memory, offset, &error)) {
         if (!error.empty()) {
-            printf("[Venus Server]   -> %s\n", error.c_str());
+            SERVER_LOG_ERROR() << error;
         }
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
@@ -560,7 +562,7 @@ VkCommandBuffer server_state_get_real_command_buffer(const ServerState* state, V
 
 static bool log_validation_result(bool result, const std::string& error_message) {
     if (!result && !error_message.empty()) {
-        std::printf("[Venus Server]   -> Validation error: %s\n", error_message.c_str());
+        SERVER_LOG_ERROR() << "Validation error: " << error_message;
     }
     return result;
 }

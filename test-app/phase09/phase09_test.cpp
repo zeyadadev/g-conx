@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <cstring>
-#include <iostream>
+#include "logging.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -82,10 +82,10 @@ bool create_instance(VkInstance* instance) {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ vkCreateInstance succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateInstance succeeded\n";
     return true;
 }
 
@@ -93,13 +93,13 @@ bool pick_physical_device(VkInstance instance, VkPhysicalDevice* physical_device
     uint32_t count = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
     if (result != VK_SUCCESS || count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         return false;
     }
     std::vector<VkPhysicalDevice> devices(count);
     result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
     if (result != VK_SUCCESS || devices.empty()) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
         return false;
     }
     *physical_device = devices[0];
@@ -138,7 +138,7 @@ bool create_buffer(VkDevice device,
 
     VkResult result = vkCreateBuffer(device, &buffer_info, nullptr, &out->buffer);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateBuffer failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateBuffer failed: " << result << "\n";
         return false;
     }
 
@@ -149,7 +149,7 @@ bool create_buffer(VkDevice device,
     vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
     uint32_t type_index = find_memory_type(requirements.memoryTypeBits, properties, mem_props);
     if (type_index == UINT32_MAX) {
-        std::cerr << "✗ Unable to find buffer memory type\n";
+        TEST_LOG_ERROR() << "✗ Unable to find buffer memory type\n";
         return false;
     }
 
@@ -160,7 +160,7 @@ bool create_buffer(VkDevice device,
 
     result = vkAllocateMemory(device, &alloc_info, nullptr, &out->memory);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkAllocateMemory failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkAllocateMemory failed: " << result << "\n";
         return false;
     }
 
@@ -204,9 +204,9 @@ bool invalidate_memory(VkDevice device,
 } // namespace
 
 bool run_phase09_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 9: Compute Shader\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 9: Compute Shader\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
@@ -252,13 +252,13 @@ bool run_phase09_test() {
 
         VkResult result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
             break;
         }
 
         vkGetDeviceQueue(device, queue_family, 0, &queue);
         if (queue == VK_NULL_HANDLE) {
-            std::cerr << "✗ vkGetDeviceQueue returned NULL\n";
+            TEST_LOG_ERROR() << "✗ vkGetDeviceQueue returned NULL\n";
             break;
         }
 
@@ -267,7 +267,7 @@ bool run_phase09_test() {
         pool_info.queueFamilyIndex = queue_family;
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateCommandPool failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateCommandPool failed\n";
             break;
         }
 
@@ -277,14 +277,14 @@ bool run_phase09_test() {
         alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         alloc_info.commandBufferCount = 1;
         if (vkAllocateCommandBuffers(device, &alloc_info, &command_buffer) != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateCommandBuffers failed\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateCommandBuffers failed\n";
             break;
         }
 
         VkFenceCreateInfo fence_info = {};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         if (vkCreateFence(device, &fence_info, nullptr, &fence) != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateFence failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateFence failed\n";
             break;
         }
 
@@ -337,7 +337,7 @@ bool run_phase09_test() {
         layout_info.pBindings = bindings;
         if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &descriptor_set_layout) !=
             VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDescriptorSetLayout failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDescriptorSetLayout failed\n";
             break;
         }
 
@@ -351,7 +351,7 @@ bool run_phase09_test() {
         descriptor_pool_info.poolSizeCount = 1;
         descriptor_pool_info.pPoolSizes = &pool_sizes;
         if (vkCreateDescriptorPool(device, &descriptor_pool_info, nullptr, &descriptor_pool) != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDescriptorPool failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDescriptorPool failed\n";
             break;
         }
 
@@ -361,7 +361,7 @@ bool run_phase09_test() {
         descriptor_alloc.descriptorSetCount = 1;
         descriptor_alloc.pSetLayouts = &descriptor_set_layout;
         if (vkAllocateDescriptorSets(device, &descriptor_alloc, &descriptor_set) != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateDescriptorSets failed\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateDescriptorSets failed\n";
             break;
         }
 
@@ -393,7 +393,7 @@ bool run_phase09_test() {
         pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
         if (vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &pipeline_layout) !=
             VK_SUCCESS) {
-            std::cerr << "✗ vkCreatePipelineLayout failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreatePipelineLayout failed\n";
             break;
         }
 
@@ -402,7 +402,7 @@ bool run_phase09_test() {
         shader_info.codeSize = sizeof(kSimpleAddSpirv);
         shader_info.pCode = kSimpleAddSpirv;
         if (vkCreateShaderModule(device, &shader_info, nullptr, &shader_module) != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateShaderModule failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateShaderModule failed\n";
             break;
         }
 
@@ -423,7 +423,7 @@ bool run_phase09_test() {
                                      &compute_info,
                                      nullptr,
                                      &pipeline) != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateComputePipelines failed\n";
+            TEST_LOG_ERROR() << "✗ vkCreateComputePipelines failed\n";
             break;
         }
 
@@ -450,7 +450,7 @@ bool run_phase09_test() {
 
         vkResetFences(device, 1, &fence);
         if (vkQueueSubmit(queue, 1, &submit_info, fence) != VK_SUCCESS) {
-            std::cerr << "✗ vkQueueSubmit failed\n";
+            TEST_LOG_ERROR() << "✗ vkQueueSubmit failed\n";
             break;
         }
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
@@ -460,7 +460,7 @@ bool run_phase09_test() {
         for (uint32_t i = 0; i < kElementCount; ++i) {
             float expected = data_a[i] + data_b[i];
             if (std::abs(data_out[i] - expected) > 0.001f) {
-                std::cerr << "✗ Mismatch at " << i << ": got " << data_out[i]
+                TEST_LOG_ERROR() << "✗ Mismatch at " << i << ": got " << data_out[i]
                           << " expected " << expected << "\n";
                 valid = false;
                 break;
@@ -471,7 +471,7 @@ bool run_phase09_test() {
             break;
         }
 
-        std::cout << "✅ Phase 9 compute shader executed successfully!\n";
+        TEST_LOG_INFO() << "✅ Phase 9 compute shader executed successfully!\n";
         success = true;
     } while (false);
 

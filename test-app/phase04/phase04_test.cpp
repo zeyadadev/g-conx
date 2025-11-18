@@ -1,6 +1,6 @@
 #include "phase04_test.h"
 
-#include <iostream>
+#include "logging.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -40,9 +40,9 @@ void destroy_resource_chain(VkDevice device,
 } // namespace
 
 bool run_phase04_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 4: Fake Resource Management\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 4: Fake Resource Management\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkResult result;
     VkInstance instance = VK_NULL_HANDLE;
@@ -54,7 +54,7 @@ bool run_phase04_test() {
     VkDeviceMemory image_memory = VK_NULL_HANDLE;
 
     // Create instance
-    std::cout << "[1] Creating instance...\n";
+    TEST_LOG_INFO() << "[1] Creating instance...\n";
     VkApplicationInfo app_info = {};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pApplicationName = "Phase 4 Test";
@@ -69,16 +69,16 @@ bool run_phase04_test() {
 
     result = vkCreateInstance(&instance_info, nullptr, &instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ Instance created\n\n";
+    TEST_LOG_INFO() << "✅ Instance created\n\n";
 
     // Enumerate physical devices
     uint32_t device_count = 0;
     result = vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
     if (result != VK_SUCCESS || device_count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
@@ -86,18 +86,18 @@ bool run_phase04_test() {
     std::vector<VkPhysicalDevice> devices(device_count);
     result = vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ Failed to enumerate physical devices (second call)\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices (second call)\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
     physical_device = devices[0];
-    std::cout << "[2] Selected physical device: " << physical_device << "\n\n";
+    TEST_LOG_INFO() << "[2] Selected physical device: " << physical_device << "\n\n";
 
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 
     // Create logical device
-    std::cout << "[3] Creating device...\n";
+    TEST_LOG_INFO() << "[3] Creating device...\n";
     float queue_priority = 1.0f;
     VkDeviceQueueCreateInfo queue_info = {};
     queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -112,11 +112,11 @@ bool run_phase04_test() {
 
     result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✅ Device created\n\n";
+    TEST_LOG_INFO() << "✅ Device created\n\n";
 
     bool success = true;
     VkBufferCreateInfo buffer_info = {};
@@ -131,7 +131,7 @@ bool run_phase04_test() {
     int32_t device_local_index = -1;
     const VkDeviceSize buffer_size = 1024ull * 1024ull; // 1MB
 
-    std::cout << "[4] Creating buffer (" << buffer_size << " bytes)...\n";
+    TEST_LOG_INFO() << "[4] Creating buffer (" << buffer_size << " bytes)...\n";
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.size = buffer_size;
     buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
@@ -139,14 +139,14 @@ bool run_phase04_test() {
 
     result = vkCreateBuffer(device, &buffer_info, nullptr, &buffer);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateBuffer failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateBuffer failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ vkCreateBuffer succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateBuffer succeeded\n";
 
     vkGetBufferMemoryRequirements(device, buffer, &buffer_requirements);
-    std::cout << "   Requirements -> size=" << buffer_requirements.size
+    TEST_LOG_INFO() << "   Requirements -> size=" << buffer_requirements.size
               << ", alignment=" << buffer_requirements.alignment << "\n";
 
     host_visible_index =
@@ -154,7 +154,7 @@ bool run_phase04_test() {
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                          memory_properties);
     if (host_visible_index < 0) {
-        std::cerr << "✗ Unable to find host visible memory type for buffer\n";
+        TEST_LOG_ERROR() << "✗ Unable to find host visible memory type for buffer\n";
         success = false;
         goto cleanup;
     }
@@ -165,21 +165,21 @@ bool run_phase04_test() {
 
     result = vkAllocateMemory(device, &buffer_alloc, nullptr, &buffer_memory);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkAllocateMemory (buffer) failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkAllocateMemory (buffer) failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ Buffer memory allocated (type=" << host_visible_index << ")\n";
+    TEST_LOG_INFO() << "✅ Buffer memory allocated (type=" << host_visible_index << ")\n";
 
     result = vkBindBufferMemory(device, buffer, buffer_memory, 0);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkBindBufferMemory failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkBindBufferMemory failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ Buffer bound to memory\n\n";
+    TEST_LOG_INFO() << "✅ Buffer bound to memory\n\n";
 
-    std::cout << "[5] Creating image (256x256 RGBA)...\n";
+    TEST_LOG_INFO() << "[5] Creating image (256x256 RGBA)...\n";
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.imageType = VK_IMAGE_TYPE_2D;
     image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -194,14 +194,14 @@ bool run_phase04_test() {
 
     result = vkCreateImage(device, &image_info, nullptr, &image);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateImage failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateImage failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ vkCreateImage succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateImage succeeded\n";
 
     vkGetImageMemoryRequirements(device, image, &image_requirements);
-    std::cout << "   Requirements -> size=" << image_requirements.size
+    TEST_LOG_INFO() << "   Requirements -> size=" << image_requirements.size
               << ", alignment=" << image_requirements.alignment << "\n";
 
     device_local_index =
@@ -209,7 +209,7 @@ bool run_phase04_test() {
                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                          memory_properties);
     if (device_local_index < 0) {
-        std::cerr << "✗ Unable to find device local memory type for image\n";
+        TEST_LOG_ERROR() << "✗ Unable to find device local memory type for image\n";
         success = false;
         goto cleanup;
     }
@@ -220,30 +220,30 @@ bool run_phase04_test() {
 
     result = vkAllocateMemory(device, &image_alloc, nullptr, &image_memory);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkAllocateMemory (image) failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkAllocateMemory (image) failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ Image memory allocated (type=" << device_local_index << ")\n";
+    TEST_LOG_INFO() << "✅ Image memory allocated (type=" << device_local_index << ")\n";
 
     result = vkBindImageMemory(device, image, image_memory, 0);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkBindImageMemory failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkBindImageMemory failed: " << result << "\n";
         success = false;
         goto cleanup;
     }
-    std::cout << "✅ Image bound to memory\n";
+    TEST_LOG_INFO() << "✅ Image bound to memory\n";
 
     // Query subresource layout for completeness
     subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     subresource.mipLevel = 0;
     subresource.arrayLayer = 0;
     vkGetImageSubresourceLayout(device, image, &subresource, &layout);
-    std::cout << "   Subresource layout -> offset=" << layout.offset
+    TEST_LOG_INFO() << "   Subresource layout -> offset=" << layout.offset
               << ", rowPitch=" << layout.rowPitch << "\n\n";
 
 cleanup:
-    std::cout << "[6] Cleaning up resources...\n";
+    TEST_LOG_INFO() << "[6] Cleaning up resources...\n";
     destroy_resource_chain(device, buffer, buffer_memory, image, image_memory);
 
     if (device != VK_NULL_HANDLE) {
@@ -254,12 +254,12 @@ cleanup:
     }
 
     if (success) {
-        std::cout << "✅ Resource cleanup complete\n";
-        std::cout << "\n========================================\n";
-        std::cout << "Phase 4 PASSED\n";
-        std::cout << "========================================\n\n";
+        TEST_LOG_INFO() << "✅ Resource cleanup complete\n";
+        TEST_LOG_INFO() << "\n========================================\n";
+        TEST_LOG_INFO() << "Phase 4 PASSED\n";
+        TEST_LOG_INFO() << "========================================\n\n";
     } else {
-        std::cout << "✗ Phase 4 FAILED\n\n";
+        TEST_LOG_INFO() << "✗ Phase 4 FAILED\n\n";
     }
     return success;
 }

@@ -1,6 +1,6 @@
 #include "phase05_test.h"
 
-#include <iostream>
+#include "logging.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -36,7 +36,7 @@ bool create_buffer(VkDevice device,
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device, &buffer_info, nullptr, &out->buffer) != VK_SUCCESS) {
-        std::cerr << "✗ Failed to create buffer of size " << size << "\n";
+        TEST_LOG_ERROR() << "✗ Failed to create buffer of size " << size << "\n";
         return false;
     }
 
@@ -49,14 +49,14 @@ bool create_buffer(VkDevice device,
     alloc_info.memoryTypeIndex = memory_type;
 
     if (vkAllocateMemory(device, &alloc_info, nullptr, &out->memory) != VK_SUCCESS) {
-        std::cerr << "✗ Failed to allocate buffer memory\n";
+        TEST_LOG_ERROR() << "✗ Failed to allocate buffer memory\n";
         vkDestroyBuffer(device, out->buffer, nullptr);
         out->buffer = VK_NULL_HANDLE;
         return false;
     }
 
     if (vkBindBufferMemory(device, out->buffer, out->memory, 0) != VK_SUCCESS) {
-        std::cerr << "✗ Failed to bind buffer memory\n";
+        TEST_LOG_ERROR() << "✗ Failed to bind buffer memory\n";
         vkDestroyBuffer(device, out->buffer, nullptr);
         vkFreeMemory(device, out->memory, nullptr);
         out->buffer = VK_NULL_HANDLE;
@@ -82,9 +82,9 @@ void destroy_buffer(VkDevice device, BufferResources& buffer) {
 } // namespace
 
 bool run_phase05_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 5: Fake Command Recording\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 5: Fake Command Recording\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkResult result;
     VkInstance instance = VK_NULL_HANDLE;
@@ -111,15 +111,15 @@ bool run_phase05_test() {
 
     result = vkCreateInstance(&instance_info, nullptr, &instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ Instance created\n";
+    TEST_LOG_INFO() << "✅ Instance created\n";
 
     uint32_t device_count = 0;
     result = vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
     if (result != VK_SUCCESS || device_count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
@@ -127,7 +127,7 @@ bool run_phase05_test() {
     std::vector<VkPhysicalDevice> physical_devices(device_count);
     result = vkEnumeratePhysicalDevices(instance, &device_count, physical_devices.data());
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
@@ -148,11 +148,11 @@ bool run_phase05_test() {
 
     result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✅ Device created\n";
+    TEST_LOG_INFO() << "✅ Device created\n";
 
     VkCommandPoolCreateInfo pool_info = {};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -161,12 +161,12 @@ bool run_phase05_test() {
 
     result = vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateCommandPool failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateCommandPool failed: " << result << "\n";
         vkDestroyDevice(device, nullptr);
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✅ vkCreateCommandPool succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateCommandPool succeeded\n";
 
     VkCommandBufferAllocateInfo alloc_info = {};
     alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -176,13 +176,13 @@ bool run_phase05_test() {
 
     result = vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
         vkDestroyCommandPool(device, command_pool, nullptr);
         vkDestroyDevice(device, nullptr);
         vkDestroyInstance(instance, nullptr);
         return false;
     }
-    std::cout << "✅ vkAllocateCommandBuffers (1 buffer) succeeded\n";
+    TEST_LOG_INFO() << "✅ vkAllocateCommandBuffers (1 buffer) succeeded\n";
 
     const VkDeviceSize buffer_size = 1024ull;
     uint32_t host_visible_type = 0;
@@ -210,7 +210,7 @@ bool run_phase05_test() {
     vkDestroyBuffer(device, temp_buffer, nullptr);
 
     if (!found_type) {
-        std::cerr << "✗ Unable to find suitable memory type\n";
+        TEST_LOG_ERROR() << "✗ Unable to find suitable memory type\n";
         vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
         vkDestroyCommandPool(device, command_pool, nullptr);
         vkDestroyDevice(device, nullptr);
@@ -234,7 +234,7 @@ bool run_phase05_test() {
                            &dst_buffer)) {
             break;
         }
-        std::cout << "✅ Source and destination buffers created\n";
+        TEST_LOG_INFO() << "✅ Source and destination buffers created\n";
 
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -242,39 +242,39 @@ bool run_phase05_test() {
 
         result = vkBeginCommandBuffer(command_buffer, &begin_info);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkBeginCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkBeginCommandBuffer failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkBeginCommandBuffer succeeded\n";
+        TEST_LOG_INFO() << "✅ vkBeginCommandBuffer succeeded\n";
 
         vkCmdFillBuffer(command_buffer, src_buffer.buffer, 0, buffer_size, 0xDEADBEEF);
-        std::cout << "✅ vkCmdFillBuffer recorded\n";
+        TEST_LOG_INFO() << "✅ vkCmdFillBuffer recorded\n";
 
         VkBufferCopy region = {};
         region.srcOffset = 0;
         region.dstOffset = 0;
         region.size = buffer_size;
         vkCmdCopyBuffer(command_buffer, src_buffer.buffer, dst_buffer.buffer, 1, &region);
-        std::cout << "✅ vkCmdCopyBuffer recorded\n";
+        TEST_LOG_INFO() << "✅ vkCmdCopyBuffer recorded\n";
 
         result = vkEndCommandBuffer(command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkEndCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkEndCommandBuffer failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkEndCommandBuffer succeeded\n";
+        TEST_LOG_INFO() << "✅ vkEndCommandBuffer succeeded\n";
 
         vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
         command_buffer = VK_NULL_HANDLE;
-        std::cout << "✅ Command buffer freed\n";
+        TEST_LOG_INFO() << "✅ Command buffer freed\n";
 
         vkDestroyCommandPool(device, command_pool, nullptr);
         command_pool = VK_NULL_HANDLE;
-        std::cout << "✅ Command pool destroyed\n";
+        TEST_LOG_INFO() << "✅ Command pool destroyed\n";
 
-        std::cout << "✅ Command buffer state: EXECUTABLE (recording succeeded)\n";
-        std::cout << "✅ Cleanup succeeded\n";
-        std::cout << "✅ Phase 5 PASSED\n";
+        TEST_LOG_INFO() << "✅ Command buffer state: EXECUTABLE (recording succeeded)\n";
+        TEST_LOG_INFO() << "✅ Cleanup succeeded\n";
+        TEST_LOG_INFO() << "✅ Phase 5 PASSED\n";
         success = true;
     } while (false);
 

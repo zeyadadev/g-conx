@@ -1,6 +1,6 @@
 #include "phase06_test.h"
 
-#include <iostream>
+#include "logging.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -21,10 +21,10 @@ bool create_instance(VkInstance* instance) {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ vkCreateInstance succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateInstance succeeded\n";
     return true;
 }
 
@@ -32,13 +32,13 @@ bool pick_physical_device(VkInstance instance, VkPhysicalDevice* out_device) {
     uint32_t count = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
     if (result != VK_SUCCESS || count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         return false;
     }
     std::vector<VkPhysicalDevice> devices(count);
     result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
     if (result != VK_SUCCESS || devices.empty()) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices (2nd call) failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices (2nd call) failed: " << result << "\n";
         return false;
     }
     *out_device = devices[0];
@@ -64,9 +64,9 @@ uint32_t select_queue_family(VkPhysicalDevice physical_device) {
 } // namespace
 
 bool run_phase06_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 6: Fake Command Submission\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 6: Fake Command Submission\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
@@ -109,14 +109,14 @@ bool run_phase06_test() {
 
         VkResult result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateDevice succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateDevice succeeded\n";
 
         vkGetDeviceQueue(device, queue_family_index, 0, &queue);
         if (queue == VK_NULL_HANDLE) {
-            std::cerr << "✗ vkGetDeviceQueue returned NULL\n";
+            TEST_LOG_ERROR() << "✗ vkGetDeviceQueue returned NULL\n";
             break;
         }
 
@@ -126,7 +126,7 @@ bool run_phase06_test() {
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         result = vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateCommandPool failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateCommandPool failed: " << result << "\n";
             break;
         }
 
@@ -137,7 +137,7 @@ bool run_phase06_test() {
         alloc_info.commandBufferCount = 1;
         result = vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
             break;
         }
 
@@ -145,12 +145,12 @@ bool run_phase06_test() {
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         result = vkBeginCommandBuffer(command_buffer, &begin_info);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkBeginCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkBeginCommandBuffer failed: " << result << "\n";
             break;
         }
         result = vkEndCommandBuffer(command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkEndCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkEndCommandBuffer failed: " << result << "\n";
             break;
         }
 
@@ -159,26 +159,26 @@ bool run_phase06_test() {
         fence_info.flags = 0;
         result = vkCreateFence(device, &fence_info, nullptr, &fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateFence failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateFence failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateFence succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateFence succeeded\n";
 
         VkSemaphoreCreateInfo semaphore_info = {};
         semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         result = vkCreateSemaphore(device, &semaphore_info, nullptr, &wait_semaphore);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateSemaphore (wait) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateSemaphore (wait) failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateSemaphore (wait) succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateSemaphore (wait) succeeded\n";
 
         result = vkCreateSemaphore(device, &semaphore_info, nullptr, &signal_semaphore);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateSemaphore (signal) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateSemaphore (signal) failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateSemaphore (signal) succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateSemaphore (signal) succeeded\n";
 
         wait_semaphores[0] = wait_semaphore;
         signal_semaphores[0] = signal_semaphore;
@@ -189,7 +189,7 @@ bool run_phase06_test() {
         signal_submit.pSignalSemaphores = wait_semaphores;
         result = vkQueueSubmit(queue, 1, &signal_submit, VK_NULL_HANDLE);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ Initial vkQueueSubmit failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ Initial vkQueueSubmit failed: " << result << "\n";
             break;
         }
         vkQueueWaitIdle(queue);
@@ -205,27 +205,27 @@ bool run_phase06_test() {
 
         result = vkQueueSubmit(queue, 1, &submit_info, fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkQueueSubmit failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkQueueSubmit failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkQueueSubmit succeeded\n";
+        TEST_LOG_INFO() << "✅ vkQueueSubmit succeeded\n";
 
         result = vkWaitForFences(device, 1, &fence, VK_TRUE, timeout_ns);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkWaitForFences failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkWaitForFences failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkWaitForFences (timeout=1s) succeeded\n";
+        TEST_LOG_INFO() << "✅ vkWaitForFences (timeout=1s) succeeded\n";
 
         result = vkGetFenceStatus(device, fence);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkGetFenceStatus did not report success: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkGetFenceStatus did not report success: " << result << "\n";
             break;
         }
-        std::cout << "✅ Fence signaled immediately (fake execution)\n";
+        TEST_LOG_INFO() << "✅ Fence signaled immediately (fake execution)\n";
 
         vkQueueWaitIdle(queue);
-        std::cout << "✅ vkQueueWaitIdle succeeded\n";
+        TEST_LOG_INFO() << "✅ vkQueueWaitIdle succeeded\n";
 
         success = true;
     } while (false);
@@ -253,7 +253,7 @@ bool run_phase06_test() {
     }
 
     if (success) {
-        std::cout << "✅ Phase 6 PASSED\n";
+        TEST_LOG_INFO() << "✅ Phase 6 PASSED\n";
     }
     return success;
 }

@@ -2,8 +2,9 @@
 
 #include <chrono>
 #include <cstring>
-#include <iostream>
+#include "logging.h"
 #include <vector>
+#include <iomanip>
 #include <vulkan/vulkan.h>
 
 namespace {
@@ -38,10 +39,10 @@ bool create_instance(VkInstance* instance) {
 
     VkResult result = vkCreateInstance(&create_info, nullptr, instance);
     if (result != VK_SUCCESS) {
-        std::cerr << "✗ vkCreateInstance failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkCreateInstance failed: " << result << "\n";
         return false;
     }
-    std::cout << "✅ vkCreateInstance succeeded\n";
+    TEST_LOG_INFO() << "✅ vkCreateInstance succeeded\n";
     return true;
 }
 
@@ -49,13 +50,13 @@ bool pick_physical_device(VkInstance instance, VkPhysicalDevice* out_device) {
     uint32_t count = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
     if (result != VK_SUCCESS || count == 0) {
-        std::cerr << "✗ Failed to enumerate physical devices\n";
+        TEST_LOG_ERROR() << "✗ Failed to enumerate physical devices\n";
         return false;
     }
     std::vector<VkPhysicalDevice> devices(count);
     result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
     if (result != VK_SUCCESS || devices.empty()) {
-        std::cerr << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
+        TEST_LOG_ERROR() << "✗ vkEnumeratePhysicalDevices failed: " << result << "\n";
         return false;
     }
     *out_device = devices[0];
@@ -78,9 +79,9 @@ uint32_t select_queue_family(VkPhysicalDevice physical_device) {
 } // namespace
 
 bool run_phase08_test() {
-    std::cout << "\n========================================\n";
-    std::cout << "Phase 8: Memory Data Transfer\n";
-    std::cout << "========================================\n\n";
+    TEST_LOG_INFO() << "\n========================================\n";
+    TEST_LOG_INFO() << "Phase 8: Memory Data Transfer\n";
+    TEST_LOG_INFO() << "========================================\n\n";
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
@@ -121,14 +122,14 @@ bool run_phase08_test() {
 
         VkResult result = vkCreateDevice(physical_device, &device_info, nullptr, &device);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateDevice failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateDevice failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ vkCreateDevice succeeded\n";
+        TEST_LOG_INFO() << "✅ vkCreateDevice succeeded\n";
 
         vkGetDeviceQueue(device, queue_family_index, 0, &queue);
         if (queue == VK_NULL_HANDLE) {
-            std::cerr << "✗ vkGetDeviceQueue returned NULL\n";
+            TEST_LOG_ERROR() << "✗ vkGetDeviceQueue returned NULL\n";
             break;
         }
 
@@ -140,13 +141,13 @@ bool run_phase08_test() {
 
         result = vkCreateBuffer(device, &buffer_info, nullptr, &staging_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateBuffer (staging) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateBuffer (staging) failed: " << result << "\n";
             break;
         }
 
         result = vkCreateBuffer(device, &buffer_info, nullptr, &device_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateBuffer (device) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateBuffer (device) failed: " << result << "\n";
             break;
         }
 
@@ -160,7 +161,7 @@ bool run_phase08_test() {
                                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                  mem_props);
         if (staging_type == UINT32_MAX) {
-            std::cerr << "✗ Failed to find HOST_VISIBLE|HOST_COHERENT memory type\n";
+            TEST_LOG_ERROR() << "✗ Failed to find HOST_VISIBLE|HOST_COHERENT memory type\n";
             break;
         }
 
@@ -178,7 +179,7 @@ bool run_phase08_test() {
         alloc_info.memoryTypeIndex = staging_type;
         result = vkAllocateMemory(device, &alloc_info, nullptr, &staging_memory);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateMemory (staging) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateMemory (staging) failed: " << result << "\n";
             break;
         }
 
@@ -186,7 +187,7 @@ bool run_phase08_test() {
         alloc_info.memoryTypeIndex = device_type;
         result = vkAllocateMemory(device, &alloc_info, nullptr, &device_memory);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateMemory (device) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateMemory (device) failed: " << result << "\n";
             break;
         }
 
@@ -199,7 +200,7 @@ bool run_phase08_test() {
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         result = vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkCreateCommandPool failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkCreateCommandPool failed: " << result << "\n";
             break;
         }
 
@@ -210,26 +211,26 @@ bool run_phase08_test() {
         cb_alloc.commandBufferCount = 1;
         result = vkAllocateCommandBuffers(device, &cb_alloc, &command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkAllocateCommandBuffers failed: " << result << "\n";
             break;
         }
 
         void* mapped = nullptr;
         result = vkMapMemory(device, staging_memory, 0, kBufferSize, 0, &mapped);
         if (result != VK_SUCCESS || !mapped) {
-            std::cerr << "✗ vkMapMemory failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkMapMemory failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ Mapped staging buffer memory\n";
+        TEST_LOG_INFO() << "✅ Mapped staging buffer memory\n";
 
         uint32_t* ptr = reinterpret_cast<uint32_t*>(mapped);
         const uint32_t element_count = static_cast<uint32_t>(kBufferSize / sizeof(uint32_t));
         for (uint32_t i = 0; i < element_count; ++i) {
             ptr[i] = kPattern;
         }
-        std::cout << "✅ Wrote test pattern (" << element_count << " uint32_t values)\n";
+        TEST_LOG_INFO() << "✅ Wrote test pattern (" << element_count << " uint32_t values)\n";
 
-        std::cout << "✅ Unmapping... transferring " << kBufferSize << " bytes to server\n";
+        TEST_LOG_INFO() << "✅ Unmapping... transferring " << kBufferSize << " bytes to server\n";
         auto transfer_start = std::chrono::high_resolution_clock::now();
         vkUnmapMemory(device, staging_memory);
         auto transfer_end = std::chrono::high_resolution_clock::now();
@@ -237,14 +238,14 @@ bool run_phase08_test() {
             std::chrono::duration<double, std::milli>(transfer_end - transfer_start).count();
         double throughput = (static_cast<double>(kBufferSize) / (1024.0 * 1024.0)) /
                             (std::max(transfer_ms, 0.0001) / 1000.0);
-        std::cout << "✅ Transfer complete (took " << transfer_ms << " ms, "
+        TEST_LOG_INFO() << "✅ Transfer complete (took " << transfer_ms << " ms, "
                   << throughput << " MB/s)\n";
 
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         result = vkBeginCommandBuffer(command_buffer, &begin_info);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkBeginCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkBeginCommandBuffer failed: " << result << "\n";
             break;
         }
 
@@ -258,10 +259,10 @@ bool run_phase08_test() {
 
         result = vkEndCommandBuffer(command_buffer);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkEndCommandBuffer failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkEndCommandBuffer failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ Recorded buffer copy commands\n";
+        TEST_LOG_INFO() << "✅ Recorded buffer copy commands\n";
 
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -269,34 +270,34 @@ bool run_phase08_test() {
         submit_info.pCommandBuffers = &command_buffer;
         result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkQueueSubmit failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkQueueSubmit failed: " << result << "\n";
             break;
         }
 
         result = vkQueueWaitIdle(queue);
         if (result != VK_SUCCESS) {
-            std::cerr << "✗ vkQueueWaitIdle failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkQueueWaitIdle failed: " << result << "\n";
             break;
         }
-        std::cout << "✅ GPU copy complete\n";
+        TEST_LOG_INFO() << "✅ GPU copy complete\n";
 
         void* read_ptr = nullptr;
         auto read_start = std::chrono::high_resolution_clock::now();
         result = vkMapMemory(device, staging_memory, 0, kBufferSize, 0, &read_ptr);
         auto read_end = std::chrono::high_resolution_clock::now();
         if (result != VK_SUCCESS || !read_ptr) {
-            std::cerr << "✗ vkMapMemory (readback) failed: " << result << "\n";
+            TEST_LOG_ERROR() << "✗ vkMapMemory (readback) failed: " << result << "\n";
             break;
         }
         double read_ms =
             std::chrono::duration<double, std::milli>(read_end - read_start).count();
-        std::cout << "✅ Read " << kBufferSize << " bytes from server (" << read_ms << " ms)\n";
+        TEST_LOG_INFO() << "✅ Read " << kBufferSize << " bytes from server (" << read_ms << " ms)\n";
 
         const uint32_t* read_data = reinterpret_cast<const uint32_t*>(read_ptr);
         bool valid = true;
         for (uint32_t i = 0; i < element_count; ++i) {
             if (read_data[i] != kPattern) {
-                std::cerr << "✗ Data mismatch at index " << i << ": expected "
+                TEST_LOG_ERROR() << "✗ Data mismatch at index " << i << ": expected "
                           << std::hex << kPattern << ", got " << read_data[i] << std::dec << "\n";
                 valid = false;
                 break;
@@ -309,7 +310,7 @@ bool run_phase08_test() {
             break;
         }
 
-        std::cout << "✅ Data verification: PASSED\n";
+        TEST_LOG_INFO() << "✅ Data verification: PASSED\n";
         success = true;
     } while (false);
 
@@ -339,10 +340,10 @@ bool run_phase08_test() {
     }
 
     if (success) {
-        std::cout << "✅ Phase 8 PASSED\n";
+        TEST_LOG_INFO() << "✅ Phase 8 PASSED\n";
         return true;
     }
 
-    std::cerr << "✗ Phase 8 FAILED\n";
+    TEST_LOG_ERROR() << "✗ Phase 8 FAILED\n";
     return false;
 }

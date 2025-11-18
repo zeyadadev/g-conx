@@ -7,19 +7,19 @@
 #include "phase07/phase07_test.h"
 #include "phase08/phase08_test.h"
 #include "phase09/phase09_test.h"
-#include <iostream>
+#include "logging.h"
 #include <cstring>
 
 void print_usage(const char* prog_name) {
-    std::cout << "Usage: " << prog_name << " [options]\n";
-    std::cout << "Options:\n";
-    std::cout << "  --phase N    Run phase N test\n";
-    std::cout << "  --all        Run all available phases\n";
-    std::cout << "  --help       Show this help\n";
+    TEST_LOG_INFO() << "Usage: " << prog_name << " [options]";
+    TEST_LOG_INFO() << "Options:";
+    TEST_LOG_INFO() << "  --phase N    Run phase N test";
+    TEST_LOG_INFO() << "  --all        Run all available phases";
+    TEST_LOG_INFO() << "  --help       Show this help";
 }
 
 int main(int argc, char** argv) {
-    std::cout << "Venus Plus Test Application\n";
+    TEST_LOG_INFO() << "Venus Plus Test Application";
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 
     if (strcmp(argv[1], "--phase") == 0) {
         if (argc < 3) {
-            std::cerr << "Error: --phase requires phase number\n";
+            TEST_LOG_ERROR() << "Error: --phase requires phase number";
             return 1;
         }
 
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
         case 9:
             return run_phase09_test() ? 0 : 1;
         default:
-            std::cerr << "Error: Phase " << phase << " not implemented yet\n";
+            TEST_LOG_ERROR() << "Error: Phase " << phase << " not implemented yet";
             return 1;
         }
     }
@@ -80,10 +80,10 @@ int main(int argc, char** argv) {
         if (!run_phase08_test()) return 1;
         if (!run_phase09_test()) return 1;
 
-        std::cout << "\n";
-        std::cout << "=================================================\n";
-        std::cout << "All phases completed successfully!\n";
-        std::cout << "=================================================\n";
+        TEST_LOG_INFO() << "";
+        TEST_LOG_INFO() << "=================================================";
+        TEST_LOG_INFO() << "All phases completed successfully!";
+        TEST_LOG_INFO() << "=================================================";
         return 0;
     }
 

@@ -1,6 +1,10 @@
 #include "socket_utils.h"
+
 #include <unistd.h>
-#include <iostream>
+
+#include "utils/logging.h"
+
+#define NETWORK_LOG_ERROR() VP_LOG_STREAM_ERROR(NETWORK)
 
 namespace venus_plus {
 
@@ -12,11 +16,11 @@ bool read_all(int fd, void* buffer, size_t size) {
         ssize_t n = read(fd, ptr, remaining);
 
         if (n < 0) {
-            std::cerr << "read() error\n";
+            NETWORK_LOG_ERROR() << "read() error";
             return false;
         }
         if (n == 0) {
-            std::cerr << "Connection closed by peer\n";
+            NETWORK_LOG_ERROR() << "Connection closed by peer";
             return false;
         }
 
@@ -35,7 +39,7 @@ bool write_all(int fd, const void* buffer, size_t size) {
         ssize_t n = write(fd, ptr, remaining);
 
         if (n < 0) {
-            std::cerr << "write() error\n";
+            NETWORK_LOG_ERROR() << "write() error";
             return false;
         }
 
