@@ -117,6 +117,37 @@ bool server_state_get_image_subresource_layout(ServerState* state, VkImage image
 VkBuffer server_state_get_real_buffer(const ServerState* state, VkBuffer buffer);
 VkImage server_state_get_real_image(const ServerState* state, VkImage image);
 VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMemory memory);
+VkShaderModule server_state_create_shader_module(ServerState* state, VkDevice device, const VkShaderModuleCreateInfo* info);
+bool server_state_destroy_shader_module(ServerState* state, VkShaderModule module);
+VkShaderModule server_state_get_real_shader_module(const ServerState* state, VkShaderModule module);
+VkDescriptorSetLayout server_state_create_descriptor_set_layout(ServerState* state, VkDevice device, const VkDescriptorSetLayoutCreateInfo* info);
+bool server_state_destroy_descriptor_set_layout(ServerState* state, VkDescriptorSetLayout layout);
+VkDescriptorSetLayout server_state_get_real_descriptor_set_layout(const ServerState* state, VkDescriptorSetLayout layout);
+VkDescriptorPool server_state_create_descriptor_pool(ServerState* state, VkDevice device, const VkDescriptorPoolCreateInfo* info);
+bool server_state_destroy_descriptor_pool(ServerState* state, VkDescriptorPool pool);
+VkResult server_state_reset_descriptor_pool(ServerState* state, VkDescriptorPool pool, VkDescriptorPoolResetFlags flags);
+VkDescriptorPool server_state_get_real_descriptor_pool(const ServerState* state, VkDescriptorPool pool);
+VkResult server_state_allocate_descriptor_sets(ServerState* state,
+                                               VkDevice device,
+                                               const VkDescriptorSetAllocateInfo* info,
+                                               std::vector<VkDescriptorSet>* out_sets);
+VkResult server_state_free_descriptor_sets(ServerState* state,
+                                           VkDevice device,
+                                           VkDescriptorPool pool,
+                                           uint32_t descriptorSetCount,
+                                           const VkDescriptorSet* pDescriptorSets);
+VkDescriptorSet server_state_get_real_descriptor_set(const ServerState* state, VkDescriptorSet set);
+VkPipelineLayout server_state_create_pipeline_layout(ServerState* state, VkDevice device, const VkPipelineLayoutCreateInfo* info);
+bool server_state_destroy_pipeline_layout(ServerState* state, VkPipelineLayout layout);
+VkPipelineLayout server_state_get_real_pipeline_layout(const ServerState* state, VkPipelineLayout layout);
+VkResult server_state_create_compute_pipelines(ServerState* state,
+                                               VkDevice device,
+                                               VkPipelineCache cache,
+                                               uint32_t count,
+                                               const VkComputePipelineCreateInfo* infos,
+                                               std::vector<VkPipeline>* out_pipelines);
+bool server_state_destroy_pipeline(ServerState* state, VkPipeline pipeline);
+VkPipeline server_state_get_real_pipeline(const ServerState* state, VkPipeline pipeline);
 
 VkCommandPool server_state_create_command_pool(ServerState* state, VkDevice device, const VkCommandPoolCreateInfo* info);
 bool server_state_destroy_command_pool(ServerState* state, VkCommandPool pool);

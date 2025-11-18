@@ -342,6 +342,144 @@ VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMe
     return state->resource_tracker.get_real_memory(memory);
 }
 
+VkShaderModule server_state_create_shader_module(ServerState* state,
+                                                 VkDevice device,
+                                                 const VkShaderModuleCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_shader_module(device, real_device, *info);
+}
+
+bool server_state_destroy_shader_module(ServerState* state, VkShaderModule module) {
+    return state->resource_tracker.destroy_shader_module(module);
+}
+
+VkShaderModule server_state_get_real_shader_module(const ServerState* state,
+                                                   VkShaderModule module) {
+    return state->resource_tracker.get_real_shader_module(module);
+}
+
+VkDescriptorSetLayout server_state_create_descriptor_set_layout(
+    ServerState* state,
+    VkDevice device,
+    const VkDescriptorSetLayoutCreateInfo* info) {
+
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_descriptor_set_layout(device, real_device, *info);
+}
+
+bool server_state_destroy_descriptor_set_layout(ServerState* state,
+                                                VkDescriptorSetLayout layout) {
+    return state->resource_tracker.destroy_descriptor_set_layout(layout);
+}
+
+VkDescriptorSetLayout server_state_get_real_descriptor_set_layout(
+    const ServerState* state,
+    VkDescriptorSetLayout layout) {
+    return state->resource_tracker.get_real_descriptor_set_layout(layout);
+}
+
+VkDescriptorPool server_state_create_descriptor_pool(ServerState* state,
+                                                     VkDevice device,
+                                                     const VkDescriptorPoolCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_descriptor_pool(device, real_device, *info);
+}
+
+bool server_state_destroy_descriptor_pool(ServerState* state, VkDescriptorPool pool) {
+    return state->resource_tracker.destroy_descriptor_pool(pool);
+}
+
+VkResult server_state_reset_descriptor_pool(ServerState* state,
+                                            VkDescriptorPool pool,
+                                            VkDescriptorPoolResetFlags flags) {
+    return state->resource_tracker.reset_descriptor_pool(pool, flags);
+}
+
+VkDescriptorPool server_state_get_real_descriptor_pool(const ServerState* state,
+                                                       VkDescriptorPool pool) {
+    return state->resource_tracker.get_real_descriptor_pool(pool);
+}
+
+VkResult server_state_allocate_descriptor_sets(ServerState* state,
+                                               VkDevice device,
+                                               const VkDescriptorSetAllocateInfo* info,
+                                               std::vector<VkDescriptorSet>* out_sets) {
+    if (!info || !out_sets) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.allocate_descriptor_sets(device, real_device, *info, out_sets);
+}
+
+VkResult server_state_free_descriptor_sets(ServerState* state,
+                                           VkDevice device,
+                                           VkDescriptorPool pool,
+                                           uint32_t descriptorSetCount,
+                                           const VkDescriptorSet* pDescriptorSets) {
+    if (descriptorSetCount > 0 && !pDescriptorSets) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkDescriptorSet> sets(descriptorSetCount);
+    for (uint32_t i = 0; i < descriptorSetCount; ++i) {
+        sets[i] = pDescriptorSets[i];
+    }
+    return state->resource_tracker.free_descriptor_sets(pool, sets);
+}
+
+VkDescriptorSet server_state_get_real_descriptor_set(const ServerState* state,
+                                                     VkDescriptorSet set) {
+    return state->resource_tracker.get_real_descriptor_set(set);
+}
+
+VkPipelineLayout server_state_create_pipeline_layout(ServerState* state,
+                                                     VkDevice device,
+                                                     const VkPipelineLayoutCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_pipeline_layout(device, real_device, *info);
+}
+
+bool server_state_destroy_pipeline_layout(ServerState* state, VkPipelineLayout layout) {
+    return state->resource_tracker.destroy_pipeline_layout(layout);
+}
+
+VkPipelineLayout server_state_get_real_pipeline_layout(const ServerState* state,
+                                                       VkPipelineLayout layout) {
+    return state->resource_tracker.get_real_pipeline_layout(layout);
+}
+
+VkResult server_state_create_compute_pipelines(ServerState* state,
+                                               VkDevice device,
+                                               VkPipelineCache cache,
+                                               uint32_t count,
+                                               const VkComputePipelineCreateInfo* infos,
+                                               std::vector<VkPipeline>* out_pipelines) {
+    if (!infos || !out_pipelines) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_compute_pipelines(device, real_device, cache, count, infos, out_pipelines);
+}
+
+bool server_state_destroy_pipeline(ServerState* state, VkPipeline pipeline) {
+    return state->resource_tracker.destroy_pipeline(pipeline);
+}
+
+VkPipeline server_state_get_real_pipeline(const ServerState* state, VkPipeline pipeline) {
+    return state->resource_tracker.get_real_pipeline(pipeline);
+}
+
 VkCommandPool server_state_create_command_pool(ServerState* state,
                                                VkDevice device,
                                                const VkCommandPoolCreateInfo* info) {
@@ -774,6 +912,132 @@ VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* sta
 VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
                                                             VkCommandBuffer commandBuffer) {
     return venus_plus::server_state_get_real_command_buffer(state, commandBuffer);
+}
+
+VkShaderModule server_state_bridge_create_shader_module(struct ServerState* state,
+                                                        VkDevice device,
+                                                        const VkShaderModuleCreateInfo* info) {
+    return venus_plus::server_state_create_shader_module(state, device, info);
+}
+
+void server_state_bridge_destroy_shader_module(struct ServerState* state, VkShaderModule module) {
+    venus_plus::server_state_destroy_shader_module(state, module);
+}
+
+VkShaderModule server_state_bridge_get_real_shader_module(const struct ServerState* state,
+                                                          VkShaderModule module) {
+    return venus_plus::server_state_get_real_shader_module(state, module);
+}
+
+VkDescriptorSetLayout server_state_bridge_create_descriptor_set_layout(struct ServerState* state,
+                                                                       VkDevice device,
+                                                                       const VkDescriptorSetLayoutCreateInfo* info) {
+    return venus_plus::server_state_create_descriptor_set_layout(state, device, info);
+}
+
+void server_state_bridge_destroy_descriptor_set_layout(struct ServerState* state,
+                                                       VkDescriptorSetLayout layout) {
+    venus_plus::server_state_destroy_descriptor_set_layout(state, layout);
+}
+
+VkDescriptorSetLayout server_state_bridge_get_real_descriptor_set_layout(const struct ServerState* state,
+                                                                         VkDescriptorSetLayout layout) {
+    return venus_plus::server_state_get_real_descriptor_set_layout(state, layout);
+}
+
+VkDescriptorPool server_state_bridge_create_descriptor_pool(struct ServerState* state,
+                                                            VkDevice device,
+                                                            const VkDescriptorPoolCreateInfo* info) {
+    return venus_plus::server_state_create_descriptor_pool(state, device, info);
+}
+
+void server_state_bridge_destroy_descriptor_pool(struct ServerState* state, VkDescriptorPool pool) {
+    venus_plus::server_state_destroy_descriptor_pool(state, pool);
+}
+
+VkResult server_state_bridge_reset_descriptor_pool(struct ServerState* state,
+                                                   VkDescriptorPool pool,
+                                                   VkDescriptorPoolResetFlags flags) {
+    return venus_plus::server_state_reset_descriptor_pool(state, pool, flags);
+}
+
+VkDescriptorPool server_state_bridge_get_real_descriptor_pool(const struct ServerState* state,
+                                                              VkDescriptorPool pool) {
+    return venus_plus::server_state_get_real_descriptor_pool(state, pool);
+}
+
+VkResult server_state_bridge_allocate_descriptor_sets(struct ServerState* state,
+                                                      VkDevice device,
+                                                      const VkDescriptorSetAllocateInfo* info,
+                                                      VkDescriptorSet* pDescriptorSets) {
+    if (!info || !pDescriptorSets) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkDescriptorSet> sets;
+    VkResult result = venus_plus::server_state_allocate_descriptor_sets(state, device, info, &sets);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    for (size_t i = 0; i < sets.size(); ++i) {
+        pDescriptorSets[i] = sets[i];
+    }
+    return VK_SUCCESS;
+}
+
+VkResult server_state_bridge_free_descriptor_sets(struct ServerState* state,
+                                                  VkDevice device,
+                                                  VkDescriptorPool pool,
+                                                  uint32_t descriptorSetCount,
+                                                  const VkDescriptorSet* pDescriptorSets) {
+    return venus_plus::server_state_free_descriptor_sets(state, device, pool, descriptorSetCount, pDescriptorSets);
+}
+
+VkDescriptorSet server_state_bridge_get_real_descriptor_set(const struct ServerState* state,
+                                                            VkDescriptorSet set) {
+    return venus_plus::server_state_get_real_descriptor_set(state, set);
+}
+
+VkPipelineLayout server_state_bridge_create_pipeline_layout(struct ServerState* state,
+                                                            VkDevice device,
+                                                            const VkPipelineLayoutCreateInfo* info) {
+    return venus_plus::server_state_create_pipeline_layout(state, device, info);
+}
+
+void server_state_bridge_destroy_pipeline_layout(struct ServerState* state, VkPipelineLayout layout) {
+    venus_plus::server_state_destroy_pipeline_layout(state, layout);
+}
+
+VkPipelineLayout server_state_bridge_get_real_pipeline_layout(const struct ServerState* state,
+                                                              VkPipelineLayout layout) {
+    return venus_plus::server_state_get_real_pipeline_layout(state, layout);
+}
+
+VkResult server_state_bridge_create_compute_pipelines(struct ServerState* state,
+                                                      VkDevice device,
+                                                      VkPipelineCache cache,
+                                                      uint32_t createInfoCount,
+                                                      const VkComputePipelineCreateInfo* pCreateInfos,
+                                                      VkPipeline* pPipelines) {
+    if (!pCreateInfos || !pPipelines) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkPipeline> pipelines;
+    VkResult result = venus_plus::server_state_create_compute_pipelines(state, device, cache, createInfoCount, pCreateInfos, &pipelines);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    for (size_t i = 0; i < pipelines.size(); ++i) {
+        pPipelines[i] = pipelines[i];
+    }
+    return VK_SUCCESS;
+}
+
+void server_state_bridge_destroy_pipeline(struct ServerState* state, VkPipeline pipeline) {
+    venus_plus::server_state_destroy_pipeline(state, pipeline);
+}
+
+VkPipeline server_state_bridge_get_real_pipeline(const struct ServerState* state, VkPipeline pipeline) {
+    return venus_plus::server_state_get_real_pipeline(state, pipeline);
 }
 
 // Phase 3: C bridge functions for device management

@@ -1,0 +1,278 @@
+#include "pipeline_state.h"
+
+#include <algorithm>
+
+namespace venus_plus {
+
+PipelineState g_pipeline_state;
+
+void PipelineState::add_shader_module(VkDevice device,
+                                      VkShaderModule local,
+                                      VkShaderModule remote,
+                                      size_t code_size) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ShaderModuleInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    info.code_size = code_size;
+    shader_modules_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_shader_module(VkShaderModule module) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    shader_modules_.erase(handle_key(module));
+}
+
+VkShaderModule PipelineState::get_remote_shader_module(VkShaderModule module) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = shader_modules_.find(handle_key(module));
+    if (it == shader_modules_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void PipelineState::add_descriptor_set_layout(VkDevice device,
+                                              VkDescriptorSetLayout local,
+                                              VkDescriptorSetLayout remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    DescriptorSetLayoutInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    descriptor_set_layouts_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_descriptor_set_layout(VkDescriptorSetLayout layout) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    descriptor_set_layouts_.erase(handle_key(layout));
+}
+
+VkDescriptorSetLayout PipelineState::get_remote_descriptor_set_layout(VkDescriptorSetLayout layout) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_set_layouts_.find(handle_key(layout));
+    if (it == descriptor_set_layouts_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void PipelineState::add_descriptor_pool(VkDevice device,
+                                        VkDescriptorPool local,
+                                        VkDescriptorPool remote,
+                                        VkDescriptorPoolCreateFlags flags) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    DescriptorPoolInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    info.flags = flags;
+    descriptor_pools_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_descriptor_pool(VkDescriptorPool pool) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_pools_.find(handle_key(pool));
+    if (it == descriptor_pools_.end()) {
+        return;
+    }
+    for (VkDescriptorSet set : it->second.descriptor_sets) {
+        descriptor_sets_.erase(handle_key(set));
+    }
+    descriptor_pools_.erase(it);
+}
+
+void PipelineState::reset_descriptor_pool(VkDescriptorPool pool) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_pools_.find(handle_key(pool));
+    if (it == descriptor_pools_.end()) {
+        return;
+    }
+    for (VkDescriptorSet set : it->second.descriptor_sets) {
+        descriptor_sets_.erase(handle_key(set));
+    }
+    it->second.descriptor_sets.clear();
+}
+
+VkDescriptorPool PipelineState::get_remote_descriptor_pool(VkDescriptorPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_pools_.find(handle_key(pool));
+    if (it == descriptor_pools_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void PipelineState::add_descriptor_set(VkDevice device,
+                                       VkDescriptorPool pool,
+                                       VkDescriptorSetLayout layout,
+                                       VkDescriptorSet local,
+                                       VkDescriptorSet remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    DescriptorSetInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    info.parent_pool = pool;
+    info.layout = layout;
+    descriptor_sets_[handle_key(local)] = info;
+
+    auto pit = descriptor_pools_.find(handle_key(pool));
+    if (pit != descriptor_pools_.end()) {
+        pit->second.descriptor_sets.push_back(local);
+    }
+}
+
+void PipelineState::remove_descriptor_set(VkDescriptorSet set) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_sets_.find(handle_key(set));
+    if (it == descriptor_sets_.end()) {
+        return;
+    }
+    VkDescriptorPool pool = it->second.parent_pool;
+    auto pit = descriptor_pools_.find(handle_key(pool));
+    if (pit != descriptor_pools_.end()) {
+        auto& vec = pit->second.descriptor_sets;
+        vec.erase(std::remove(vec.begin(), vec.end(), set), vec.end());
+    }
+    descriptor_sets_.erase(it);
+}
+
+VkDescriptorSet PipelineState::get_remote_descriptor_set(VkDescriptorSet set) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_sets_.find(handle_key(set));
+    if (it == descriptor_sets_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkDescriptorPool PipelineState::get_descriptor_set_pool(VkDescriptorSet set) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_sets_.find(handle_key(set));
+    if (it == descriptor_sets_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.parent_pool;
+}
+
+void PipelineState::add_pipeline_layout(VkDevice device,
+                                        VkPipelineLayout local,
+                                        VkPipelineLayout remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    PipelineLayoutInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    pipeline_layouts_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_pipeline_layout(VkPipelineLayout layout) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pipeline_layouts_.erase(handle_key(layout));
+}
+
+VkPipelineLayout PipelineState::get_remote_pipeline_layout(VkPipelineLayout layout) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_layouts_.find(handle_key(layout));
+    if (it == pipeline_layouts_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void PipelineState::add_pipeline(VkDevice device,
+                                 VkPipelineBindPoint bind_point,
+                                 VkPipeline local,
+                                 VkPipeline remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    PipelineInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    info.bind_point = bind_point;
+    pipelines_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_pipeline(VkPipeline pipeline) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pipelines_.erase(handle_key(pipeline));
+}
+
+VkPipeline PipelineState::get_remote_pipeline(VkPipeline pipeline) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipelines_.find(handle_key(pipeline));
+    if (it == pipelines_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkPipelineBindPoint PipelineState::get_pipeline_bind_point(VkPipeline pipeline) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipelines_.find(handle_key(pipeline));
+    if (it == pipelines_.end()) {
+        return VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    }
+    return it->second.bind_point;
+}
+
+void PipelineState::remove_device_resources(VkDevice device) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (auto it = shader_modules_.begin(); it != shader_modules_.end();) {
+        if (it->second.device == device) {
+            it = shader_modules_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = descriptor_sets_.begin(); it != descriptor_sets_.end();) {
+        if (it->second.device == device) {
+            VkDescriptorPool pool = it->second.parent_pool;
+            auto pit = descriptor_pools_.find(handle_key(pool));
+            if (pit != descriptor_pools_.end()) {
+                auto& vec = pit->second.descriptor_sets;
+                vec.erase(std::remove(vec.begin(), vec.end(),
+                                      reinterpret_cast<VkDescriptorSet>(it->first)),
+                          vec.end());
+            }
+            it = descriptor_sets_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = descriptor_pools_.begin(); it != descriptor_pools_.end();) {
+        if (it->second.device == device) {
+            for (VkDescriptorSet set : it->second.descriptor_sets) {
+                descriptor_sets_.erase(handle_key(set));
+            }
+            it = descriptor_pools_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = descriptor_set_layouts_.begin(); it != descriptor_set_layouts_.end();) {
+        if (it->second.device == device) {
+            it = descriptor_set_layouts_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = pipeline_layouts_.begin(); it != pipeline_layouts_.end();) {
+        if (it->second.device == device) {
+            it = pipeline_layouts_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = pipelines_.begin(); it != pipelines_.end();) {
+        if (it->second.device == device) {
+            it = pipelines_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+} // namespace venus_plus

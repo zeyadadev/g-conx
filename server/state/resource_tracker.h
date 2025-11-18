@@ -46,6 +46,48 @@ public:
     bool buffer_exists(VkBuffer buffer) const;
     bool image_exists(VkImage image) const;
 
+    VkShaderModule create_shader_module(VkDevice device,
+                                        VkDevice real_device,
+                                        const VkShaderModuleCreateInfo& info);
+    bool destroy_shader_module(VkShaderModule module);
+    VkShaderModule get_real_shader_module(VkShaderModule module) const;
+
+    VkDescriptorSetLayout create_descriptor_set_layout(VkDevice device,
+                                                       VkDevice real_device,
+                                                       const VkDescriptorSetLayoutCreateInfo& info);
+    bool destroy_descriptor_set_layout(VkDescriptorSetLayout layout);
+    VkDescriptorSetLayout get_real_descriptor_set_layout(VkDescriptorSetLayout layout) const;
+
+    VkDescriptorPool create_descriptor_pool(VkDevice device,
+                                            VkDevice real_device,
+                                            const VkDescriptorPoolCreateInfo& info);
+    bool destroy_descriptor_pool(VkDescriptorPool pool);
+    VkResult reset_descriptor_pool(VkDescriptorPool pool, VkDescriptorPoolResetFlags flags);
+    VkDescriptorPool get_real_descriptor_pool(VkDescriptorPool pool) const;
+
+    VkResult allocate_descriptor_sets(VkDevice device,
+                                      VkDevice real_device,
+                                      const VkDescriptorSetAllocateInfo& info,
+                                      std::vector<VkDescriptorSet>* out_sets);
+    VkResult free_descriptor_sets(VkDescriptorPool pool,
+                                  const std::vector<VkDescriptorSet>& sets);
+    VkDescriptorSet get_real_descriptor_set(VkDescriptorSet set) const;
+
+    VkPipelineLayout create_pipeline_layout(VkDevice device,
+                                            VkDevice real_device,
+                                            const VkPipelineLayoutCreateInfo& info);
+    bool destroy_pipeline_layout(VkPipelineLayout layout);
+    VkPipelineLayout get_real_pipeline_layout(VkPipelineLayout layout) const;
+
+    VkResult create_compute_pipelines(VkDevice device,
+                                      VkDevice real_device,
+                                      VkPipelineCache cache,
+                                      uint32_t count,
+                                      const VkComputePipelineCreateInfo* infos,
+                                      std::vector<VkPipeline>* out_pipelines);
+    bool destroy_pipeline(VkPipeline pipeline);
+    VkPipeline get_real_pipeline(VkPipeline pipeline) const;
+
 private:
     struct BufferResource {
         VkDevice handle_device;
@@ -104,6 +146,54 @@ private:
         std::vector<ImageBinding> image_bindings;
     };
 
+    struct ShaderModuleResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkShaderModule handle;
+        VkShaderModule real_handle;
+        size_t code_size;
+    };
+
+    struct DescriptorSetLayoutResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorSetLayout handle;
+        VkDescriptorSetLayout real_handle;
+    };
+
+    struct DescriptorPoolResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorPool handle;
+        VkDescriptorPool real_handle;
+        VkDescriptorPoolCreateFlags flags;
+        std::vector<VkDescriptorSet> descriptor_sets;
+    };
+
+    struct DescriptorSetResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorSet handle;
+        VkDescriptorSet real_handle;
+        VkDescriptorPool pool;
+        VkDescriptorSetLayout layout;
+    };
+
+    struct PipelineLayoutResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkPipelineLayout handle;
+        VkPipelineLayout real_handle;
+    };
+
+    struct PipelineResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkPipeline handle;
+        VkPipeline real_handle;
+        VkPipelineBindPoint bind_point;
+    };
+
     template <typename T>
     static uint64_t handle_key(T handle) {
         return reinterpret_cast<uint64_t>(handle);
@@ -122,9 +212,21 @@ private:
     std::unordered_map<uint64_t, BufferResource> buffers_;
     std::unordered_map<uint64_t, ImageResource> images_;
     std::unordered_map<uint64_t, MemoryResource> memories_;
+    std::unordered_map<uint64_t, ShaderModuleResource> shader_modules_;
+    std::unordered_map<uint64_t, DescriptorSetLayoutResource> descriptor_set_layouts_;
+    std::unordered_map<uint64_t, DescriptorPoolResource> descriptor_pools_;
+    std::unordered_map<uint64_t, DescriptorSetResource> descriptor_sets_;
+    std::unordered_map<uint64_t, PipelineLayoutResource> pipeline_layouts_;
+    std::unordered_map<uint64_t, PipelineResource> pipelines_;
     uint64_t next_buffer_handle_;
     uint64_t next_image_handle_;
     uint64_t next_memory_handle_;
+    uint64_t next_shader_module_handle_;
+    uint64_t next_descriptor_set_layout_handle_;
+    uint64_t next_descriptor_pool_handle_;
+    uint64_t next_descriptor_set_handle_;
+    uint64_t next_pipeline_layout_handle_;
+    uint64_t next_pipeline_handle_;
 };
 
 } // namespace venus_plus

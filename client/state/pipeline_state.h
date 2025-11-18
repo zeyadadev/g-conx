@@ -1,0 +1,107 @@
+#ifndef VENUS_PLUS_PIPELINE_STATE_H
+#define VENUS_PLUS_PIPELINE_STATE_H
+
+#include <vulkan/vulkan.h>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
+
+namespace venus_plus {
+
+struct ShaderModuleInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkShaderModule remote_handle = VK_NULL_HANDLE;
+    size_t code_size = 0;
+};
+
+struct DescriptorSetLayoutInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorSetLayout remote_handle = VK_NULL_HANDLE;
+};
+
+struct DescriptorPoolInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorPool remote_handle = VK_NULL_HANDLE;
+    VkDescriptorPoolCreateFlags flags = 0;
+    std::vector<VkDescriptorSet> descriptor_sets;
+};
+
+struct DescriptorSetInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorSet remote_handle = VK_NULL_HANDLE;
+    VkDescriptorPool parent_pool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+};
+
+struct PipelineLayoutInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkPipelineLayout remote_handle = VK_NULL_HANDLE;
+};
+
+struct PipelineInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkPipeline remote_handle = VK_NULL_HANDLE;
+    VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+};
+
+class PipelineState {
+public:
+    void add_shader_module(VkDevice device, VkShaderModule local, VkShaderModule remote, size_t code_size);
+    void remove_shader_module(VkShaderModule module);
+    VkShaderModule get_remote_shader_module(VkShaderModule module) const;
+
+    void add_descriptor_set_layout(VkDevice device, VkDescriptorSetLayout local, VkDescriptorSetLayout remote);
+    void remove_descriptor_set_layout(VkDescriptorSetLayout layout);
+    VkDescriptorSetLayout get_remote_descriptor_set_layout(VkDescriptorSetLayout layout) const;
+
+    void add_descriptor_pool(VkDevice device,
+                             VkDescriptorPool local,
+                             VkDescriptorPool remote,
+                             VkDescriptorPoolCreateFlags flags);
+    void remove_descriptor_pool(VkDescriptorPool pool);
+    void reset_descriptor_pool(VkDescriptorPool pool);
+    VkDescriptorPool get_remote_descriptor_pool(VkDescriptorPool pool) const;
+
+    void add_descriptor_set(VkDevice device,
+                            VkDescriptorPool pool,
+                            VkDescriptorSetLayout layout,
+                            VkDescriptorSet local,
+                            VkDescriptorSet remote);
+    void remove_descriptor_set(VkDescriptorSet set);
+    VkDescriptorSet get_remote_descriptor_set(VkDescriptorSet set) const;
+    VkDescriptorPool get_descriptor_set_pool(VkDescriptorSet set) const;
+
+    void add_pipeline_layout(VkDevice device, VkPipelineLayout local, VkPipelineLayout remote);
+    void remove_pipeline_layout(VkPipelineLayout layout);
+    VkPipelineLayout get_remote_pipeline_layout(VkPipelineLayout layout) const;
+
+    void add_pipeline(VkDevice device,
+                      VkPipelineBindPoint bind_point,
+                      VkPipeline local,
+                      VkPipeline remote);
+    void remove_pipeline(VkPipeline pipeline);
+    VkPipeline get_remote_pipeline(VkPipeline pipeline) const;
+    VkPipelineBindPoint get_pipeline_bind_point(VkPipeline pipeline) const;
+
+    void remove_device_resources(VkDevice device);
+
+private:
+    template <typename T>
+    static uint64_t handle_key(T handle) {
+        return reinterpret_cast<uint64_t>(handle);
+    }
+
+    mutable std::mutex mutex_;
+    std::unordered_map<uint64_t, ShaderModuleInfo> shader_modules_;
+    std::unordered_map<uint64_t, DescriptorSetLayoutInfo> descriptor_set_layouts_;
+    std::unordered_map<uint64_t, DescriptorPoolInfo> descriptor_pools_;
+    std::unordered_map<uint64_t, DescriptorSetInfo> descriptor_sets_;
+    std::unordered_map<uint64_t, PipelineLayoutInfo> pipeline_layouts_;
+    std::unordered_map<uint64_t, PipelineInfo> pipelines_;
+};
+
+extern PipelineState g_pipeline_state;
+
+} // namespace venus_plus
+
+#endif // VENUS_PLUS_PIPELINE_STATE_H

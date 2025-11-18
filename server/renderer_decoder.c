@@ -465,6 +465,351 @@ static void server_dispatch_vkDestroyImage(struct vn_dispatch_context* ctx,
     }
 }
 
+static void server_dispatch_vkCreateShaderModule(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCreateShaderModule* args) {
+    printf("[Venus Server] Dispatching vkCreateShaderModule\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pShaderModule) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        return;
+    }
+
+    VkShaderModule handle =
+        server_state_bridge_create_shader_module(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Failed to create shader module\n");
+        return;
+    }
+
+    *args->pShaderModule = handle;
+    printf("[Venus Server]   -> Shader module created: %p\n", (void*)handle);
+}
+
+static void server_dispatch_vkDestroyShaderModule(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkDestroyShaderModule* args) {
+    printf("[Venus Server] Dispatching vkDestroyShaderModule (module: %p)\n",
+           (void*)args->shaderModule);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->shaderModule != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_shader_module(state, args->shaderModule);
+    }
+}
+
+static void server_dispatch_vkCreateDescriptorSetLayout(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCreateDescriptorSetLayout* args) {
+    printf("[Venus Server] Dispatching vkCreateDescriptorSetLayout\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pSetLayout) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        return;
+    }
+
+    VkDescriptorSetLayout layout =
+        server_state_bridge_create_descriptor_set_layout(state, args->device, args->pCreateInfo);
+    if (layout == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Failed to create descriptor set layout\n");
+        return;
+    }
+    *args->pSetLayout = layout;
+    printf("[Venus Server]   -> Descriptor set layout created: %p\n", (void*)layout);
+}
+
+static void server_dispatch_vkDestroyDescriptorSetLayout(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkDestroyDescriptorSetLayout* args) {
+    printf("[Venus Server] Dispatching vkDestroyDescriptorSetLayout (layout: %p)\n",
+           (void*)args->descriptorSetLayout);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->descriptorSetLayout != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_descriptor_set_layout(state, args->descriptorSetLayout);
+    }
+}
+
+static void server_dispatch_vkCreateDescriptorPool(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCreateDescriptorPool* args) {
+    printf("[Venus Server] Dispatching vkCreateDescriptorPool\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pDescriptorPool) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        return;
+    }
+
+    VkDescriptorPool pool =
+        server_state_bridge_create_descriptor_pool(state, args->device, args->pCreateInfo);
+    if (pool == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Failed to create descriptor pool\n");
+        return;
+    }
+    *args->pDescriptorPool = pool;
+    printf("[Venus Server]   -> Descriptor pool created: %p\n", (void*)pool);
+}
+
+static void server_dispatch_vkDestroyDescriptorPool(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkDestroyDescriptorPool* args) {
+    printf("[Venus Server] Dispatching vkDestroyDescriptorPool (pool: %p)\n",
+           (void*)args->descriptorPool);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->descriptorPool != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_descriptor_pool(state, args->descriptorPool);
+    }
+}
+
+static void server_dispatch_vkResetDescriptorPool(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkResetDescriptorPool* args) {
+    printf("[Venus Server] Dispatching vkResetDescriptorPool (pool: %p)\n",
+           (void*)args->descriptorPool);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_reset_descriptor_pool(state,
+                                                          args->descriptorPool,
+                                                          args->flags);
+}
+
+static void server_dispatch_vkAllocateDescriptorSets(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkAllocateDescriptorSets* args) {
+    printf("[Venus Server] Dispatching vkAllocateDescriptorSets (count=%u)\n",
+           args->pAllocateInfo ? args->pAllocateInfo->descriptorSetCount : 0);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pAllocateInfo || !args->pDescriptorSets) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing allocate info or output pointer\n");
+        return;
+    }
+
+    args->ret = server_state_bridge_allocate_descriptor_sets(state,
+                                                             args->device,
+                                                             args->pAllocateInfo,
+                                                             args->pDescriptorSets);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Descriptor sets allocated\n");
+    } else {
+        printf("[Venus Server]   -> ERROR: Allocation failed (%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkFreeDescriptorSets(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkFreeDescriptorSets* args) {
+    printf("[Venus Server] Dispatching vkFreeDescriptorSets (count=%u)\n",
+           args->descriptorSetCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_free_descriptor_sets(state,
+                                                         args->device,
+                                                         args->descriptorPool,
+                                                         args->descriptorSetCount,
+                                                         args->pDescriptorSets);
+    if (args->ret != VK_SUCCESS) {
+        printf("[Venus Server]   -> ERROR: Free descriptor sets failed (%d)\n", args->ret);
+    }
+}
+
+static VkDescriptorType descriptor_type_from_write(const VkWriteDescriptorSet* write) {
+    return write ? write->descriptorType : VK_DESCRIPTOR_TYPE_MAX_ENUM;
+}
+
+static bool write_uses_buffer(VkDescriptorType type) {
+    switch (type) {
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void server_dispatch_vkUpdateDescriptorSets(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkUpdateDescriptorSets* args) {
+    printf("[Venus Server] Dispatching vkUpdateDescriptorSets (writes=%u, copies=%u)\n",
+           args->descriptorWriteCount,
+           args->descriptorCopyCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown device\n");
+        return;
+    }
+
+    VkWriteDescriptorSet* writes = NULL;
+    VkDescriptorBufferInfo** buffer_arrays = NULL;
+    VkCopyDescriptorSet* copies = NULL;
+    VkResult result = VK_SUCCESS;
+
+    if (args->descriptorWriteCount > 0) {
+        writes = calloc(args->descriptorWriteCount, sizeof(*writes));
+        buffer_arrays = calloc(args->descriptorWriteCount, sizeof(*buffer_arrays));
+        if (!writes || !buffer_arrays) {
+            printf("[Venus Server]   -> ERROR: Out of memory for descriptor writes\n");
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+            goto cleanup;
+        }
+    }
+
+    for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+        const VkWriteDescriptorSet* src = &args->pDescriptorWrites[i];
+        writes[i] = *src;
+        writes[i].dstSet = server_state_bridge_get_real_descriptor_set(state, src->dstSet);
+        if (writes[i].dstSet == VK_NULL_HANDLE) {
+            printf("[Venus Server]   -> ERROR: Unknown descriptor set in write %u\n", i);
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            goto cleanup;
+        }
+
+        if (write_uses_buffer(src->descriptorType)) {
+            if (!src->pBufferInfo) {
+                printf("[Venus Server]   -> ERROR: Missing buffer info in write %u\n", i);
+                result = VK_ERROR_INITIALIZATION_FAILED;
+                goto cleanup;
+            }
+            buffer_arrays[i] =
+                calloc(src->descriptorCount ? src->descriptorCount : 1, sizeof(VkDescriptorBufferInfo));
+            if (!buffer_arrays[i]) {
+                printf("[Venus Server]   -> ERROR: Out of memory for buffer infos\n");
+                result = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->descriptorCount; ++j) {
+                buffer_arrays[i][j] = src->pBufferInfo[j];
+                buffer_arrays[i][j].buffer =
+                    server_state_bridge_get_real_buffer(state, src->pBufferInfo[j].buffer);
+                if (buffer_arrays[i][j].buffer == VK_NULL_HANDLE) {
+                    printf("[Venus Server]   -> ERROR: Unknown buffer in write %u\n", i);
+                    result = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+            }
+            writes[i].pBufferInfo = buffer_arrays[i];
+            writes[i].pImageInfo = NULL;
+            writes[i].pTexelBufferView = NULL;
+        }
+    }
+
+    if (args->descriptorCopyCount > 0) {
+        copies = calloc(args->descriptorCopyCount, sizeof(*copies));
+        if (!copies) {
+            printf("[Venus Server]   -> ERROR: Out of memory for descriptor copies\n");
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+            goto cleanup;
+        }
+    }
+
+    for (uint32_t i = 0; i < args->descriptorCopyCount; ++i) {
+        copies[i] = args->pDescriptorCopies[i];
+        copies[i].srcSet =
+            server_state_bridge_get_real_descriptor_set(state, args->pDescriptorCopies[i].srcSet);
+        copies[i].dstSet =
+            server_state_bridge_get_real_descriptor_set(state, args->pDescriptorCopies[i].dstSet);
+        if (copies[i].srcSet == VK_NULL_HANDLE || copies[i].dstSet == VK_NULL_HANDLE) {
+            printf("[Venus Server]   -> ERROR: Unknown descriptor set in copy %u\n", i);
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            goto cleanup;
+        }
+    }
+
+    vkUpdateDescriptorSets(real_device,
+                           args->descriptorWriteCount,
+                           writes,
+                           args->descriptorCopyCount,
+                           copies);
+    printf("[Venus Server]   -> Descriptor sets updated\n");
+
+cleanup:
+    if (buffer_arrays) {
+        for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+            free(buffer_arrays[i]);
+        }
+        free(buffer_arrays);
+    }
+    free(writes);
+    free(copies);
+    (void)result;
+}
+
+static void server_dispatch_vkCreatePipelineLayout(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCreatePipelineLayout* args) {
+    printf("[Venus Server] Dispatching vkCreatePipelineLayout\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pPipelineLayout) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing create info or output pointer\n");
+        return;
+    }
+
+    VkPipelineLayout layout =
+        server_state_bridge_create_pipeline_layout(state, args->device, args->pCreateInfo);
+    if (layout == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Failed to create pipeline layout\n");
+        return;
+    }
+    *args->pPipelineLayout = layout;
+    printf("[Venus Server]   -> Pipeline layout created: %p\n", (void*)layout);
+}
+
+static void server_dispatch_vkDestroyPipelineLayout(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkDestroyPipelineLayout* args) {
+    printf("[Venus Server] Dispatching vkDestroyPipelineLayout (layout: %p)\n",
+           (void*)args->pipelineLayout);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->pipelineLayout != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_pipeline_layout(state, args->pipelineLayout);
+    }
+}
+
+static void server_dispatch_vkCreateComputePipelines(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkCreateComputePipelines* args) {
+    printf("[Venus Server] Dispatching vkCreateComputePipelines (count=%u)\n",
+           args->createInfoCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfos || !args->pPipelines) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        printf("[Venus Server]   -> ERROR: Missing create infos or output array\n");
+        return;
+    }
+
+    args->ret = server_state_bridge_create_compute_pipelines(state,
+                                                             args->device,
+                                                             args->pipelineCache,
+                                                             args->createInfoCount,
+                                                             args->pCreateInfos,
+                                                             args->pPipelines);
+    if (args->ret == VK_SUCCESS) {
+        printf("[Venus Server]   -> Compute pipeline(s) created\n");
+    } else {
+        printf("[Venus Server]   -> ERROR: Compute pipeline creation failed (%d)\n", args->ret);
+    }
+}
+
+static void server_dispatch_vkDestroyPipeline(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkDestroyPipeline* args) {
+    printf("[Venus Server] Dispatching vkDestroyPipeline (pipeline: %p)\n",
+           (void*)args->pipeline);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->pipeline != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_pipeline(state, args->pipeline);
+    }
+}
+
+
+
 static void server_dispatch_vkGetImageMemoryRequirements(struct vn_dispatch_context* ctx,
                                                          struct vn_command_vkGetImageMemoryRequirements* args) {
     printf("[Venus Server] Dispatching vkGetImageMemoryRequirements\n");
@@ -844,6 +1189,157 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
     printf("[Venus Server]   -> vkCmdClearColorImage recorded\n");
 }
 
+static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdBindPipeline* args) {
+    printf("[Venus Server] Dispatching vkCmdBindPipeline\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindPipeline")) {
+        return;
+    }
+    VkCommandBuffer real_cb = get_real_command_buffer(state, args->commandBuffer, "vkCmdBindPipeline");
+    if (!real_cb) {
+        return;
+    }
+    VkPipeline real_pipeline = server_state_bridge_get_real_pipeline(state, args->pipeline);
+    if (real_pipeline == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown pipeline\n");
+        return;
+    }
+    vkCmdBindPipeline(real_cb, args->pipelineBindPoint, real_pipeline);
+}
+
+static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkCmdBindDescriptorSets* args) {
+    printf("[Venus Server] Dispatching vkCmdBindDescriptorSets (count=%u)\n",
+           args->descriptorSetCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindDescriptorSets")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBindDescriptorSets");
+    if (!real_cb) {
+        return;
+    }
+    VkPipelineLayout real_layout =
+        server_state_bridge_get_real_pipeline_layout(state, args->layout);
+    if (real_layout == VK_NULL_HANDLE) {
+        printf("[Venus Server]   -> ERROR: Unknown pipeline layout\n");
+        return;
+    }
+    VkDescriptorSet* real_sets = NULL;
+    if (args->descriptorSetCount > 0) {
+        real_sets = calloc(args->descriptorSetCount, sizeof(*real_sets));
+        if (!real_sets) {
+            printf("[Venus Server]   -> ERROR: Out of memory for descriptor sets\n");
+            return;
+        }
+        for (uint32_t i = 0; i < args->descriptorSetCount; ++i) {
+            real_sets[i] =
+                server_state_bridge_get_real_descriptor_set(state, args->pDescriptorSets[i]);
+            if (real_sets[i] == VK_NULL_HANDLE) {
+                printf("[Venus Server]   -> ERROR: Unknown descriptor set %u\n", i);
+                free(real_sets);
+                return;
+            }
+        }
+    }
+    vkCmdBindDescriptorSets(real_cb,
+                            args->pipelineBindPoint,
+                            real_layout,
+                            args->firstSet,
+                            args->descriptorSetCount,
+                            real_sets,
+                            args->dynamicOffsetCount,
+                            args->pDynamicOffsets);
+    free(real_sets);
+}
+
+static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCmdDispatch* args) {
+    printf("[Venus Server] Dispatching vkCmdDispatch (%u, %u, %u)\n",
+           args->groupCountX, args->groupCountY, args->groupCountZ);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDispatch")) {
+        return;
+    }
+    VkCommandBuffer real_cb = get_real_command_buffer(state, args->commandBuffer, "vkCmdDispatch");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdDispatch(real_cb, args->groupCountX, args->groupCountY, args->groupCountZ);
+}
+
+static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCmdPipelineBarrier* args) {
+    printf("[Venus Server] Dispatching vkCmdPipelineBarrier\n");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdPipelineBarrier")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdPipelineBarrier");
+    if (!real_cb) {
+        return;
+    }
+
+    VkBufferMemoryBarrier* buffer_barriers = NULL;
+    VkImageMemoryBarrier* image_barriers = NULL;
+
+    if (args->bufferMemoryBarrierCount > 0) {
+        buffer_barriers =
+            calloc(args->bufferMemoryBarrierCount, sizeof(*buffer_barriers));
+        if (!buffer_barriers) {
+            printf("[Venus Server]   -> ERROR: Out of memory for buffer barriers\n");
+            return;
+        }
+        for (uint32_t i = 0; i < args->bufferMemoryBarrierCount; ++i) {
+            buffer_barriers[i] = args->pBufferMemoryBarriers[i];
+            buffer_barriers[i].buffer = server_state_bridge_get_real_buffer(
+                state, args->pBufferMemoryBarriers[i].buffer);
+            if (buffer_barriers[i].buffer == VK_NULL_HANDLE) {
+                printf("[Venus Server]   -> ERROR: Unknown buffer in barrier %u\n", i);
+                free(buffer_barriers);
+                return;
+            }
+        }
+    }
+
+    if (args->imageMemoryBarrierCount > 0) {
+        image_barriers =
+            calloc(args->imageMemoryBarrierCount, sizeof(*image_barriers));
+        if (!image_barriers) {
+            printf("[Venus Server]   -> ERROR: Out of memory for image barriers\n");
+            free(buffer_barriers);
+            return;
+        }
+        for (uint32_t i = 0; i < args->imageMemoryBarrierCount; ++i) {
+            image_barriers[i] = args->pImageMemoryBarriers[i];
+            image_barriers[i].image = server_state_bridge_get_real_image(
+                state, args->pImageMemoryBarriers[i].image);
+            if (image_barriers[i].image == VK_NULL_HANDLE) {
+                printf("[Venus Server]   -> ERROR: Unknown image in barrier %u\n", i);
+                free(buffer_barriers);
+                free(image_barriers);
+                return;
+            }
+        }
+    }
+
+    vkCmdPipelineBarrier(real_cb,
+                         args->srcStageMask,
+                         args->dstStageMask,
+                         args->dependencyFlags,
+                         args->memoryBarrierCount,
+                         args->pMemoryBarriers,
+                         args->bufferMemoryBarrierCount,
+                         buffer_barriers,
+                         args->imageMemoryBarrierCount,
+                         image_barriers);
+    free(buffer_barriers);
+    free(image_barriers);
+}
+
 static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCreateFence* args) {
     printf("[Venus Server] Dispatching vkCreateFence\n");
@@ -1015,6 +1511,20 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetImageMemoryRequirements = server_dispatch_vkGetImageMemoryRequirements;
     renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
     renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
+    renderer->ctx.dispatch_vkCreateShaderModule = server_dispatch_vkCreateShaderModule;
+    renderer->ctx.dispatch_vkDestroyShaderModule = server_dispatch_vkDestroyShaderModule;
+    renderer->ctx.dispatch_vkCreateDescriptorSetLayout = server_dispatch_vkCreateDescriptorSetLayout;
+    renderer->ctx.dispatch_vkDestroyDescriptorSetLayout = server_dispatch_vkDestroyDescriptorSetLayout;
+    renderer->ctx.dispatch_vkCreateDescriptorPool = server_dispatch_vkCreateDescriptorPool;
+    renderer->ctx.dispatch_vkDestroyDescriptorPool = server_dispatch_vkDestroyDescriptorPool;
+    renderer->ctx.dispatch_vkResetDescriptorPool = server_dispatch_vkResetDescriptorPool;
+    renderer->ctx.dispatch_vkAllocateDescriptorSets = server_dispatch_vkAllocateDescriptorSets;
+    renderer->ctx.dispatch_vkFreeDescriptorSets = server_dispatch_vkFreeDescriptorSets;
+    renderer->ctx.dispatch_vkUpdateDescriptorSets = server_dispatch_vkUpdateDescriptorSets;
+    renderer->ctx.dispatch_vkCreatePipelineLayout = server_dispatch_vkCreatePipelineLayout;
+    renderer->ctx.dispatch_vkDestroyPipelineLayout = server_dispatch_vkDestroyPipelineLayout;
+    renderer->ctx.dispatch_vkCreateComputePipelines = server_dispatch_vkCreateComputePipelines;
+    renderer->ctx.dispatch_vkDestroyPipeline = server_dispatch_vkDestroyPipeline;
     renderer->ctx.dispatch_vkCreateCommandPool = server_dispatch_vkCreateCommandPool;
     renderer->ctx.dispatch_vkDestroyCommandPool = server_dispatch_vkDestroyCommandPool;
     renderer->ctx.dispatch_vkResetCommandPool = server_dispatch_vkResetCommandPool;
@@ -1031,6 +1541,10 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdFillBuffer = server_dispatch_vkCmdFillBuffer;
     renderer->ctx.dispatch_vkCmdUpdateBuffer = server_dispatch_vkCmdUpdateBuffer;
     renderer->ctx.dispatch_vkCmdClearColorImage = server_dispatch_vkCmdClearColorImage;
+    renderer->ctx.dispatch_vkCmdBindPipeline = server_dispatch_vkCmdBindPipeline;
+    renderer->ctx.dispatch_vkCmdBindDescriptorSets = server_dispatch_vkCmdBindDescriptorSets;
+    renderer->ctx.dispatch_vkCmdDispatch = server_dispatch_vkCmdDispatch;
+    renderer->ctx.dispatch_vkCmdPipelineBarrier = server_dispatch_vkCmdPipelineBarrier;
     renderer->ctx.dispatch_vkCreateFence = server_dispatch_vkCreateFence;
     renderer->ctx.dispatch_vkDestroyFence = server_dispatch_vkDestroyFence;
     renderer->ctx.dispatch_vkGetFenceStatus = server_dispatch_vkGetFenceStatus;

@@ -24,6 +24,53 @@ VkImage server_state_bridge_get_real_image(const struct ServerState* state, VkIm
 VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* state, VkDeviceMemory memory);
 VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
                                                             VkCommandBuffer commandBuffer);
+VkShaderModule server_state_bridge_create_shader_module(struct ServerState* state,
+                                                        VkDevice device,
+                                                        const VkShaderModuleCreateInfo* info);
+void server_state_bridge_destroy_shader_module(struct ServerState* state, VkShaderModule module);
+VkShaderModule server_state_bridge_get_real_shader_module(const struct ServerState* state,
+                                                          VkShaderModule module);
+VkDescriptorSetLayout server_state_bridge_create_descriptor_set_layout(struct ServerState* state,
+                                                                       VkDevice device,
+                                                                       const VkDescriptorSetLayoutCreateInfo* info);
+void server_state_bridge_destroy_descriptor_set_layout(struct ServerState* state,
+                                                       VkDescriptorSetLayout layout);
+VkDescriptorSetLayout server_state_bridge_get_real_descriptor_set_layout(const struct ServerState* state,
+                                                                         VkDescriptorSetLayout layout);
+VkDescriptorPool server_state_bridge_create_descriptor_pool(struct ServerState* state,
+                                                            VkDevice device,
+                                                            const VkDescriptorPoolCreateInfo* info);
+void server_state_bridge_destroy_descriptor_pool(struct ServerState* state, VkDescriptorPool pool);
+VkResult server_state_bridge_reset_descriptor_pool(struct ServerState* state,
+                                                   VkDescriptorPool pool,
+                                                   VkDescriptorPoolResetFlags flags);
+VkDescriptorPool server_state_bridge_get_real_descriptor_pool(const struct ServerState* state,
+                                                              VkDescriptorPool pool);
+VkResult server_state_bridge_allocate_descriptor_sets(struct ServerState* state,
+                                                      VkDevice device,
+                                                      const VkDescriptorSetAllocateInfo* info,
+                                                      VkDescriptorSet* pDescriptorSets);
+VkResult server_state_bridge_free_descriptor_sets(struct ServerState* state,
+                                                  VkDevice device,
+                                                  VkDescriptorPool pool,
+                                                  uint32_t descriptorSetCount,
+                                                  const VkDescriptorSet* pDescriptorSets);
+VkDescriptorSet server_state_bridge_get_real_descriptor_set(const struct ServerState* state,
+                                                            VkDescriptorSet set);
+VkPipelineLayout server_state_bridge_create_pipeline_layout(struct ServerState* state,
+                                                            VkDevice device,
+                                                            const VkPipelineLayoutCreateInfo* info);
+void server_state_bridge_destroy_pipeline_layout(struct ServerState* state, VkPipelineLayout layout);
+VkPipelineLayout server_state_bridge_get_real_pipeline_layout(const struct ServerState* state,
+                                                              VkPipelineLayout layout);
+VkResult server_state_bridge_create_compute_pipelines(struct ServerState* state,
+                                                      VkDevice device,
+                                                      VkPipelineCache pipelineCache,
+                                                      uint32_t createInfoCount,
+                                                      const VkComputePipelineCreateInfo* pCreateInfos,
+                                                      VkPipeline* pPipelines);
+void server_state_bridge_destroy_pipeline(struct ServerState* state, VkPipeline pipeline);
+VkPipeline server_state_bridge_get_real_pipeline(const struct ServerState* state, VkPipeline pipeline);
 
 // Phase 3: Device and queue management
 VkDevice server_state_bridge_alloc_device(struct ServerState* state,
