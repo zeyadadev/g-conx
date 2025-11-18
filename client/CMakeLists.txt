@@ -2,6 +2,14 @@ add_library(venus_icd SHARED
     icd/icd_entrypoints.cpp
     state/handle_allocator.cpp
     state/instance_state.cpp
+    state/device_state.cpp
+)
+
+# Set default symbol visibility to hidden - only VP_PUBLIC symbols should be exported
+set_target_properties(venus_icd PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    C_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
 )
 
 target_include_directories(venus_icd PRIVATE

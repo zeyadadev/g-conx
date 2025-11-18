@@ -81,6 +81,19 @@ public:
         return it->second.remote_handle;
     }
 
+    // Get instance by physical device (search all instances)
+    InstanceState* get_instance_by_physical_device(VkPhysicalDevice physical_device) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& pair : instances_) {
+            for (const auto& phys_dev : pair.second.physical_devices) {
+                if (phys_dev.local_handle == physical_device) {
+                    return &pair.second;
+                }
+            }
+        }
+        return nullptr;
+    }
+
 private:
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, InstanceState> instances_;

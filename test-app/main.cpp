@@ -1,5 +1,6 @@
 #include "phase01/phase01_test.h"
 #include "phase02/phase02_test.h"
+#include "phase03/phase03_test.h"
 #include <iostream>
 #include <cstring>
 
@@ -37,6 +38,8 @@ int main(int argc, char** argv) {
             return phase01::run_test();
         case 2:
             return phase02::run_test();
+        case 3:
+            return run_phase03_test() ? 0 : 1;
         default:
             std::cerr << "Error: Phase " << phase << " not implemented yet\n";
             return 1;
@@ -50,6 +53,8 @@ int main(int argc, char** argv) {
 
         result = phase02::run_test();
         if (result != 0) return result;
+
+        if (!run_phase03_test()) return 1;
 
         std::cout << "\n";
         std::cout << "=================================================\n";

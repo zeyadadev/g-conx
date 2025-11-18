@@ -1,8 +1,10 @@
 #include "icd_entrypoints.h"
 #include "icd_instance.h"
+#include "icd_device.h"
 #include "network/network_client.h"
 #include "state/handle_allocator.h"
 #include "state/instance_state.h"
+#include "state/device_state.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include <algorithm>
@@ -38,6 +40,10 @@ static bool ensure_connected() {
 }
 
 extern "C" {
+
+// Forward declarations for device-level functions (needed by vkGetDeviceProcAddr)
+VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator);
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue);
 
 // ICD interface version negotiation
 VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion) {
@@ -355,7 +361,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
     return VK_SUCCESS;
 }
 
-// vkGetPhysicalDeviceFeatures - Phase 2 stub
+// vkGetPhysicalDeviceFeatures - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
     VkPhysicalDevice physicalDevice,
     VkPhysicalDeviceFeatures* pFeatures) {
@@ -366,12 +372,29 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
         return;
     }
 
-    // For Phase 2: Return a zeroed features structure (no features supported)
-    memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures));
-    std::cout << "[Client ICD] Returned fake features (all disabled)\n";
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures));
+        return;
+    }
+
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
+
+    vn_call_vkGetPhysicalDeviceFeatures(&g_ring, remote_device, pFeatures);
+    std::cout << "[Client ICD] Returned features from server\n";
 }
 
-// vkGetPhysicalDeviceFormatProperties - Phase 2 stub
+// vkGetPhysicalDeviceFormatProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
     VkPhysicalDevice physicalDevice,
     VkFormat format,
@@ -383,7 +406,25 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
         return;
     }
 
-    memset(pFormatProperties, 0, sizeof(VkFormatProperties));
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pFormatProperties, 0, sizeof(VkFormatProperties));
+        return;
+    }
+
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
+
+    vn_call_vkGetPhysicalDeviceFormatProperties(&g_ring, remote_device, format, pFormatProperties);
 }
 
 // vkGetPhysicalDeviceImageFormatProperties - Phase 2 stub
@@ -406,7 +447,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(
     return VK_ERROR_FORMAT_NOT_SUPPORTED;
 }
 
-// vkGetPhysicalDeviceProperties - Phase 2 stub
+// vkGetPhysicalDeviceProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
     VkPhysicalDevice physicalDevice,
     VkPhysicalDeviceProperties* pProperties) {
@@ -417,20 +458,29 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
         return;
     }
 
-    memset(pProperties, 0, sizeof(VkPhysicalDeviceProperties));
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pProperties, 0, sizeof(VkPhysicalDeviceProperties));
+        return;
+    }
 
-    // Set minimal required properties
-    pProperties->apiVersion = VK_API_VERSION_1_3;
-    pProperties->driverVersion = VK_MAKE_VERSION(0, 1, 0);
-    pProperties->vendorID = 0x10005;  // Fake vendor ID
-    pProperties->deviceID = 0x0001;
-    pProperties->deviceType = VK_PHYSICAL_DEVICE_TYPE_OTHER;
-    strncpy(pProperties->deviceName, "Venus Plus Remote GPU", VK_MAX_PHYSICAL_DEVICE_NAME_SIZE);
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
 
-    std::cout << "[Client ICD] Returned fake device properties\n";
+    vn_call_vkGetPhysicalDeviceProperties(&g_ring, remote_device, pProperties);
+    std::cout << "[Client ICD] Returned device properties from server: " << pProperties->deviceName << "\n";
 }
 
-// vkGetPhysicalDeviceQueueFamilyProperties - Phase 2 stub
+// vkGetPhysicalDeviceQueueFamilyProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(
     VkPhysicalDevice physicalDevice,
     uint32_t* pQueueFamilyPropertyCount,
@@ -442,20 +492,34 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(
         return;
     }
 
-    // For Phase 2: Return 1 fake queue family
-    if (pQueueFamilyProperties == nullptr) {
-        *pQueueFamilyPropertyCount = 1;
-        std::cout << "[Client ICD] Returning queue family count: 1\n";
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        *pQueueFamilyPropertyCount = 0;
+        return;
+    }
+
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
+
+    vn_call_vkGetPhysicalDeviceQueueFamilyProperties(&g_ring, remote_device, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+
+    if (pQueueFamilyProperties) {
+        std::cout << "[Client ICD] Returned " << *pQueueFamilyPropertyCount << " queue families from server\n";
     } else {
-        *pQueueFamilyPropertyCount = 1;
-        memset(pQueueFamilyProperties, 0, sizeof(VkQueueFamilyProperties));
-        pQueueFamilyProperties[0].queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-        pQueueFamilyProperties[0].queueCount = 1;
-        std::cout << "[Client ICD] Returned fake queue family properties\n";
+        std::cout << "[Client ICD] Returning queue family count: " << *pQueueFamilyPropertyCount << "\n";
     }
 }
 
-// vkGetPhysicalDeviceMemoryProperties - Phase 2 stub
+// vkGetPhysicalDeviceMemoryProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
     VkPhysicalDevice physicalDevice,
     VkPhysicalDeviceMemoryProperties* pMemoryProperties) {
@@ -466,26 +530,60 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
         return;
     }
 
-    memset(pMemoryProperties, 0, sizeof(VkPhysicalDeviceMemoryProperties));
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        memset(pMemoryProperties, 0, sizeof(VkPhysicalDeviceMemoryProperties));
+        return;
+    }
 
-    // For Phase 2: Return minimal fake memory properties
-    pMemoryProperties->memoryTypeCount = 1;
-    pMemoryProperties->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    pMemoryProperties->memoryTypes[0].heapIndex = 0;
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
 
-    pMemoryProperties->memoryHeapCount = 1;
-    pMemoryProperties->memoryHeaps[0].size = 1024 * 1024 * 1024;  // 1GB fake
-    pMemoryProperties->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
-
-    std::cout << "[Client ICD] Returned fake memory properties\n";
+    vn_call_vkGetPhysicalDeviceMemoryProperties(&g_ring, remote_device, pMemoryProperties);
+    std::cout << "[Client ICD] Returned memory properties from server: "
+              << pMemoryProperties->memoryTypeCount << " types, "
+              << pMemoryProperties->memoryHeapCount << " heaps\n";
 }
 
-// vkGetDeviceProcAddr - Phase 2 stub
+// vkGetDeviceProcAddr - Phase 3
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* pName) {
     std::cout << "[Client ICD] vkGetDeviceProcAddr called for: " << (pName ? pName : "NULL");
 
-    // For Phase 2, we don't support any device functions yet
-    // Phase 3 will add device creation
+    if (!pName) {
+        std::cout << " -> nullptr\n";
+        return nullptr;
+    }
+
+    // Critical: vkGetDeviceProcAddr must return itself
+    if (strcmp(pName, "vkGetDeviceProcAddr") == 0) {
+        std::cout << " -> vkGetDeviceProcAddr\n";
+        return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
+    }
+
+    // Phase 3: Device-level functions
+    if (strcmp(pName, "vkGetDeviceQueue") == 0) {
+        std::cout << " -> vkGetDeviceQueue\n";
+        return (PFN_vkVoidFunction)vkGetDeviceQueue;
+    }
+    if (strcmp(pName, "vkDestroyDevice") == 0) {
+        std::cout << " -> vkDestroyDevice\n";
+        return (PFN_vkVoidFunction)vkDestroyDevice;
+    }
+    if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
+        // Return nullptr for now - not implemented in Phase 3
+        std::cout << " -> NOT IMPLEMENTED\n";
+        return nullptr;
+    }
+
     std::cout << " -> NOT IMPLEMENTED, returning nullptr\n";
     return nullptr;
 }
@@ -530,7 +628,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceSparseImageFormatProperties(
     *pPropertyCount = 0;
 }
 
-// vkCreateDevice - Phase 2 stub (required by loader but not used in Phase 2)
+// vkCreateDevice - Phase 3
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     VkPhysicalDevice physicalDevice,
     const VkDeviceCreateInfo* pCreateInfo,
@@ -539,10 +637,147 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
     std::cout << "[Client ICD] vkCreateDevice called\n";
 
-    // Phase 2 doesn't support device creation yet
-    // This stub is just to satisfy the loader's requirements
-    std::cout << "[Client ICD] Device creation not supported in Phase 2\n";
-    return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!pCreateInfo || !pDevice) {
+        std::cerr << "[Client ICD] Invalid parameters\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // Get remote physical device handle
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    VkPhysicalDevice remote_physical_device = VK_NULL_HANDLE;
+    if (state) {
+        for (const auto& entry : state->physical_devices) {
+            if (entry.local_handle == physicalDevice) {
+                remote_physical_device = entry.remote_handle;
+                break;
+            }
+        }
+    }
+
+    if (remote_physical_device == VK_NULL_HANDLE) {
+        std::cerr << "[Client ICD] Failed to find remote physical device\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // Allocate ICD device structure (required for loader dispatch table)
+    IcdDevice* icd_device = new IcdDevice();
+    if (!icd_device) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Initialize loader_data - will be filled by loader after we return
+    icd_device->loader_data = nullptr;
+    icd_device->physical_device = physicalDevice;
+    icd_device->remote_handle = VK_NULL_HANDLE;
+
+    // Call server to create device
+    VkResult result = vn_call_vkCreateDevice(&g_ring, remote_physical_device, pCreateInfo, pAllocator, &icd_device->remote_handle);
+
+    if (result != VK_SUCCESS) {
+        std::cerr << "[Client ICD] vkCreateDevice failed: " << result << "\n";
+        delete icd_device;
+        return result;
+    }
+
+    // Return the ICD device as VkDevice handle
+    *pDevice = icd_device_to_handle(icd_device);
+
+    // Store device mapping
+    g_device_state.add_device(*pDevice, icd_device->remote_handle, physicalDevice);
+
+    std::cout << "[Client ICD] Device created successfully (local=" << *pDevice
+              << ", remote=" << icd_device->remote_handle << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyDevice - Phase 3
+VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
+    VkDevice device,
+    const VkAllocationCallbacks* pAllocator) {
+
+    std::cout << "[Client ICD] vkDestroyDevice called for device: " << device << "\n";
+
+    if (device == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // Get ICD device structure
+    IcdDevice* icd_device = icd_device_from_handle(device);
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        // Still clean up local resources
+        g_device_state.remove_device(device);
+        delete icd_device;
+        return;
+    }
+
+    // Call server to destroy device
+    vn_async_vkDestroyDevice(&g_ring, icd_device->remote_handle, pAllocator);
+
+    // Remove from state
+    g_device_state.remove_device(device);
+
+    // Free the ICD device structure
+    delete icd_device;
+
+    std::cout << "[Client ICD] Device destroyed\n";
+}
+
+// vkGetDeviceQueue - Phase 3
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
+    VkDevice device,
+    uint32_t queueFamilyIndex,
+    uint32_t queueIndex,
+    VkQueue* pQueue) {
+
+    std::cout << "[Client ICD] vkGetDeviceQueue called (device=" << device
+              << ", family=" << queueFamilyIndex << ", index=" << queueIndex << ")\n";
+
+    if (!pQueue) {
+        std::cerr << "[Client ICD] pQueue is NULL\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        std::cerr << "[Client ICD] Not connected to server\n";
+        *pQueue = VK_NULL_HANDLE;
+        return;
+    }
+
+    // Get ICD device structure
+    IcdDevice* icd_device = icd_device_from_handle(device);
+
+    // Allocate ICD queue structure (required for loader dispatch table)
+    IcdQueue* icd_queue = new IcdQueue();
+    if (!icd_queue) {
+        *pQueue = VK_NULL_HANDLE;
+        return;
+    }
+
+    // Initialize queue structure
+    icd_queue->loader_data = nullptr;  // Loader will fill this
+    icd_queue->parent_device = device;
+    icd_queue->family_index = queueFamilyIndex;
+    icd_queue->queue_index = queueIndex;
+    icd_queue->remote_handle = VK_NULL_HANDLE;
+
+    // Call server to get queue
+    vn_async_vkGetDeviceQueue(&g_ring, icd_device->remote_handle, queueFamilyIndex, queueIndex, &icd_queue->remote_handle);
+
+    // Return the ICD queue as VkQueue handle
+    *pQueue = icd_queue_to_handle(icd_queue);
+
+    // Store queue mapping
+    g_device_state.add_queue(device, *pQueue, icd_queue->remote_handle, queueFamilyIndex, queueIndex);
+
+    std::cout << "[Client ICD] Queue retrieved (local=" << *pQueue
+              << ", remote=" << icd_queue->remote_handle << ")\n";
 }
 
 } // extern "C"

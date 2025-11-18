@@ -434,7 +434,7 @@ valgrind --leak-check=full ./server/venus-server
 
 ### ⚠️ Critical ICD Requirements
 
-**These are mandatory for ICDs to work correctly:**
+**These are mandatory for ICDs to work correctly. Violations cause infinite recursion crashes:**
 
 6. **Never link against libvulkan.so**: ICD must NOT link against Vulkan loader
    - ❌ `target_link_libraries(venus_icd PRIVATE Vulkan::Vulkan)` - Creates circular dependency
@@ -443,19 +443,34 @@ valgrind --leak-check=full ./server/venus-server
 
 7. **Symbol visibility control**: Only ICD interface functions should be PUBLIC
    - ✅ `VP_PUBLIC` for: `vk_icdNegotiateLoaderICDInterfaceVersion`, `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr`
-   - ✅ `VP_PRIVATE` for: All Vulkan functions (`vkCreateInstance`, `vkEnumeratePhysicalDevices`, etc.)
-   - **Why**: Public Vulkan symbols cause loader to find ICD's symbols instead of dispatching
+   - ✅ `VP_PRIVATE` for: All Vulkan functions (`vkCreateInstance`, `vkDestroyDevice`, `vkGetDeviceQueue`, etc.)
+   - **Why**: If Vulkan symbols are exported, the loader finds ICD's symbols directly instead of using the dispatch table, causing infinite recursion when calling device functions like `vkGetDeviceQueue`
+   - **CMake must set default visibility to hidden**:
+     ```cmake
+     set_target_properties(venus_icd PROPERTIES
+         CXX_VISIBILITY_PRESET hidden
+         C_VISIBILITY_PRESET hidden
+         VISIBILITY_INLINES_HIDDEN ON
+     )
+     ```
+
+8. **Handle structures**: VkDevice and VkQueue must be pointers to structs with `void* loader_data` as the FIRST member
+   - The Vulkan loader writes its dispatch table pointer to this field
+   - See `client/icd/icd_device.h` for `IcdDevice` and `IcdQueue` struct definitions
+   - **Why**: The loader uses this dispatch table for all device-level function calls
 
 **Verification**:
 ```bash
 # Should show NOTHING (no libvulkan.so dependency)
 ldd ./client/libvenus_icd.so | grep vulkan
 
-# Should show NOTHING (vkCreateInstance is hidden)
-nm -D ./client/libvenus_icd.so | grep vkCreateInstance
+# Should show ONLY vk_icd* functions (vkCreateInstance, vkGetDeviceQueue should NOT appear)
+nm -D ./client/libvenus_icd.so | grep " T " | grep vk
 
-# Should show exported ICD interface
-nm -D ./client/libvenus_icd.so | grep vk_icdNegotiateLoaderICDInterfaceVersion
+# Expected output:
+# vk_icdGetInstanceProcAddr
+# vk_icdGetPhysicalDeviceProcAddr
+# vk_icdNegotiateLoaderICDInterfaceVersion
 ```
 
 ## Performance Considerations
