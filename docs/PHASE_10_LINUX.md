@@ -1,1186 +1,307 @@
-# Phase 10 Linux: X11 and Wayland WSI
+# Phase 10 Linux: X11 & Wayland WSI
 
-**Linux-specific WSI implementation with GBM optimization**
+**Goal:** Replace the headless WSI with real Linux window system integration that works on both major compositors and automatically falls back when GBM/DMA-BUF is unavailable.
 
-## Overview
+**Status:** Planned work (nothing is implemented in `client/wsi` yet).
 
-This document covers Linux WSI implementation for Venus Plus:
-- **Primary path**: GBM + DMA-BUF (zero-copy to compositor)
-- **Fallback path**: wl_shm / XPutImage (CPU buffers)
+**Duration:** 10 days (Days 86‑95 in the master schedule).
 
-The system automatically detects GBM support and falls back to CPU buffers when unavailable.
+**Prerequisites:**
+- Phase 10 Base (graphics pipeline + frame transfer) is functional.
+- The server can stream `VenusFrameHeader` + payload back to the client.
+- Phase 09 validation and build/test infrastructure stay green.
 
-**Duration**: 10 days (Days 86-95)
-**Prerequisites**: Phase 10 Base complete
+**Definition of done:** The Phase 10 test app renders through the Venus ICD while showing a window on both X11 and Wayland. GBM/DMA-BUF paths are exercised when supported, CPU fallbacks are verified with the `VENUS_WSI_FORCE_PATH` override, and `ctest --test-dir build/client/tests` still passes.
 
 ---
 
-## Architecture
+## Scope & Deliverables
 
-### Path Selection
+- Implement Linux-only versions of the WSI instance/device entrypoints (`vkCreateXcbSurfaceKHR`, `vkCreateXlibSurfaceKHR`, `vkCreateWaylandSurfaceKHR`, `vkGetPhysicalDeviceSurfaceSupportKHR`, `vkGetPhysicalDeviceSurfaceCapabilitiesKHR`, `vkGetPhysicalDeviceSurfaceFormatsKHR`, `vkGetPhysicalDeviceSurfacePresentModesKHR`).
+- Replace `HeadlessWSI` with a Linux-aware factory in `client/wsi/platform_wsi.h` that chooses between X11/Wayland backends at runtime.
+- Provide two execution paths for each compositor:
+  - **Primary:** GBM + DMA-BUF (XCB/DRI3 + Present, Wayland `zwp_linux_dmabuf_v1`).
+  - **Fallback:** CPU buffers (XPutImage/XShm for X11, `wl_shm` for Wayland).
+- Extend swapchain state to store surface metadata (connection, window, wl_surface) so the WSI backend can present frames.
+- Update CMake and documentation so the new code builds on Ubuntu/Fedora with the required dev packages.
+- Add manual/integration tests to `test-app/phase10` so we can see the rotating triangle and inspect FPS/logs for each path.
+
+
+## File Map
+
+| Area | Files | Notes |
+|------|-------|-------|
+| WSI interface | `client/wsi/platform_wsi.h`, new `client/wsi/linux/linux_wsi.{h,cpp}` plus per-path helpers under `client/wsi/linux/` | Introduce `LinuxWSI` derived from `PlatformWSI` and sub-classes for X11/Wayland backends. |
+| ICD entrypoints | `client/icd/icd_entrypoints.cpp`, potential helpers under `client/icd/linux_surface.{h,cpp}` | Implement the Linux surface creation functions and surface queries. |
+| Swapchain state | `client/state/swapchain_state.{h,cpp}` | Track the selected `PlatformWSI` per swapchain and the local platform surface handles required by the backend. |
+| Build files | Root `CMakeLists.txt`, `client/CMakeLists.txt` | Link against `xcb`, `xcb-present`, `xcb-dri3`, `wayland-client`, `xkbcommon`, `drm`, `gbm`. Also include generated Wayland protocol stubs. |
+| Tests/docs | `test-app/phase10/`, `docs/BUILD_AND_RUN.md`, this document | Describe how to run each compositor path and how to force fallbacks for validation. |
+
+
+## Architecture Overview
+
+```
+Server GPU ──► Venus frame header + payload ──► client/icd
+                               │
+                               ▼
+                     PlatformWSI::handle_frame()
+                               │
+                ┌──────────────┴──────────────┐
+                │                             │
+         X11 backend                   Wayland backend
+    (DRI3 + Present /                 (DMA-BUF / wl_shm)
+      XPutImage)
+```
+
+`PlatformWSI::init()` receives the swapchain create info so it can size buffers. `handle_frame()` receives a `VenusFrameHeader` describing the frame width/height/stride and the compressed payload block. The Linux implementation must decompress if needed, copy into the local buffer, and submit the buffer to the compositor. `shutdown()` tears down connections, destroys GBM BOs, and frees CPU buffers.
+
+
+### Path Matrix
+
+| Path | Display server | Zero-copy | Libraries | Notes |
+|------|----------------|-----------|-----------|-------|
+| `X11GbmPath` | X11/XCB + DRI3 + Present | ✅ | `xcb`, `xcb-dri3`, `xcb-present`, `gbm`, `drm` | Import DMA-BUF FD via `xcb_dri3_pixmap_from_buffer` and present it via the Present extension. |
+| `WaylandGbmPath` | Wayland + `zwp_linux_dmabuf_v1` | ✅ | `wayland-client`, generated `linux-dmabuf`, `gbm`, `drm` | Creates `wl_buffer` objects backed by GBM BOs and tracks release callbacks. |
+| `X11CpuPath` | X11/XCB | ❌ | `xcb`, `xcb-image` | Allocates CPU RGBA buffers and uploads via `xcb_image_put`. |
+| `WaylandShmPath` | Wayland | ❌ | `wayland-client`, `wl_shm` | Uses shared memory pools + `wl_buffer` objects. |
+
+Paths are chosen automatically based on the compositor (detected via `WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`, or `DISPLAY`) and the presence of a usable render node under `/dev/dri/renderD*`. By default the ICD tries GBM/DMA-BUF and transparently falls back to CPU copies if the primary path fails. An environment override (`VENUS_WSI_FORCE_PATH`) forces a specific backend for testing (see below).
+
+`VENUS_WSI_FORCE_PATH` accepted values:
+- `x11-cpu` / `xcb-cpu` – force the CPU copy path on X11
+- `x11-gbm` – request the DRI3/GBM path (falls back to CPU until implemented)
+- `wayland-shm` – force wl_shm buffers
+- `wayland-dmabuf` / `wayland-gbm` – request the DMA-BUF path (falls back to wl_shm until implemented)
+- `headless` / `none` – skip Linux WSI entirely and fall back to the Phase 10 Base headless writer
+
+
+### Display Detection Flow
 
 ```cpp
-class LinuxWSI : public PlatformWSI {
-public:
-    static std::unique_ptr<LinuxWSI> create(VkSurfaceKHR surface) {
-        // Detect display server
-        bool is_wayland = (getenv("WAYLAND_DISPLAY") != nullptr);
+std::shared_ptr<PlatformWSI> create_platform_wsi(VkSurfaceKHR surface) {
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (!is_linux_surface(surface)) {
+        return nullptr;  // fall back to headless writer
+    }
+    LinuxSurface* native = get_linux_surface(surface);
+    std::string force = getenv("VENUS_WSI_FORCE_PATH") ?: "";
+    if (force == "headless" || force == "none") {
+        return nullptr;
+    }
+    LinuxWSI::BackendKind backend = choose_backend(*native, force);
+    return std::make_shared<LinuxWSI>(*native, backend);
+#else
+    (void)surface;
+    return std::make_shared<HeadlessWSI>();
+#endif
+}
+```
 
-        // Try GBM first (primary path)
-        if (try_init_gbm()) {
-            if (is_wayland) {
-                return std::make_unique<WaylandGBM_WSI>(surface);
-            } else {
-                return std::make_unique<X11_DRI3_WSI>(surface);
-            }
-        }
+### Frame Handling
 
-        // Fallback to CPU buffers
-        if (is_wayland) {
-            return std::make_unique<WaylandSHM_WSI>(surface);
-        } else {
-            return std::make_unique<X11_PutImage_WSI>(surface);
-        }
+```cpp
+void LinuxWSI::handle_frame(const VenusFrameHeader& frame, const uint8_t* payload) {
+    if (!payload || frame.width != width_ || frame.height != height_) {
+        return;
     }
 
-private:
-    static bool try_init_gbm() {
-        // Try to find a usable DRM render node
-        for (int i = 128; i < 136; i++) {
-            char path[32];
-            snprintf(path, sizeof(path), "/dev/dri/renderD%d", i);
+    std::span<const uint8_t> decoded = decompress(frame, payload, scratch_);
+    BackendBuffer& buffer = acquire_buffer(frame.image_index);
+    copy_into_backend(buffer, decoded, frame.stride);
+    submit(buffer);
+}
 
-            int fd = open(path, O_RDWR);
-            if (fd < 0) continue;
-
-            struct gbm_device* gbm = gbm_create_device(fd);
-            if (gbm) {
-                gbm_device_destroy(gbm);
-                close(fd);
-                return true;
-            }
-            close(fd);
-        }
-        return false;
+std::span<const uint8_t> LinuxWSI::decompress(const VenusFrameHeader& frame,
+                                              const uint8_t* payload,
+                                              std::vector<uint8_t>& scratch) {
+    if (frame.compression == FrameCompressionType::NONE) {
+        return {payload, frame.payload_size};
     }
+    scratch.clear();
+    if (!decompress_rle(frame, payload, scratch)) {
+        VP_LOG_STREAM_ERROR(CLIENT) << "[WSI] Failed to decode frame";
+        return {};
+    }
+    return scratch;
+}
+```
+
+Every backend shares the same decode path but has its own `BackendBuffer` implementation:
+
+- **GBM buffers** keep the `gbm_bo*`, `dmabuf fd`, and `map_data` handle returned by `gbm_bo_map`. When a frame arrives we `memcpy` into the mapped pointer and queue the buffer to the compositor. Release callbacks re-map the BO for reuse.
+- **CPU buffers** allocate a `malloc`/`mmap` block per swapchain image; frames copy directly into this memory before being uploaded with XPutImage or `wl_surface_attach`.
+
+
+## Surface & Swapchain Plumbing
+
+### Surface Handles
+
+Add a lightweight `LinuxSurface` structure (stored in `client/state/instance_state` or a new `client/wsi/linux_surface.h`) that captures the native handle from the creation struct. Example:
+
+```cpp
+struct LinuxSurface {
+    enum class Type { Xcb, Xlib, Wayland } type;
+    union {
+        struct { xcb_connection_t* connection; xcb_window_t window; } xcb;
+        struct { Display* dpy; ::Window window; } xlib;
+        struct { wl_display* display; wl_surface* surface; } wayland;
+    } native;
 };
 ```
 
-### Method Comparison
+- `vkCreateXcbSurfaceKHR`/`vkCreateXlibSurfaceKHR`/`vkCreateWaylandSurfaceKHR` allocate this structure, stash it behind the `VkSurfaceKHR`, and return it to the application.
+- `vkDestroySurfaceKHR` frees the allocation.
+- `vkGetPhysicalDeviceXcbPresentationSupportKHR` etc. return `VK_TRUE` if Phase 10 Linux is compiled (the real GPU lives on the server; we simply promise that the client side can blit frames).
 
-| Method | Zero-copy | Requirements | Performance |
-|--------|-----------|--------------|-------------|
-| X11 DRI3 + GBM | Yes | DRI3, Mesa GPU | Best |
-| Wayland DMA-BUF + GBM | Yes | linux-dmabuf, Mesa GPU | Best |
-| X11 XPutImage | No | Basic X11 | Good |
-| Wayland wl_shm | No | Basic Wayland | Good |
+### Swapchain wiring
 
----
+1. During `vkCreateSwapchainKHR` the ICD already calls into `g_swapchain_state.add_swapchain`. Extend that path to:
+   - Look up the `LinuxSurface` from `create_info.surface`.
+   - Instantiate the correct `PlatformWSI` via `create_platform_wsi(surface)` (the factory should receive the surface so it knows whether X11 or Wayland is needed).
+   - Call `wsi->init(create_info, image_count)` and abort if it fails.
+   - Store `wsi` in `SwapchainInfo`.
+2. `vkQueuePresentKHR` ends with a Venus protocol `VENUS_PLUS_CMD_PRESENT` round-trip. After the reply arrives, forward the `VenusFrameHeader` and payload to `swapchain_info.wsi->handle_frame(frame, payload)`.
+3. When `vkDestroySwapchainKHR` runs, call `wsi->shutdown()` once all frames are drained.
+
 
 ## Primary Path: GBM + DMA-BUF
 
-### X11 with DRI3/Present
+### X11 (DRI3 + Present)
 
-```cpp
-#include <xcb/xcb.h>
-#include <xcb/dri3.h>
-#include <xcb/present.h>
-#include <gbm.h>
+1. **DRM device discovery**: iterate `/dev/dri/renderD128` ‑ `/dev/dri/renderD191` and open the first node that allows `GBM_BO_USE_LINEAR`. Keep the fd for the lifetime of the swapchain.
+2. **GBM resources**: allocate one `gbm_bo` per swapchain image, `gbm_bo_map` them for CPU write, and store the returned pointer + `map_data`.
+3. **X11 objects**:
+   - Create an XCB connection (`xcb_connect`) or reuse the one passed to the surface.
+   - Import each BO as a pixmap via `xcb_dri3_pixmap_from_buffer`.
+   - Create Present events for `XCB_PRESENT_EVENT_IDLE_NOTIFY` so we know when a buffer becomes reusable.
+4. **Presentation**: `handle_frame()` copies the decoded RGBA data into the mapped BO, then issues an `xcb_present_pixmap` for the matching pixmap. Mark the buffer as `in_use` until the idle event fires and then `gbm_bo_map` it again (Present unmaps the BO during flip).
+5. **Resizing**: If `frame.width/height` differs from the swapchain extent, destroy and recreate the GBM buffers (this indicates the swapchain was re-created server-side).
 
-class X11_DRI3_WSI : public PlatformWSI {
-private:
-    // X11 connection
-    xcb_connection_t* conn;
-    xcb_window_t window;
+### Wayland (linux-dmabuf + dma fences)
 
-    // GBM device
-    int drm_fd;
-    struct gbm_device* gbm;
+1. **Wayland globals**: bind `wl_compositor`, `wl_shm`, and `zwp_linux_dmabuf_v1`. The existing `wl_display` is provided by the app through `VkWaylandSurfaceCreateInfoKHR`.
+2. **GBM buffers**: same allocation strategy as the X11 path.
+3. **DMA-BUF import**: For each BO, create `zwp_linux_buffer_params_v1`, add plane 0 (fd, stride, offset, modifier), and call `create_immed`. Hook `wl_buffer_listener.release` to flip `Buffer::in_use` back to false and re-map the BO.
+4. **Presentation**: `handle_frame()` writes into the mapped BO, calls `wl_surface_attach/commit`, and flushes the display. The compositor calls the release listener when the buffer can be reused.
 
-    // Buffers
-    struct Buffer {
-        struct gbm_bo* bo;
-        int dma_buf_fd;
-        void* mapped;
-        void* map_data;    // MUST store for gbm_bo_unmap
-        uint32_t stride;
-        size_t size;
-        xcb_pixmap_t pixmap;
-        bool in_use;       // Track if compositor is using this buffer
-    };
-    std::vector<Buffer> buffers;
 
-    // Present extension event handling
-    xcb_special_event_t* present_event;
-    uint32_t present_event_id;
+## Fallback Paths (CPU)
 
-    uint32_t width, height;
+### X11 + XPutImage (or XShm)
 
-public:
-    bool init_buffers(uint32_t w, uint32_t h,
-                      VkFormat format, uint32_t count) override {
-        width = w;
-        height = h;
+1. Allocate `image_count` CPU buffers sized to `width * height * 4` bytes.
+2. Create an `xcb_image_t` per buffer using `xcb_image_create_native` and a matching graphics context.
+3. `handle_frame()` copies the decoded frame into the CPU buffer and calls `xcb_image_put` to blit into the target window.
+4. This path is used when GBM is unavailable or when `VENUS_WSI_FORCE_PATH=x11-cpu`.
 
-        // Open DRM device
-        drm_fd = find_and_open_drm_device();
-        if (drm_fd < 0) return false;
+### Wayland + wl_shm
 
-        gbm = gbm_create_device(drm_fd);
-        if (!gbm) {
-            close(drm_fd);
-            return false;
-        }
+1. For each image allocate an `memfd_create` fd, `ftruncate` to buffer size, `mmap` it, create a `wl_shm_pool`, and finally create a `wl_buffer`.
+2. Add a `wl_buffer_listener` so the compositor can signal when the buffer is free.
+3. `handle_frame()` copies into the mmapped memory, attaches the buffer to the surface, damages the full surface, and commits.
 
-        // Check DRI3 support
-        if (!check_dri3_support(conn)) {
-            gbm_device_destroy(gbm);
-            close(drm_fd);
-            return false;
-        }
 
-        buffers.resize(count);
+## Surface Queries & Swapchain Behavior
 
-        for (uint32_t i = 0; i < count; i++) {
-            // Create GBM buffer object
-            buffers[i].bo = gbm_bo_create(
-                gbm, w, h,
-                vkformat_to_gbm(format),
-                GBM_BO_USE_LINEAR | GBM_BO_USE_RENDERING
-            );
+- **`vkGetPhysicalDeviceSurfaceCapabilitiesKHR`**: Use the cached `LinuxSurface` to query the current window geometry. For Wayland (which lacks synchronous geometry queries) fall back to the swapchain extent requested by the application or a default (e.g., 800×600) if unknown.
+- **`vkGetPhysicalDeviceSurfaceFormatsKHR`**: Advertise the subset we can display locally (at minimum `VK_FORMAT_B8G8R8A8_UNORM` and `VK_FORMAT_B8G8R8A8_SRGB`). Intersect with the server-supported formats returned as part of swapchain creation (Phase 10 Base).
+- **`vkGetPhysicalDeviceSurfacePresentModesKHR`**: Expose `FIFO` and `MAILBOX`. The backend can always emulate FIFO by blocking on the network reply.
+- **`vkAcquireNextImageKHR`/`vkQueuePresentKHR`**: Already implemented in Phase 10 Base; the Linux WSI reuses the swapchain image index delivered inside `VenusFrameHeader` and maps it to the correct buffer slot.
 
-            if (!buffers[i].bo) {
-                destroy();
-                return false;
-            }
 
-            // Get DMA-BUF fd
-            buffers[i].dma_buf_fd = gbm_bo_get_fd(buffers[i].bo);
-            buffers[i].size = gbm_bo_get_stride(buffers[i].bo) * h;
+## Build & Runtime Dependencies
 
-            // Map for CPU write
-            buffers[i].mapped = gbm_bo_map(
-                buffers[i].bo, 0, 0, w, h,
-                GBM_BO_TRANSFER_WRITE,
-                &buffers[i].stride, &buffers[i].map_data
-            );
-
-            if (!buffers[i].mapped) {
-                destroy();
-                return false;
-            }
-
-            buffers[i].in_use = false;
-
-            // Import into X11 as pixmap
-            buffers[i].pixmap = xcb_generate_id(conn);
-            xcb_dri3_pixmap_from_buffer(
-                conn,
-                buffers[i].pixmap,
-                window,
-                buffers[i].size,
-                w, h,
-                gbm_bo_get_stride(buffers[i].bo),
-                depth_from_format(format),
-                bpp_from_format(format),
-                buffers[i].dma_buf_fd
-            );
-        }
-
-        // Register for Present events to track buffer idle status
-        present_event_id = xcb_generate_id(conn);
-        xcb_present_select_input(conn, present_event_id, window,
-                                  XCB_PRESENT_EVENT_MASK_IDLE_NOTIFY);
-        present_event = xcb_register_for_special_xge(
-            conn, &xcb_present_id, present_event_id, NULL);
-
-        xcb_flush(conn);
-        return true;
-    }
-
-    BufferInfo get_buffer(uint32_t index) override {
-        // Wait for buffer to be released by compositor
-        while (buffers[index].in_use) {
-            process_present_events();
-        }
-        return {
-            .data = buffers[index].mapped,
-            .stride = buffers[index].stride
-        };
-    }
-
-    void end_buffer_access(uint32_t index) override {
-        // Unmap to sync CPU writes using the correct map_data handle
-        gbm_bo_unmap(buffers[index].bo, buffers[index].map_data);
-    }
-
-    void present(uint32_t index) override {
-        static uint32_t serial = 0;
-
-        buffers[index].in_use = true;  // Mark as owned by compositor
-
-        // Present via DRI3 Present extension
-        xcb_present_pixmap(
-            conn,
-            window,
-            buffers[index].pixmap,
-            serial++,
-            XCB_NONE,               // valid region (full)
-            XCB_NONE,               // update region (full)
-            0, 0,                   // x, y offset
-            XCB_NONE,               // target CRTC
-            XCB_NONE,               // wait fence
-            XCB_NONE,               // idle fence
-            XCB_PRESENT_OPTION_NONE,
-            0, 0, 0,                // target MSC, divisor, remainder
-            0, NULL                 // notifies
-        );
-
-        xcb_flush(conn);
-
-        // Re-map will happen in get_buffer() after compositor releases buffer
-    }
-
-private:
-    void process_present_events() {
-        xcb_generic_event_t* event;
-        while ((event = xcb_poll_for_special_event(conn, present_event))) {
-            xcb_present_generic_event_t* pge = (xcb_present_generic_event_t*)event;
-
-            if (pge->evtype == XCB_PRESENT_EVENT_IDLE_NOTIFY) {
-                xcb_present_idle_notify_event_t* idle =
-                    (xcb_present_idle_notify_event_t*)event;
-
-                // Find which buffer this pixmap belongs to
-                for (size_t i = 0; i < buffers.size(); i++) {
-                    if (buffers[i].pixmap == idle->pixmap) {
-                        buffers[i].in_use = false;
-
-                        // Re-map the buffer for next use
-                        buffers[i].mapped = gbm_bo_map(
-                            buffers[i].bo, 0, 0, width, height,
-                            GBM_BO_TRANSFER_WRITE,
-                            &buffers[i].stride, &buffers[i].map_data
-                        );
-                        break;
-                    }
-                }
-            }
-
-            free(event);
-        }
-    }
-
-    void destroy() override {
-        for (auto& buf : buffers) {
-            if (buf.pixmap) {
-                xcb_free_pixmap(conn, buf.pixmap);
-            }
-            if (buf.mapped && buf.bo && buf.map_data) {
-                gbm_bo_unmap(buf.bo, buf.map_data);  // Use map_data, not mapped!
-            }
-            if (buf.bo) {
-                gbm_bo_destroy(buf.bo);
-            }
-        }
-        buffers.clear();
-
-        if (gbm) {
-            gbm_device_destroy(gbm);
-            gbm = nullptr;
-        }
-        if (drm_fd >= 0) {
-            close(drm_fd);
-            drm_fd = -1;
-        }
-    }
-
-private:
-    int find_and_open_drm_device() {
-        for (int i = 128; i < 136; i++) {
-            char path[32];
-            snprintf(path, sizeof(path), "/dev/dri/renderD%d", i);
-            int fd = open(path, O_RDWR);
-            if (fd >= 0) return fd;
-        }
-        return -1;
-    }
-
-    bool check_dri3_support(xcb_connection_t* c) {
-        xcb_dri3_query_version_reply_t* reply = xcb_dri3_query_version_reply(
-            c,
-            xcb_dri3_query_version(c, 1, 2),
-            NULL
-        );
-        bool supported = (reply != NULL);
-        free(reply);
-        return supported;
-    }
-
-    uint32_t vkformat_to_gbm(VkFormat format) {
-        switch (format) {
-            case VK_FORMAT_B8G8R8A8_UNORM:
-            case VK_FORMAT_B8G8R8A8_SRGB:
-                return GBM_FORMAT_ARGB8888;
-            case VK_FORMAT_R8G8B8A8_UNORM:
-            case VK_FORMAT_R8G8B8A8_SRGB:
-                return GBM_FORMAT_ABGR8888;
-            default:
-                return GBM_FORMAT_ARGB8888;
-        }
-    }
-};
-```
-
-### Wayland with DMA-BUF
-
-```cpp
-#include <wayland-client.h>
-#include <linux-dmabuf-unstable-v1-client-protocol.h>
-#include <gbm.h>
-
-class WaylandGBM_WSI : public PlatformWSI {
-private:
-    // Wayland
-    wl_display* display;
-    wl_surface* surface;
-    zwp_linux_dmabuf_v1* dmabuf;
-
-    // GBM
-    int drm_fd;
-    struct gbm_device* gbm;
-
-    // Buffers
-    struct Buffer {
-        struct gbm_bo* bo;
-        void* mapped;
-        void* map_data;    // MUST store for gbm_bo_unmap
-        uint32_t stride;
-        wl_buffer* wl_buf;
-        bool in_use;       // Track compositor ownership
-    };
-    std::vector<Buffer> buffers;
-
-    uint32_t width, height;
-
-    // Buffer release callback
-    static void buffer_release(void* data, wl_buffer* buffer) {
-        Buffer* buf = (Buffer*)data;
-        buf->in_use = false;
-
-        // Re-map for next use
-        // Note: Need access to width/height, stored in parent class
-    }
-
-    static const wl_buffer_listener buffer_listener;
-
-public:
-    bool init_buffers(uint32_t w, uint32_t h,
-                      VkFormat format, uint32_t count) override {
-        width = w;
-        height = h;
-
-        // Initialize GBM
-        drm_fd = find_and_open_drm_device();
-        if (drm_fd < 0) return false;
-
-        gbm = gbm_create_device(drm_fd);
-        if (!gbm) {
-            close(drm_fd);
-            return false;
-        }
-
-        buffers.resize(count);
-
-        for (uint32_t i = 0; i < count; i++) {
-            // Create GBM buffer
-            buffers[i].bo = gbm_bo_create(
-                gbm, w, h,
-                vkformat_to_gbm(format),
-                GBM_BO_USE_LINEAR | GBM_BO_USE_RENDERING
-            );
-
-            if (!buffers[i].bo) {
-                destroy();
-                return false;
-            }
-
-            // Map for CPU write - store map_data!
-            buffers[i].mapped = gbm_bo_map(
-                buffers[i].bo, 0, 0, w, h,
-                GBM_BO_TRANSFER_WRITE,
-                &buffers[i].stride, &buffers[i].map_data
-            );
-
-            buffers[i].in_use = false;
-
-            // Create wl_buffer from DMA-BUF
-            int fd = gbm_bo_get_fd(buffers[i].bo);
-
-            zwp_linux_buffer_params_v1* params =
-                zwp_linux_dmabuf_v1_create_params(dmabuf);
-
-            zwp_linux_buffer_params_v1_add(
-                params,
-                fd,
-                0,                              // plane index
-                0,                              // offset
-                buffers[i].stride,
-                DRM_FORMAT_MOD_LINEAR >> 32,
-                DRM_FORMAT_MOD_LINEAR & 0xFFFFFFFF
-            );
-
-            buffers[i].wl_buf = zwp_linux_buffer_params_v1_create_immed(
-                params,
-                w, h,
-                vkformat_to_drm(format),
-                0
-            );
-
-            // Add release listener
-            wl_buffer_add_listener(buffers[i].wl_buf, &buffer_listener, &buffers[i]);
-
-            zwp_linux_buffer_params_v1_destroy(params);
-            close(fd);
-        }
-
-        return true;
-    }
-
-    BufferInfo get_buffer(uint32_t index) override {
-        // Wait for buffer to be released by compositor
-        while (buffers[index].in_use) {
-            wl_display_dispatch(display);
-        }
-
-        // Re-map if needed (after release)
-        if (!buffers[index].mapped) {
-            buffers[index].mapped = gbm_bo_map(
-                buffers[index].bo, 0, 0, width, height,
-                GBM_BO_TRANSFER_WRITE,
-                &buffers[index].stride, &buffers[index].map_data
-            );
-        }
-
-        return {
-            .data = buffers[index].mapped,
-            .stride = buffers[index].stride
-        };
-    }
-
-    void end_buffer_access(uint32_t index) override {
-        // Unmap using correct map_data handle
-        gbm_bo_unmap(buffers[index].bo, buffers[index].map_data);
-        buffers[index].mapped = nullptr;
-    }
-
-    void present(uint32_t index) override {
-        buffers[index].in_use = true;  // Mark as owned by compositor
-
-        // Present
-        wl_surface_attach(surface, buffers[index].wl_buf, 0, 0);
-        wl_surface_damage_buffer(surface, 0, 0, width, height);
-        wl_surface_commit(surface);
-        wl_display_flush(display);
-    }
-
-    void destroy() override {
-        for (auto& buf : buffers) {
-            if (buf.wl_buf) {
-                wl_buffer_destroy(buf.wl_buf);
-            }
-            if (buf.mapped && buf.bo && buf.map_data) {
-                gbm_bo_unmap(buf.bo, buf.map_data);  // Use map_data!
-            }
-            if (buf.bo) {
-                gbm_bo_destroy(buf.bo);
-            }
-        }
-        buffers.clear();
-
-        if (gbm) gbm_device_destroy(gbm);
-        if (drm_fd >= 0) close(drm_fd);
-    }
-
-private:
-    int find_and_open_drm_device() {
-        for (int i = 128; i < 136; i++) {
-            char path[32];
-            snprintf(path, sizeof(path), "/dev/dri/renderD%d", i);
-            int fd = open(path, O_RDWR);
-            if (fd >= 0) return fd;
-        }
-        return -1;
-    }
-};
-
-// Static listener definition
-const wl_buffer_listener WaylandGBM_WSI::buffer_listener = {
-    .release = WaylandGBM_WSI::buffer_release
-};
-```
-
----
-
-## Fallback Path: CPU Buffers
-
-### X11 with XPutImage
-
-Used when DRI3 or GBM is unavailable:
-
-```cpp
-#include <xcb/xcb.h>
-#include <xcb/xcb_image.h>
-
-class X11_PutImage_WSI : public PlatformWSI {
-private:
-    xcb_connection_t* conn;
-    xcb_window_t window;
-    xcb_gcontext_t gc;
-
-    struct Buffer {
-        void* data;
-        size_t size;
-        xcb_image_t* image;
-    };
-    std::vector<Buffer> buffers;
-
-    uint32_t width, height;
-
-public:
-    bool init_buffers(uint32_t w, uint32_t h,
-                      VkFormat format, uint32_t count) override {
-        width = w;
-        height = h;
-
-        // Create graphics context
-        gc = xcb_generate_id(conn);
-        xcb_create_gc(conn, gc, window, 0, NULL);
-
-        buffers.resize(count);
-        size_t stride = w * 4;  // RGBA
-        size_t size = stride * h;
-
-        for (uint32_t i = 0; i < count; i++) {
-            // Allocate CPU buffer
-            buffers[i].data = malloc(size);
-            buffers[i].size = size;
-
-            if (!buffers[i].data) {
-                destroy();
-                return false;
-            }
-
-            // Create XCB image
-            buffers[i].image = xcb_image_create_native(
-                conn,
-                w, h,
-                XCB_IMAGE_FORMAT_Z_PIXMAP,
-                24,  // depth
-                buffers[i].data,
-                size,
-                (uint8_t*)buffers[i].data
-            );
-        }
-
-        return true;
-    }
-
-    BufferInfo get_buffer(uint32_t index) override {
-        return {
-            .data = buffers[index].data,
-            .stride = width * 4  // Tightly packed for XPutImage
-        };
-    }
-
-    void end_buffer_access(uint32_t index) override {
-        // No-op for CPU buffers
-    }
-
-    void present(uint32_t index) override {
-        // Put image to window
-        xcb_image_put(
-            conn,
-            window,
-            gc,
-            buffers[index].image,
-            0, 0,  // x, y
-            0      // left pad
-        );
-
-        xcb_flush(conn);
-    }
-
-    void destroy() override {
-        for (auto& buf : buffers) {
-            if (buf.image) {
-                xcb_image_destroy(buf.image);
-            }
-            if (buf.data) {
-                free(buf.data);
-            }
-        }
-        buffers.clear();
-
-        if (gc) {
-            xcb_free_gc(conn, gc);
-            gc = 0;
-        }
-    }
-};
-```
-
-### Wayland with wl_shm
-
-Used when linux-dmabuf or GBM is unavailable:
-
-```cpp
-#include <wayland-client.h>
-#include <sys/mman.h>
-
-class WaylandSHM_WSI : public PlatformWSI {
-private:
-    wl_display* display;
-    wl_surface* surface;
-    wl_shm* shm;
-
-    struct Buffer {
-        int fd;
-        void* data;
-        size_t size;
-        uint32_t stride;
-        wl_shm_pool* pool;
-        wl_buffer* buffer;
-        bool in_use;        // Track compositor ownership
-    };
-    std::vector<Buffer> buffers;
-
-    uint32_t width, height;
-
-    // Buffer release callback - called when compositor is done with buffer
-    static void buffer_release(void* data, wl_buffer* buffer) {
-        Buffer* buf = (Buffer*)data;
-        buf->in_use = false;
-    }
-
-    static const wl_buffer_listener buffer_listener;
-
-public:
-    bool init_buffers(uint32_t w, uint32_t h,
-                      VkFormat format, uint32_t count) override {
-        width = w;
-        height = h;
-
-        buffers.resize(count);
-        uint32_t stride = w * 4;
-        size_t size = stride * h;
-
-        for (uint32_t i = 0; i < count; i++) {
-            // Create shared memory file
-            buffers[i].fd = memfd_create("venus_frame", MFD_CLOEXEC);
-            if (buffers[i].fd < 0) {
-                destroy();
-                return false;
-            }
-
-            if (ftruncate(buffers[i].fd, size) < 0) {
-                destroy();
-                return false;
-            }
-
-            // Map memory
-            buffers[i].data = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                                   MAP_SHARED, buffers[i].fd, 0);
-            if (buffers[i].data == MAP_FAILED) {
-                destroy();
-                return false;
-            }
-            buffers[i].size = size;
-            buffers[i].stride = stride;
-            buffers[i].in_use = false;
-
-            // Create wl_shm_pool
-            buffers[i].pool = wl_shm_create_pool(shm, buffers[i].fd, size);
-
-            // Create wl_buffer
-            buffers[i].buffer = wl_shm_pool_create_buffer(
-                buffers[i].pool,
-                0,                              // offset
-                w, h,
-                stride,
-                WL_SHM_FORMAT_ARGB8888
-            );
-
-            // Add release listener
-            wl_buffer_add_listener(buffers[i].buffer, &buffer_listener, &buffers[i]);
-        }
-
-        return true;
-    }
-
-    BufferInfo get_buffer(uint32_t index) override {
-        // Wait for buffer to be released by compositor
-        while (buffers[index].in_use) {
-            wl_display_dispatch(display);
-        }
-        return {
-            .data = buffers[index].data,
-            .stride = buffers[index].stride
-        };
-    }
-
-    void end_buffer_access(uint32_t index) override {
-        // No-op for wl_shm (no unmap needed)
-    }
-
-    void present(uint32_t index) override {
-        buffers[index].in_use = true;  // Mark as owned by compositor
-
-        wl_surface_attach(surface, buffers[index].buffer, 0, 0);
-        wl_surface_damage_buffer(surface, 0, 0, width, height);
-        wl_surface_commit(surface);
-        wl_display_flush(display);
-    }
-
-    void destroy() override {
-        for (auto& buf : buffers) {
-            if (buf.buffer) {
-                wl_buffer_destroy(buf.buffer);
-            }
-            if (buf.pool) {
-                wl_shm_pool_destroy(buf.pool);
-            }
-            if (buf.data && buf.data != MAP_FAILED) {
-                munmap(buf.data, buf.size);
-            }
-            if (buf.fd >= 0) {
-                close(buf.fd);
-            }
-        }
-        buffers.clear();
-    }
-};
-
-// Static listener definition
-const wl_buffer_listener WaylandSHM_WSI::buffer_listener = {
-    .release = WaylandSHM_WSI::buffer_release
-};
-```
-
----
-
-## Surface Creation
-
-### X11 Surface
-
-```cpp
-VkResult vkCreateXcbSurfaceKHR(
-    VkInstance instance,
-    const VkXcbSurfaceCreateInfoKHR* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkSurfaceKHR* pSurface) {
-
-    auto* surface = new VenusSurface();
-    surface->type = SURFACE_TYPE_XCB;
-    surface->xcb.connection = pCreateInfo->connection;
-    surface->xcb.window = pCreateInfo->window;
-
-    *pSurface = (VkSurfaceKHR)surface;
-    return VK_SUCCESS;
-}
-
-VkResult vkCreateXlibSurfaceKHR(
-    VkInstance instance,
-    const VkXlibSurfaceCreateInfoKHR* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkSurfaceKHR* pSurface) {
-
-    auto* surface = new VenusSurface();
-    surface->type = SURFACE_TYPE_XLIB;
-    surface->xlib.display = pCreateInfo->dpy;
-    surface->xlib.window = pCreateInfo->window;
-
-    // Get XCB connection from Xlib display
-    surface->xcb.connection = XGetXCBConnection(pCreateInfo->dpy);
-    surface->xcb.window = (xcb_window_t)pCreateInfo->window;
-
-    *pSurface = (VkSurfaceKHR)surface;
-    return VK_SUCCESS;
-}
-```
-
-### Wayland Surface
-
-```cpp
-VkResult vkCreateWaylandSurfaceKHR(
-    VkInstance instance,
-    const VkWaylandSurfaceCreateInfoKHR* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkSurfaceKHR* pSurface) {
-
-    auto* surface = new VenusSurface();
-    surface->type = SURFACE_TYPE_WAYLAND;
-    surface->wayland.display = pCreateInfo->display;
-    surface->wayland.surface = pCreateInfo->surface;
-
-    *pSurface = (VkSurfaceKHR)surface;
-    return VK_SUCCESS;
-}
-```
-
-### Surface Capabilities
-
-```cpp
-VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-    VkPhysicalDevice physicalDevice,
-    VkSurfaceKHR surfaceHandle,
-    VkSurfaceCapabilitiesKHR* pSurfaceCapabilities) {
-
-    auto* surface = (VenusSurface*)surfaceHandle;
-
-    // Get window size
-    uint32_t width, height;
-    if (surface->type == SURFACE_TYPE_XCB) {
-        xcb_get_geometry_reply_t* geom = xcb_get_geometry_reply(
-            surface->xcb.connection,
-            xcb_get_geometry(surface->xcb.connection, surface->xcb.window),
-            NULL
-        );
-        width = geom->width;
-        height = geom->height;
-        free(geom);
-    } else {
-        // Wayland - get from surface or use default
-        width = 800;
-        height = 600;
-    }
-
-    *pSurfaceCapabilities = {
-        .minImageCount = 2,
-        .maxImageCount = 8,
-        .currentExtent = {width, height},
-        .minImageExtent = {1, 1},
-        .maxImageExtent = {4096, 4096},
-        .maxImageArrayLayers = 1,
-        .supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-        .currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-        .supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                               VK_IMAGE_USAGE_TRANSFER_DST_BIT
-    };
-
-    return VK_SUCCESS;
-}
-
-VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(
-    VkPhysicalDevice physicalDevice,
-    VkSurfaceKHR surface,
-    uint32_t* pSurfaceFormatCount,
-    VkSurfaceFormatKHR* pSurfaceFormats) {
-
-    static const VkSurfaceFormatKHR formats[] = {
-        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-    };
-
-    if (!pSurfaceFormats) {
-        *pSurfaceFormatCount = 2;
-        return VK_SUCCESS;
-    }
-
-    uint32_t count = std::min(*pSurfaceFormatCount, 2u);
-    memcpy(pSurfaceFormats, formats, count * sizeof(VkSurfaceFormatKHR));
-    *pSurfaceFormatCount = count;
-
-    return (count < 2) ? VK_INCOMPLETE : VK_SUCCESS;
-}
-
-VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(
-    VkPhysicalDevice physicalDevice,
-    VkSurfaceKHR surface,
-    uint32_t* pPresentModeCount,
-    VkPresentModeKHR* pPresentModes) {
-
-    static const VkPresentModeKHR modes[] = {
-        VK_PRESENT_MODE_FIFO_KHR,       // Always supported
-        VK_PRESENT_MODE_MAILBOX_KHR,    // Triple buffering
-    };
-
-    if (!pPresentModes) {
-        *pPresentModeCount = 2;
-        return VK_SUCCESS;
-    }
-
-    uint32_t count = std::min(*pPresentModeCount, 2u);
-    memcpy(pPresentModes, modes, count * sizeof(VkPresentModeKHR));
-    *pPresentModeCount = count;
-
-    return (count < 2) ? VK_INCOMPLETE : VK_SUCCESS;
-}
-```
-
----
-
-## Task Breakdown
-
-| Day | Tasks |
-|-----|-------|
-| 1 | Surface creation (X11 XCB, Xlib, Wayland) |
-| 2 | Surface capability queries |
-| 3-4 | X11 DRI3 + GBM implementation |
-| 5-6 | Wayland DMA-BUF + GBM implementation |
-| 7 | X11 XPutImage fallback |
-| 8 | Wayland wl_shm fallback |
-| 9 | Path detection and auto-selection |
-| 10 | Testing and debugging |
-
----
-
-## Build Requirements
-
-### Dependencies
+### Packages
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install \
-    libxcb1-dev \
-    libxcb-dri3-dev \
-    libxcb-present-dev \
-    libxcb-image0-dev \
-    libx11-xcb-dev \
-    libwayland-dev \
-    libgbm-dev \
-    libdrm-dev
+# Ubuntu / Debian
+sudo apt install libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
+     libxcb-image0-dev libx11-xcb-dev libwayland-dev wayland-protocols \
+     libxkbcommon-dev libdrm-dev libgbm-dev
 
 # Fedora
-sudo dnf install \
-    libxcb-devel \
-    xcb-util-image-devel \
-    libX11-xcb-devel \
-    wayland-devel \
-    mesa-libgbm-devel \
-    libdrm-devel
+sudo dnf install libxcb-devel xcb-util-image-devel libX11-xcb-devel \
+     wayland-devel wayland-protocols-devel libdrm-devel mesa-libgbm-devel
 ```
 
 ### CMake
 
 ```cmake
-# Find packages
-find_package(X11 REQUIRED)
-find_package(XCB COMPONENTS XCB DRI3 PRESENT IMAGE)
-pkg_check_modules(WAYLAND wayland-client)
-pkg_check_modules(GBM gbm)
-pkg_check_modules(DRM libdrm)
-
-# Linux WSI sources
 if(UNIX AND NOT APPLE)
+    find_package(XCB REQUIRED COMPONENTS XCB DRI3 PRESENT IMAGE)
+    find_package(X11 REQUIRED)
+    pkg_check_modules(WAYLAND REQUIRED wayland-client)
+    pkg_check_modules(GBM REQUIRED gbm)
+    pkg_check_modules(DRM REQUIRED libdrm)
+
     target_sources(venus_icd PRIVATE
-        client/wsi/linux_wsi.cpp
-        client/wsi/x11_dri3.cpp
-        client/wsi/x11_putimage.cpp
-        client/wsi/wayland_dmabuf.cpp
-        client/wsi/wayland_shm.cpp
-    )
+        client/wsi/linux/linux_wsi.cpp
+        client/wsi/linux/x11_gbm_wsi.cpp
+        client/wsi/linux/x11_cpu_wsi.cpp
+        client/wsi/linux/wayland_gbm_wsi.cpp
+        client/wsi/linux/wayland_shm_wsi.cpp)
 
     target_link_libraries(venus_icd PRIVATE
-        ${X11_LIBRARIES}
-        ${XCB_LIBRARIES}
-    )
+        ${XCB_LIBRARIES} ${X11_LIBRARIES} ${WAYLAND_LIBRARIES}
+        ${GBM_LIBRARIES} ${DRM_LIBRARIES})
 
-    if(GBM_FOUND AND DRM_FOUND)
-        target_compile_definitions(venus_icd PRIVATE VENUS_HAS_GBM)
-        target_link_libraries(venus_icd PRIVATE
-            ${GBM_LIBRARIES}
-            ${DRM_LIBRARIES}
-        )
-    endif()
-
-    if(WAYLAND_FOUND)
-        target_compile_definitions(venus_icd PRIVATE VENUS_HAS_WAYLAND)
-        target_link_libraries(venus_icd PRIVATE ${WAYLAND_LIBRARIES})
-    endif()
+    target_include_directories(venus_icd PRIVATE
+        ${XCB_INCLUDE_DIRS} ${WAYLAND_INCLUDE_DIRS} ${GBM_INCLUDE_DIRS})
 endif()
 ```
 
----
+The Wayland protocols (linux-dmabuf, xdg-decoration if needed) can be compiled at configure time using `wayland-scanner`. Keep the generated headers under `client/wsi/linux/protocol/` so they remain hermetic.
 
-## Testing
 
-### Test 1: Auto-detection
+## Testing Plan
 
-```bash
-# Should auto-detect and use GBM if available
-./test-app/phase10_wsi_test
+| Scenario | Command | Expected result |
+|----------|---------|-----------------|
+| X11 + GBM | `VK_DRIVER_FILES=$PWD/build/client/venus_icd.x86_64.json ./build/test-app/venus-test-app --phase 10` | Window appears, logs show `[WSI] Using X11 DRI3 + GBM` and Present events recycle buffers without leaks. |
+| X11 fallback | `VENUS_WSI_FORCE_PATH=x11-cpu ...` | Window appears even if `/dev/dri/renderD*` is inaccessible; FPS drop but frames still arrive. |
+| Wayland + DMA-BUF | run under a Wayland session with Wayland env vars set | Backend prints `[WSI] Using Wayland DMA-BUF` and release callbacks fire. |
+| Wayland fallback | `VENUS_WSI_FORCE_PATH=wayland-shm ...` | Frames copy through `wl_shm`; striding is correct and no protocol errors occur. |
 
-# Expected output:
-# Detecting WSI method...
-# Found DRM device: /dev/dri/renderD128
-# GBM device created successfully
-# Using: X11 DRI3 + GBM (zero-copy)
-```
+Automated coverage:
+- Add a `gtest` under `client/tests` to exercise the detection matrix using fake env vars (no real display needed).
+- Extend `test-app/phase10/phase10_test.cpp` to print the detected backend and optionally save a PNG screenshot when `VENUS_WSI_DUMP=1`.
+- Use CI smoke test to load the ICD in headless mode, ensuring `create_platform_wsi(nullptr)` falls back to `HeadlessWSI` when no compositor environment variables are set.
+- `test-app --phase 10` now attempts to create a native surface (Wayland if `WAYLAND_DISPLAY` is set, otherwise X11 if `DISPLAY` is set) and presents via the active WSI backend before falling back to the headless swapchain check. Use `VENUS_TESTAPP_FORCE_WSI=headless|xcb|wayland` to override detection when validating specific paths.
 
-### Test 2: Force Fallback
 
-```bash
-# Test fallback path
-VENUS_WSI_FORCE_FALLBACK=1 ./test-app/phase10_wsi_test
+## Day-by-Day Breakdown
 
-# Expected output:
-# Detecting WSI method...
-# Forcing fallback mode
-# Using: X11 XPutImage (CPU buffer)
-```
+| Day | Tasks |
+|-----|-------|
+| 1 | Implement Linux surface structs and the `vkCreate*SurfaceKHR` entrypoints. Add stubs for the query functions returning sane defaults. |
+| 2 | Create the Linux WSI factory (`create_platform_wsi`) and integrate it with swapchain creation/destruction. |
+| 3 | Implement GBM device discovery, helper RAII wrappers, and shared decompression utilities. |
+| 4 | Finish the X11 GBM path: buffer allocation, Present wiring, event loop integration. |
+| 5 | Implement Wayland DMA-BUF path including protocol binding and buffer release listeners. |
+| 6 | Wire up CPU fallback for X11 (XPutImage) and add the `VENUS_WSI_FORCE_PATH` override. |
+| 7 | Implement Wayland `wl_shm` fallback and confirm resizing works. |
+| 8 | Fill out the surface query functions using real geometry, add logging, and handle swapchain recreation. |
+| 9 | Update build files, add detection unit tests, and document run instructions. |
+| 10 | Manual test matrix (X11+GBM, X11 fallback, Wayland+GBM, Wayland fallback), polish logs, and fix leaks identified by `valgrind`/ASan. |
 
-### Test 3: Windowed Rendering
 
-```cpp
-// test-app/phase10/phase10_wsi_test.cpp
-int main() {
-    // Create window and surface
-    // Create swapchain
-    // Render loop with rotating triangle
-    // Report FPS and method used
-}
-```
+## Troubleshooting Notes
 
----
+- If `gbm_bo_map` returns `nullptr`, ensure the BO was created with `GBM_BO_USE_LINEAR`. Tiled BOs cannot be CPU-mapped.
+- DRI3 requires the Present extension; log a warning when `xcb_present_query_version` fails and fall back immediately.
+- Wayland compositors will disconnect the client if the buffer stride/pixel format does not match expectations. Keep the DRM fourcc derived from `VkFormat` (`VK_FORMAT_B8G8R8A8_UNORM` → `DRM_FORMAT_ARGB8888`).
+- Honor `frame.stride` when copying from the network buffer; do not assume tightly-packed rows.
+- On swapchain destruction make sure every outstanding buffer is released before closing the DRM fd, or Present will keep the fd alive and leak file descriptors.
 
-## Format Negotiation
-
-### Problem
-
-The server might use formats (e.g., HDR 10-bit) that the local DRM device doesn't support.
-
-### Solution: Query and Restrict
-
-Only advertise formats that both the server GPU and local display can handle:
-
-```cpp
-VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(
-    VkPhysicalDevice physicalDevice,
-    VkSurfaceKHR surface,
-    uint32_t* pSurfaceFormatCount,
-    VkSurfaceFormatKHR* pSurfaceFormats) {
-
-    // Query local GBM/DRM supported formats
-    std::vector<uint32_t> local_formats = query_local_drm_formats();
-
-    // Query server supported formats
-    std::vector<VkSurfaceFormatKHR> server_formats = query_server_formats();
-
-    // Return intersection
-    std::vector<VkSurfaceFormatKHR> supported;
-    for (const auto& fmt : server_formats) {
-        uint32_t drm_fmt = vkformat_to_drm(fmt.format);
-        if (std::find(local_formats.begin(), local_formats.end(), drm_fmt)
-            != local_formats.end()) {
-            supported.push_back(fmt);
-        }
-    }
-
-    // Always include basic formats as fallback
-    if (supported.empty()) {
-        supported.push_back({VK_FORMAT_B8G8R8A8_UNORM,
-                            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR});
-    }
-
-    // Return results
-    if (!pSurfaceFormats) {
-        *pSurfaceFormatCount = supported.size();
-        return VK_SUCCESS;
-    }
-
-    uint32_t count = std::min(*pSurfaceFormatCount, (uint32_t)supported.size());
-    memcpy(pSurfaceFormats, supported.data(), count * sizeof(VkSurfaceFormatKHR));
-    *pSurfaceFormatCount = count;
-
-    return (count < supported.size()) ? VK_INCOMPLETE : VK_SUCCESS;
-}
-
-std::vector<uint32_t> query_local_drm_formats() {
-    std::vector<uint32_t> formats;
-
-    if (gbm) {
-        // GBM path - query device
-        // Note: GBM doesn't have a direct format query API
-        // Test common formats
-        static const uint32_t test_formats[] = {
-            GBM_FORMAT_ARGB8888,
-            GBM_FORMAT_XRGB8888,
-            GBM_FORMAT_ABGR8888,
-            GBM_FORMAT_XBGR8888,
-            // Add HDR formats if needed
-            // GBM_FORMAT_ARGB2101010,
-            // GBM_FORMAT_XRGB2101010,
-        };
-
-        for (uint32_t fmt : test_formats) {
-            struct gbm_bo* bo = gbm_bo_create(gbm, 64, 64, fmt,
-                                              GBM_BO_USE_LINEAR);
-            if (bo) {
-                formats.push_back(fmt);
-                gbm_bo_destroy(bo);
-            }
-        }
-    } else {
-        // CPU fallback - support basic formats only
-        formats.push_back(GBM_FORMAT_ARGB8888);
-        formats.push_back(GBM_FORMAT_XRGB8888);
-    }
-
-    return formats;
-}
-
-uint32_t vkformat_to_drm(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_B8G8R8A8_UNORM:
-        case VK_FORMAT_B8G8R8A8_SRGB:
-            return GBM_FORMAT_ARGB8888;
-        case VK_FORMAT_R8G8B8A8_UNORM:
-        case VK_FORMAT_R8G8B8A8_SRGB:
-            return GBM_FORMAT_ABGR8888;
-        case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
-            return GBM_FORMAT_ARGB2101010;
-        case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
-            return GBM_FORMAT_ABGR2101010;
-        default:
-            return 0;  // Unsupported
-    }
-}
-```
-
-### HDR Support (Future)
-
-For HDR formats (10-bit, 16-bit float):
-
-1. **Local GPU must support the format** - Check via GBM
-2. **Display must support HDR** - Check via DRM properties
-3. **Compositor must support HDR** - Wayland has `wp_color_manager_v1`
-
-For now, we only support 8-bit formats. HDR can be added later when:
-- Server-side format conversion is implemented
-- HDR metadata transfer is supported
-
----
-
-## Performance Expectations
-
-| Method | 1080p FPS (LAN) | Copy Count |
-|--------|-----------------|------------|
-| DRI3 + GBM | 45-60 | 2 (server→net, net→gbm) |
-| XPutImage | 30-45 | 3 (server→net, net→cpu, cpu→X) |
-| Wayland DMA-BUF | 45-60 | 2 |
-| Wayland wl_shm | 30-45 | 3 |
-
----
 
 ## Success Criteria
 
-- [ ] Surface creation works (X11 and Wayland)
-- [ ] GBM path works with Intel/AMD Mesa drivers
-- [ ] Fallback path works without GBM
-- [ ] Auto-detection selects correct path
-- [ ] Frames display correctly
-- [ ] No tearing or artifacts
-- [ ] Acceptable FPS (30+ on LAN)
-- [ ] Clean shutdown, no leaks
+- [ ] `vkCreateXcbSurfaceKHR`, `vkCreateXlibSurfaceKHR`, and `vkCreateWaylandSurfaceKHR` return valid surfaces and the app can create swapchains.
+- [ ] `PlatformWSI` automatically selects the correct path and logs which backend is active.
+- [ ] GBM/DMA-BUF paths display frames with no CPU copies when `/dev/dri/renderD*` is present.
+- [ ] CPU fallback paths work when GBM or dma-buf interfaces are missing.
+- [ ] `test-app --phase 10` renders a continuously updating triangle on both X11 and Wayland.
+- [ ] No memory/file-descriptor leaks detected when repeatedly creating/destroying swapchains.
+- [ ] Documentation (`BUILD_AND_RUN.md`, this file) matches the implementation steps and mentions the force-path/testing instructions.
+
+Once all boxes are checked we can move on to Windows/macOS WSI work or harden the Linux implementation with HDR and color-management extensions.

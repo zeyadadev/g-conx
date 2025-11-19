@@ -123,6 +123,38 @@ VkImage ResourceTracker::create_image(VkDevice device,
     return handle;
 }
 
+void ResourceTracker::register_external_image(VkDevice device,
+                                              VkDevice real_device,
+                                              VkImage client_handle,
+                                              VkImage real_handle,
+                                              const VkImageCreateInfo& info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ImageResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = client_handle;
+    resource.real_handle = real_handle;
+    resource.type = info.imageType;
+    resource.format = info.format;
+    resource.extent = info.extent;
+    resource.mip_levels = std::max(1u, info.mipLevels);
+    resource.array_layers = std::max(1u, info.arrayLayers);
+    resource.samples = info.samples;
+    resource.tiling = info.tiling;
+    resource.usage = info.usage;
+    resource.external = true;
+    images_[handle_key(client_handle)] = resource;
+}
+
+void ResourceTracker::unregister_external_image(VkImage image) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = images_.find(handle_key(image));
+    if (it != images_.end()) {
+        it->second.external = false;
+        images_.erase(it);
+    }
+}
+
 bool ResourceTracker::destroy_image(VkImage image) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = images_.find(handle_key(image));
@@ -143,7 +175,9 @@ bool ResourceTracker::destroy_image(VkImage image) {
         }
     }
     if (real_handle != VK_NULL_HANDLE) {
-        vkDestroyImage(real_device, real_handle, nullptr);
+        if (!it->second.external) {
+            vkDestroyImage(real_device, real_handle, nullptr);
+        }
     }
     images_.erase(it);
     return true;

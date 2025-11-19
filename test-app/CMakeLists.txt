@@ -23,6 +23,22 @@ target_link_libraries(venus-test-app PRIVATE
     Vulkan::Vulkan
 )
 
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(TESTAPP_XCB xcb)
+    if(TESTAPP_XCB_FOUND)
+        target_include_directories(venus-test-app PRIVATE ${TESTAPP_XCB_INCLUDE_DIRS})
+        target_link_libraries(venus-test-app PRIVATE ${TESTAPP_XCB_LIBRARIES})
+        target_compile_definitions(venus-test-app PRIVATE VENUS_TESTAPP_HAS_XCB VK_USE_PLATFORM_XCB_KHR)
+    endif()
+    pkg_check_modules(TESTAPP_WAYLAND wayland-client)
+    if(TESTAPP_WAYLAND_FOUND)
+        target_include_directories(venus-test-app PRIVATE ${TESTAPP_WAYLAND_INCLUDE_DIRS})
+        target_link_libraries(venus-test-app PRIVATE ${TESTAPP_WAYLAND_LIBRARIES})
+        target_compile_definitions(venus-test-app PRIVATE VENUS_TESTAPP_HAS_WAYLAND VK_USE_PLATFORM_WAYLAND_KHR)
+    endif()
+endif()
+
 # Direct network test (bypasses Vulkan loader)
 add_executable(venus-network-test
     phase01/network_test.cpp

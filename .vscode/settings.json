@@ -9,6 +9,8 @@
         "string": "cpp",
         "cstdio": "cpp",
         "cstdlib": "cpp",
-        "limits": "cpp"
+        "limits": "cpp",
+        "optional": "cpp",
+        "sstream": "cpp"
     }
 }

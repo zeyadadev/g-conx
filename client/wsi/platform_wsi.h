@@ -17,7 +17,7 @@ public:
     virtual void shutdown() = 0;
 };
 
-std::shared_ptr<PlatformWSI> create_platform_wsi();
+std::shared_ptr<PlatformWSI> create_platform_wsi(VkSurfaceKHR surface);
 
 } // namespace venus_plus
 

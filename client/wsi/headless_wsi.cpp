@@ -1,5 +1,9 @@
 #include "wsi/platform_wsi.h"
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include "wsi/linux_wsi.h"
+#endif
+
 #include "utils/logging.h"
 #include <fstream>
 #include <sstream>
@@ -98,7 +102,13 @@ private:
 
 } // namespace
 
-std::shared_ptr<PlatformWSI> create_platform_wsi() {
+std::shared_ptr<PlatformWSI> create_platform_wsi(VkSurfaceKHR surface) {
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (auto linux_wsi = create_linux_platform_wsi(surface)) {
+        return linux_wsi;
+    }
+#endif
+    (void)surface;
     return std::make_shared<HeadlessWSI>();
 }
 

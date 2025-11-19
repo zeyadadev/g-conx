@@ -5,16 +5,28 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <cstdlib>
 #include <limits>
 #include <set>
 #include <string>
 #include <vector>
 #include <thread>
 #include <chrono>
+
+#if defined(VENUS_TESTAPP_HAS_XCB)
+#include <xcb/xcb.h>
+#include <vulkan/vulkan_xcb.h>
+#endif
+
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+#include <wayland-client.h>
+#include <vulkan/vulkan_wayland.h>
+#endif
 
 namespace {
 
@@ -306,6 +318,424 @@ bool validate_frame_file(const std::string& path, uint32_t width, uint32_t heigh
     return (r + g + b) > 0;
 }
 
+enum class SurfaceBackend {
+    None,
+    Xcb,
+    Wayland,
+};
+
+struct SurfaceContext {
+    SurfaceBackend backend = SurfaceBackend::None;
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    uint32_t width = 0;
+    uint32_t height = 0;
+#if defined(VENUS_TESTAPP_HAS_XCB)
+    xcb_connection_t* xcb_connection = nullptr;
+    xcb_window_t xcb_window = 0;
+#endif
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+    wl_display* wl_display_handle = nullptr;
+    wl_registry* wl_registry_handle = nullptr;
+    wl_compositor* wl_compositor_handle = nullptr;
+    wl_surface* wl_surface_handle = nullptr;
+#endif
+};
+
+SurfaceBackend choose_backend_from_string(const std::string& value) {
+    if (value.empty()) {
+        return SurfaceBackend::None;
+    }
+    if (value.find("wayland") != std::string::npos) {
+        return SurfaceBackend::Wayland;
+    }
+    if (value.find("x11") != std::string::npos || value.find("xcb") != std::string::npos) {
+        return SurfaceBackend::Xcb;
+    }
+    if (value == "headless" || value == "none") {
+        return SurfaceBackend::None;
+    }
+    return SurfaceBackend::None;
+}
+
+std::string get_env_lower(const char* name) {
+    const char* value = std::getenv(name);
+    if (!value) {
+        return {};
+    }
+    std::string lower(value);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower;
+}
+
+struct SwapchainPresentContext {
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkImage image = VK_NULL_HANDLE;
+    bool valid = false;
+};
+
+bool init_surface_swapchain(VkDevice device,
+                            VkSurfaceKHR surface,
+                            VkFormat format,
+                            VkExtent2D extent,
+                            SwapchainPresentContext* out) {
+    if (!surface || !out) {
+        return false;
+    }
+    VkSwapchainCreateInfoKHR info = {};
+    info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    info.surface = surface;
+    info.minImageCount = 2;
+    info.imageFormat = format;
+    info.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+    info.imageExtent = {extent.width, extent.height};
+    info.imageArrayLayers = 1;
+    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    info.clipped = VK_TRUE;
+
+    if (vkCreateSwapchainKHR(device, &info, nullptr, &out->swapchain) != VK_SUCCESS) {
+        return false;
+    }
+
+    uint32_t image_count = 0;
+    vkGetSwapchainImagesKHR(device, out->swapchain, &image_count, nullptr);
+    std::vector<VkImage> images(image_count);
+    vkGetSwapchainImagesKHR(device, out->swapchain, &image_count, images.data());
+    if (images.empty()) {
+        vkDestroySwapchainKHR(device, out->swapchain, nullptr);
+        out->swapchain = VK_NULL_HANDLE;
+        return false;
+    }
+    out->image = images[0];
+    out->valid = true;
+    return true;
+}
+
+void destroy_surface_swapchain(VkDevice device, SwapchainPresentContext* ctx) {
+    if (!ctx) {
+        return;
+    }
+    if (ctx->swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(device, ctx->swapchain, nullptr);
+    }
+    ctx->swapchain = VK_NULL_HANDLE;
+    ctx->image = VK_NULL_HANDLE;
+    ctx->valid = false;
+}
+
+SurfaceBackend detect_surface_backend(std::string* override_out) {
+    std::string override = get_env_lower("VENUS_TESTAPP_FORCE_WSI");
+    if (override.empty()) {
+        override = get_env_lower("VENUS_WSI_FORCE_PATH");
+    }
+    if (override_out) {
+        *override_out = override;
+    }
+    SurfaceBackend backend = choose_backend_from_string(override);
+    if (backend != SurfaceBackend::None) {
+        return backend;
+    }
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+    if (std::getenv("WAYLAND_DISPLAY")) {
+        return SurfaceBackend::Wayland;
+    }
+#endif
+#if defined(VENUS_TESTAPP_HAS_XCB)
+    if (std::getenv("DISPLAY")) {
+        return SurfaceBackend::Xcb;
+    }
+#endif
+    return SurfaceBackend::None;
+}
+
+bool extension_supported(const std::vector<VkExtensionProperties>& available,
+                         const char* name) {
+    for (const auto& ext : available) {
+        if (std::strcmp(ext.extensionName, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+#if defined(VENUS_TESTAPP_HAS_XCB)
+bool init_xcb_surface(VkInstance instance, SurfaceContext* ctx) {
+    ctx->xcb_connection = xcb_connect(nullptr, nullptr);
+    if (!ctx->xcb_connection || xcb_connection_has_error(ctx->xcb_connection)) {
+        TEST_LOG_WARN() << "⚠️ Failed to connect to X server";
+        return false;
+    }
+    ctx->backend = SurfaceBackend::Xcb;
+    const xcb_setup_t* setup = xcb_get_setup(ctx->xcb_connection);
+    xcb_screen_iterator_t it = xcb_setup_roots_iterator(setup);
+    if (!it.data) {
+        TEST_LOG_WARN() << "⚠️ No X11 screen available";
+        return false;
+    }
+    ctx->width = 512;
+    ctx->height = 384;
+    ctx->xcb_window = xcb_generate_id(ctx->xcb_connection);
+    uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
+    uint32_t value_list[2] = {it.data->black_pixel, XCB_EVENT_MASK_EXPOSURE};
+    xcb_create_window(ctx->xcb_connection,
+                      XCB_COPY_FROM_PARENT,
+                      ctx->xcb_window,
+                      it.data->root,
+                      0, 0,
+                      ctx->width,
+                      ctx->height,
+                      0,
+                      XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                      it.data->root_visual,
+                      value_mask,
+                      value_list);
+    xcb_map_window(ctx->xcb_connection, ctx->xcb_window);
+    xcb_flush(ctx->xcb_connection);
+
+    VkXcbSurfaceCreateInfoKHR surface_info = {};
+    surface_info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+    surface_info.connection = ctx->xcb_connection;
+    surface_info.window = ctx->xcb_window;
+    if (vkCreateXcbSurfaceKHR(instance, &surface_info, nullptr, &ctx->surface) != VK_SUCCESS) {
+        TEST_LOG_WARN() << "⚠️ vkCreateXcbSurfaceKHR failed";
+        return false;
+    }
+    return true;
+}
+#endif
+
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+struct WaylandRegistryState {
+    wl_compositor* compositor = nullptr;
+};
+
+void wayland_registry_global(void* data,
+                             wl_registry* registry,
+                             uint32_t name,
+                             const char* interface,
+                             uint32_t version) {
+    auto* state = static_cast<WaylandRegistryState*>(data);
+    if (!interface) {
+        return;
+    }
+    if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
+        uint32_t ver = std::min<uint32_t>(version, 4u);
+        state->compositor = static_cast<wl_compositor*>(
+            wl_registry_bind(registry, name, &wl_compositor_interface, ver));
+    }
+}
+
+void wayland_registry_remove(void* data, wl_registry* registry, uint32_t name) {
+    (void)data;
+    (void)registry;
+    (void)name;
+}
+
+const wl_registry_listener kWaylandRegistryListener = {
+    wayland_registry_global,
+    wayland_registry_remove,
+};
+
+bool init_wayland_surface(VkInstance instance, SurfaceContext* ctx) {
+    ctx->wl_display_handle = wl_display_connect(nullptr);
+    if (!ctx->wl_display_handle) {
+        TEST_LOG_WARN() << "⚠️ Failed to connect to Wayland compositor";
+        return false;
+    }
+    ctx->backend = SurfaceBackend::Wayland;
+    ctx->wl_registry_handle = wl_display_get_registry(ctx->wl_display_handle);
+    if (!ctx->wl_registry_handle) {
+        TEST_LOG_WARN() << "⚠️ Failed to get Wayland registry";
+        return false;
+    }
+    WaylandRegistryState state = {};
+    wl_registry_add_listener(ctx->wl_registry_handle, &kWaylandRegistryListener, &state);
+    wl_display_roundtrip(ctx->wl_display_handle);
+    if (!state.compositor) {
+        TEST_LOG_WARN() << "⚠️ Wayland compositor not advertised";
+        return false;
+    }
+    ctx->wl_compositor_handle = state.compositor;
+    ctx->wl_surface_handle = wl_compositor_create_surface(ctx->wl_compositor_handle);
+    if (!ctx->wl_surface_handle) {
+        TEST_LOG_WARN() << "⚠️ Failed to create Wayland surface";
+        return false;
+    }
+    wl_surface_commit(ctx->wl_surface_handle);
+    wl_display_roundtrip(ctx->wl_display_handle);
+    ctx->width = 512;
+    ctx->height = 384;
+
+    VkWaylandSurfaceCreateInfoKHR surface_info = {};
+    surface_info.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+    surface_info.display = ctx->wl_display_handle;
+    surface_info.surface = ctx->wl_surface_handle;
+    if (vkCreateWaylandSurfaceKHR(instance, &surface_info, nullptr, &ctx->surface) != VK_SUCCESS) {
+        TEST_LOG_WARN() << "⚠️ vkCreateWaylandSurfaceKHR failed";
+        return false;
+    }
+    ctx->backend = SurfaceBackend::Wayland;
+    return true;
+}
+#endif
+
+bool init_surface_context(VkInstance instance,
+                          SurfaceBackend backend,
+                          SurfaceContext* ctx) {
+    if (!ctx || backend == SurfaceBackend::None) {
+        return false;
+    }
+    switch (backend) {
+#if defined(VENUS_TESTAPP_HAS_XCB)
+        case SurfaceBackend::Xcb:
+            return init_xcb_surface(instance, ctx);
+#endif
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+        case SurfaceBackend::Wayland:
+            return init_wayland_surface(instance, ctx);
+#endif
+        default:
+            break;
+    }
+    return false;
+}
+
+void destroy_surface_context(VkInstance instance, SurfaceContext* ctx) {
+    if (!ctx) {
+        return;
+    }
+    if (instance != VK_NULL_HANDLE && ctx->surface != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(instance, ctx->surface, nullptr);
+        ctx->surface = VK_NULL_HANDLE;
+    }
+#if defined(VENUS_TESTAPP_HAS_XCB)
+    if (ctx->backend == SurfaceBackend::Xcb) {
+        if (ctx->xcb_connection && ctx->xcb_window) {
+            xcb_destroy_window(ctx->xcb_connection, ctx->xcb_window);
+        }
+        if (ctx->xcb_connection) {
+            xcb_disconnect(ctx->xcb_connection);
+            ctx->xcb_connection = nullptr;
+        }
+    }
+#endif
+#if defined(VENUS_TESTAPP_HAS_WAYLAND)
+    if (ctx->backend == SurfaceBackend::Wayland) {
+        if (ctx->wl_surface_handle) {
+            wl_surface_destroy(ctx->wl_surface_handle);
+            ctx->wl_surface_handle = nullptr;
+        }
+        if (ctx->wl_compositor_handle) {
+            wl_compositor_destroy(ctx->wl_compositor_handle);
+            ctx->wl_compositor_handle = nullptr;
+        }
+        if (ctx->wl_registry_handle) {
+            wl_registry_destroy(ctx->wl_registry_handle);
+            ctx->wl_registry_handle = nullptr;
+        }
+        if (ctx->wl_display_handle) {
+            wl_display_disconnect(ctx->wl_display_handle);
+            ctx->wl_display_handle = nullptr;
+        }
+    }
+#endif
+    ctx->backend = SurfaceBackend::None;
+}
+
+bool run_swapchain_present(VkDevice device,
+                           VkQueue queue,
+                           VkSurfaceKHR surface,
+                           uint32_t width,
+                           uint32_t height,
+                           bool expect_headless_output,
+                           bool required,
+                           const char* label) {
+    const uint32_t kMinImages = 2;
+    std::set<std::string> files_before;
+    if (expect_headless_output) {
+        files_before = list_swapchain_files();
+    }
+
+    VkSwapchainCreateInfoKHR swapchain_info = {};
+    swapchain_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapchain_info.surface = surface;
+    swapchain_info.minImageCount = kMinImages;
+    swapchain_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    swapchain_info.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+    swapchain_info.imageExtent = {width, height};
+    swapchain_info.imageArrayLayers = 1;
+    swapchain_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    swapchain_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    swapchain_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapchain_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    swapchain_info.clipped = VK_TRUE;
+
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkResult result = vkCreateSwapchainKHR(device, &swapchain_info, nullptr, &swapchain);
+    if (result != VK_SUCCESS) {
+        if (result == VK_ERROR_SURFACE_LOST_KHR && !required) {
+            TEST_LOG_WARN() << "⚠️ " << label << " skipped (surface not available)";
+            return true;
+        }
+        TEST_LOG_ERROR() << "✗ vkCreateSwapchainKHR failed for " << label << ": " << result;
+        return false;
+    }
+
+    uint32_t image_count = 0;
+    vkGetSwapchainImagesKHR(device, swapchain, &image_count, nullptr);
+    std::vector<VkImage> images(image_count);
+    vkGetSwapchainImagesKHR(device, swapchain, &image_count, images.data());
+
+    uint32_t image_index = 0;
+    result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &image_index);
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        TEST_LOG_ERROR() << "✗ vkAcquireNextImageKHR failed for " << label << ": " << result;
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        return false;
+    }
+
+    VkPresentInfoKHR present_info = {};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &swapchain;
+    present_info.pImageIndices = &image_index;
+
+    result = vkQueuePresentKHR(queue, &present_info);
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        TEST_LOG_ERROR() << "✗ vkQueuePresentKHR failed for " << label << ": " << result;
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        return false;
+    }
+
+    bool success = true;
+    if (expect_headless_output) {
+        std::string new_frame_path;
+        if (!wait_for_new_frame(files_before, &new_frame_path, std::chrono::seconds(2))) {
+            TEST_LOG_ERROR() << "✗ Did not observe headless frame output";
+            success = false;
+        } else if (!validate_frame_file(new_frame_path, width, height)) {
+            TEST_LOG_ERROR() << "✗ Headless frame validation failed";
+            success = false;
+        } else {
+            std::filesystem::remove(new_frame_path);
+            TEST_LOG_INFO() << "✅ " << label << " produced headless frame output";
+        }
+    } else {
+        TEST_LOG_INFO() << "✅ " << label << " present completed";
+    }
+
+    vkDestroySwapchainKHR(device, swapchain, nullptr);
+    return success;
+}
+
 } // namespace
 
 bool run_phase10_test() {
@@ -323,21 +753,21 @@ bool run_phase10_test() {
     VkShaderModule frag_shader = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkSwapchainKHR swapchain_handle = VK_NULL_HANDLE;
     BufferResource vertex_buffer;
     ImageResource color_image;
     VkImageView color_view = VK_NULL_HANDLE;
     VkRenderPass render_pass = VK_NULL_HANDLE;
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
     BufferResource readback_buffer;
+    SwapchainPresentContext wsi_present_ctx;
+    SurfaceContext surface_ctx;
 
     auto cleanup = [&]() {
         if (device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(device);
         }
-        if (device != VK_NULL_HANDLE && swapchain_handle != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(device, swapchain_handle, nullptr);
-        }
+        destroy_surface_swapchain(device, &wsi_present_ctx);
+        destroy_surface_context(instance, &surface_ctx);
         if (framebuffer) vkDestroyFramebuffer(device, framebuffer, nullptr);
         if (render_pass) vkDestroyRenderPass(device, render_pass, nullptr);
         if (color_view) vkDestroyImageView(device, color_view, nullptr);
@@ -357,6 +787,76 @@ bool run_phase10_test() {
         if (instance) vkDestroyInstance(instance, nullptr);
     };
 
+    std::string override_value;
+    SurfaceBackend desired_backend = detect_surface_backend(&override_value);
+    #if !defined(VENUS_TESTAPP_HAS_WAYLAND)
+    if (desired_backend == SurfaceBackend::Wayland) {
+        TEST_LOG_WARN() << "⚠️ Test app built without Wayland support, forcing headless mode";
+        desired_backend = SurfaceBackend::None;
+    }
+#endif
+#if !defined(VENUS_TESTAPP_HAS_XCB)
+    if (desired_backend == SurfaceBackend::Xcb) {
+        TEST_LOG_WARN() << "⚠️ Test app built without XCB support, forcing headless mode";
+        desired_backend = SurfaceBackend::None;
+    }
+#endif
+
+    uint32_t instance_ext_count = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &instance_ext_count, nullptr);
+    std::vector<VkExtensionProperties> instance_ext_props(instance_ext_count);
+    vkEnumerateInstanceExtensionProperties(nullptr, &instance_ext_count, instance_ext_props.data());
+
+    std::vector<const char*> instance_extensions;
+    auto add_surface_extensions = [&](SurfaceBackend backend) -> bool {
+        if (!extension_supported(instance_ext_props, "VK_KHR_surface")) {
+            TEST_LOG_WARN() << "⚠️ VK_KHR_surface not supported, skipping WSI";
+            return false;
+        }
+        const char* backend_ext = nullptr;
+        if (backend == SurfaceBackend::Xcb) {
+            backend_ext = "VK_KHR_xcb_surface";
+        } else if (backend == SurfaceBackend::Wayland) {
+            backend_ext = "VK_KHR_wayland_surface";
+        }
+        if (!backend_ext || !extension_supported(instance_ext_props, backend_ext)) {
+            TEST_LOG_WARN() << "⚠️ Missing " << (backend_ext ? backend_ext : "platform WSI") << ", skipping WSI";
+            return false;
+        }
+        instance_extensions.push_back("VK_KHR_surface");
+        instance_extensions.push_back(backend_ext);
+        return true;
+    };
+
+    SurfaceBackend active_backend = desired_backend;
+    bool backend_required = false;
+    if (!override_value.empty() && desired_backend != SurfaceBackend::None &&
+        override_value != "headless" && override_value != "none") {
+        backend_required = true;
+    }
+    if (active_backend == SurfaceBackend::Wayland) {
+        if (!add_surface_extensions(active_backend)) {
+            active_backend = SurfaceBackend::None;
+            instance_extensions.clear();
+            backend_required = false;
+        }
+    } else if (active_backend == SurfaceBackend::Xcb) {
+        if (!add_surface_extensions(active_backend)) {
+            active_backend = SurfaceBackend::None;
+            instance_extensions.clear();
+            backend_required = false;
+        }
+    }
+
+    if (active_backend == SurfaceBackend::None && desired_backend != SurfaceBackend::None) {
+        TEST_LOG_WARN() << "⚠️ Falling back to headless swapchain validation";
+    } else if (active_backend != SurfaceBackend::None) {
+        TEST_LOG_INFO() << "WSI backend selected for validation: "
+                        << (active_backend == SurfaceBackend::Wayland ? "Wayland" : "X11/XCB");
+    } else {
+        TEST_LOG_INFO() << "WSI backend not available, running headless only";
+    }
+
     VkApplicationInfo app_info = {};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pApplicationName = "Phase10";
@@ -368,6 +868,8 @@ bool run_phase10_test() {
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.pApplicationInfo = &app_info;
+    instance_info.enabledExtensionCount = static_cast<uint32_t>(instance_extensions.size());
+    instance_info.ppEnabledExtensionNames = instance_extensions.empty() ? nullptr : instance_extensions.data();
 
     if (vkCreateInstance(&instance_info, nullptr, &instance) != VK_SUCCESS) {
         TEST_LOG_ERROR() << "✗ vkCreateInstance failed";
@@ -375,6 +877,16 @@ bool run_phase10_test() {
         return false;
     }
     TEST_LOG_INFO() << "✅ Instance created";
+
+    if (active_backend != SurfaceBackend::None) {
+        if (!init_surface_context(instance, active_backend, &surface_ctx)) {
+            TEST_LOG_WARN() << "⚠️ Failed to create native surface, continuing headless";
+            destroy_surface_context(instance, &surface_ctx);
+            active_backend = SurfaceBackend::None;
+            backend_required = false;
+        }
+    }
+
 
     uint32_t phys_count = 0;
     vkEnumeratePhysicalDevices(instance, &phys_count, nullptr);
@@ -429,6 +941,19 @@ bool run_phase10_test() {
     }
     vkGetDeviceQueue(device, queue_family, 0, &queue);
     TEST_LOG_INFO() << "✅ Device and queue ready";
+
+    const VkFormat swapchain_format = VK_FORMAT_B8G8R8A8_UNORM;
+    VkExtent2D swapchain_extent = {kImageWidth, kImageHeight};
+    if (surface_ctx.surface != VK_NULL_HANDLE) {
+        if (!init_surface_swapchain(device,
+                                    surface_ctx.surface,
+                                    swapchain_format,
+                                    swapchain_extent,
+                                    &wsi_present_ctx)) {
+            TEST_LOG_WARN() << "⚠️ Failed to create WSI swapchain";
+            destroy_surface_swapchain(device, &wsi_present_ctx);
+        }
+    }
 
     VkCommandPoolCreateInfo pool_info = {};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -835,6 +1360,66 @@ bool run_phase10_test() {
                            1,
                            &copy_region);
 
+    if (wsi_present_ctx.valid && wsi_present_ctx.image != VK_NULL_HANDLE) {
+        VkImageMemoryBarrier dst_barrier = {};
+        dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        dst_barrier.srcAccessMask = 0;
+        dst_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        dst_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        dst_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        dst_barrier.image = wsi_present_ctx.image;
+        dst_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        dst_barrier.subresourceRange.baseMipLevel = 0;
+        dst_barrier.subresourceRange.levelCount = 1;
+        dst_barrier.subresourceRange.baseArrayLayer = 0;
+        dst_barrier.subresourceRange.layerCount = 1;
+        vkCmdPipelineBarrier(command_buffer,
+                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &dst_barrier);
+
+        VkImageCopy image_copy = {};
+        image_copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        image_copy.srcSubresource.mipLevel = 0;
+        image_copy.srcSubresource.baseArrayLayer = 0;
+        image_copy.srcSubresource.layerCount = 1;
+        image_copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        image_copy.dstSubresource.mipLevel = 0;
+        image_copy.dstSubresource.baseArrayLayer = 0;
+        image_copy.dstSubresource.layerCount = 1;
+        image_copy.extent = {kImageWidth, kImageHeight, 1};
+        vkCmdCopyImage(command_buffer,
+                       color_image.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       wsi_present_ctx.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1,
+                       &image_copy);
+
+        VkImageMemoryBarrier present_barrier = {};
+        present_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        present_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        present_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+        present_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        present_barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        present_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        present_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        present_barrier.image = wsi_present_ctx.image;
+        present_barrier.subresourceRange = dst_barrier.subresourceRange;
+        vkCmdPipelineBarrier(command_buffer,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &present_barrier);
+    }
+
     if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
         TEST_LOG_ERROR() << "✗ vkEndCommandBuffer failed";
         cleanup();
@@ -893,79 +1478,49 @@ bool run_phase10_test() {
 
     TEST_LOG_INFO() << "✅ Saved rendered image to " << output_path;
 
-    // Exercise swapchain protocol (headless WSI)
-    const uint32_t kSwapchainWidth = 128;
-    const uint32_t kSwapchainHeight = 128;
-    std::set<std::string> files_before = list_swapchain_files();
+    if (wsi_present_ctx.valid) {
+        uint32_t image_index = 0;
+        VkPresentInfoKHR present_info = {};
+        present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        present_info.swapchainCount = 1;
+        present_info.pSwapchains = &wsi_present_ctx.swapchain;
+        present_info.pImageIndices = &image_index;
+        VkResult present_result = vkQueuePresentKHR(queue, &present_info);
+        if (present_result == VK_SUCCESS || present_result == VK_SUBOPTIMAL_KHR) {
+            TEST_LOG_INFO() << "✅ WSI swapchain present completed";
+        } else {
+            TEST_LOG_ERROR() << "✗ vkQueuePresentKHR failed: " << present_result;
+            cleanup();
+            return false;
+        }
+        destroy_surface_swapchain(device, &wsi_present_ctx);
+    } else if (surface_ctx.surface != VK_NULL_HANDLE) {
+        if (!run_swapchain_present(device,
+                                   queue,
+                                   surface_ctx.surface,
+                                   surface_ctx.width,
+                                   surface_ctx.height,
+                                   false,
+                                   backend_required,
+                                   "WSI swapchain")) {
+            cleanup();
+            return false;
+        }
+    }
 
-    VkSwapchainCreateInfoKHR swapchain_info = {};
-    swapchain_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapchain_info.surface = VK_NULL_HANDLE;
-    swapchain_info.minImageCount = 2;
-    swapchain_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    swapchain_info.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    swapchain_info.imageExtent = {kSwapchainWidth, kSwapchainHeight};
-    swapchain_info.imageArrayLayers = 1;
-    swapchain_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapchain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    swapchain_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    swapchain_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchain_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    swapchain_info.clipped = VK_TRUE;
-
-    VkResult swap_result = vkCreateSwapchainKHR(device, &swapchain_info, nullptr, &swapchain_handle);
-    if (swap_result != VK_SUCCESS) {
-        TEST_LOG_ERROR() << "✗ vkCreateSwapchainKHR failed: " << swap_result;
+    const uint32_t kHeadlessWidth = 128;
+    const uint32_t kHeadlessHeight = 128;
+    if (!run_swapchain_present(device,
+                               queue,
+                               VK_NULL_HANDLE,
+                               kHeadlessWidth,
+                               kHeadlessHeight,
+                               true,
+                               true,
+                               "Headless swapchain")) {
         cleanup();
         return false;
     }
-
-    uint32_t swapchain_image_count = 0;
-    vkGetSwapchainImagesKHR(device, swapchain_handle, &swapchain_image_count, nullptr);
-    std::vector<VkImage> swapchain_images(swapchain_image_count);
-    vkGetSwapchainImagesKHR(device, swapchain_handle, &swapchain_image_count, swapchain_images.data());
-
-    uint32_t image_index = 0;
-    swap_result = vkAcquireNextImageKHR(device,
-                                        swapchain_handle,
-                                        UINT64_MAX,
-                                        VK_NULL_HANDLE,
-                                        VK_NULL_HANDLE,
-                                        &image_index);
-    if (swap_result != VK_SUCCESS) {
-        TEST_LOG_ERROR() << "✗ vkAcquireNextImageKHR failed: " << swap_result;
-        cleanup();
-        return false;
-    }
-
-    VkPresentInfoKHR present_info = {};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = &swapchain_handle;
-    present_info.pImageIndices = &image_index;
-
-    swap_result = vkQueuePresentKHR(queue, &present_info);
-    if (swap_result != VK_SUCCESS) {
-        TEST_LOG_ERROR() << "✗ vkQueuePresentKHR failed: " << swap_result;
-        cleanup();
-        return false;
-    }
-
-    std::string new_frame_path;
-    if (!wait_for_new_frame(files_before, &new_frame_path, std::chrono::seconds(2))) {
-        TEST_LOG_ERROR() << "✗ Timed out waiting for headless frame output";
-        cleanup();
-        return false;
-    }
-
-    if (!validate_frame_file(new_frame_path, kSwapchainWidth, kSwapchainHeight)) {
-        TEST_LOG_ERROR() << "✗ Swapchain frame validation failed (" << new_frame_path << ")";
-        cleanup();
-        return false;
-    }
-
-    std::filesystem::remove(new_frame_path);
-    TEST_LOG_INFO() << "✅ Swapchain present produced headless frame file";
 
     TEST_LOG_INFO() << "✅ Phase 10 PASSED";
 

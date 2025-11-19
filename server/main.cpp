@@ -20,7 +20,7 @@ using namespace venus_plus;
 static ServerState g_server_state;
 static VenusRenderer* g_renderer = nullptr;
 static MemoryTransferHandler g_memory_transfer(&g_server_state);
-static ServerSwapchainManager g_swapchain_manager;
+static ServerSwapchainManager g_swapchain_manager(&g_server_state);
 
 bool handle_client_message(int client_fd, const void* data, size_t size) {
     if (size >= sizeof(uint32_t)) {
@@ -56,8 +56,8 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
             }
             auto* request = reinterpret_cast<const VenusSwapchainCreateRequest*>(data);
             VenusSwapchainCreateReply reply = {};
-            reply.result = g_swapchain_manager.create_swapchain(request->create_info,
-                                                                &reply.actual_image_count);
+            VkResult create_result = g_swapchain_manager.create_swapchain(request->create_info, &reply);
+            reply.result = create_result;
             NetworkServer::send_to_client(client_fd, &reply, sizeof(reply));
             return true;
         }

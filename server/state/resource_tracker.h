@@ -24,6 +24,12 @@ public:
     VkImage create_image(VkDevice client_device,
                          VkDevice real_device,
                          const VkImageCreateInfo& info);
+    void register_external_image(VkDevice client_device,
+                                 VkDevice real_device,
+                                 VkImage client_handle,
+                                 VkImage real_handle,
+                                 const VkImageCreateInfo& info);
+    void unregister_external_image(VkImage image);
     bool destroy_image(VkImage image);
     bool get_image_requirements(VkImage image, VkMemoryRequirements* requirements);
     bool get_image_subresource_layout(VkImage image, const VkImageSubresource& subresource, VkSubresourceLayout* layout) const;
@@ -162,6 +168,7 @@ private:
         VkDeviceSize bound_offset = 0;
         VkMemoryRequirements requirements = {};
         bool requirements_valid = false;
+        bool external = false;
     };
 
     struct ImageViewResource {

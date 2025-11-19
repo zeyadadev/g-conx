@@ -16,6 +16,8 @@ enum VenusPlusCommandType : uint32_t {
     VENUS_PLUS_CMD_PRESENT              = 0x10000013u,
 };
 
+static constexpr uint32_t kVenusMaxSwapchainImages = 8;
+
 struct VenusSwapchainCreateInfo {
     uint32_t swapchain_id;
     uint32_t width;
@@ -24,6 +26,7 @@ struct VenusSwapchainCreateInfo {
     uint32_t image_count;
     uint32_t usage;
     uint32_t present_mode;
+    uint64_t device_handle; // remote VkDevice handle
 };
 
 struct VenusSwapchainCreateRequest {
@@ -31,9 +34,14 @@ struct VenusSwapchainCreateRequest {
     VenusSwapchainCreateInfo create_info;
 };
 
+struct VenusSwapchainImageInfo {
+    uint64_t image_handle; // remote VkImage handle
+};
+
 struct VenusSwapchainCreateReply {
     VkResult result;
     uint32_t actual_image_count;
+    VenusSwapchainImageInfo images[kVenusMaxSwapchainImages];
 };
 
 struct VenusSwapchainDestroyRequest {
