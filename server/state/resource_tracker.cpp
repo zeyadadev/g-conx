@@ -20,7 +20,9 @@ ResourceTracker::ResourceTracker()
       next_descriptor_pool_handle_(0x72000000ull),
       next_descriptor_set_handle_(0x73000000ull),
       next_pipeline_layout_handle_(0x74000000ull),
-      next_pipeline_handle_(0x75000000ull) {}
+      next_pipeline_handle_(0x75000000ull),
+      next_render_pass_handle_(0x7a000000ull),
+      next_framebuffer_handle_(0x7b000000ull) {}
 
 VkBuffer ResourceTracker::create_buffer(VkDevice device,
                                         VkDevice real_device,
@@ -310,6 +312,126 @@ VkSampler ResourceTracker::get_real_sampler(VkSampler sampler) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = samplers_.find(handle_key(sampler));
     if (it == samplers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkRenderPass ResourceTracker::create_render_pass(VkDevice device,
+                                                 VkDevice real_device,
+                                                 const VkRenderPassCreateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkRenderPass real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateRenderPass(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateRenderPass failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkRenderPass handle = reinterpret_cast<VkRenderPass>(next_render_pass_handle_++);
+    RenderPassResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    render_passes_[handle_key(handle)] = resource;
+    return handle;
+}
+
+VkRenderPass ResourceTracker::create_render_pass2(VkDevice device,
+                                                  VkDevice real_device,
+                                                  const VkRenderPassCreateInfo2* info) {
+    if (real_device == VK_NULL_HANDLE || !info) {
+        return VK_NULL_HANDLE;
+    }
+    VkRenderPass real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateRenderPass2(real_device, info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateRenderPass2 failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkRenderPass handle = reinterpret_cast<VkRenderPass>(next_render_pass_handle_++);
+    RenderPassResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    render_passes_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_render_pass(VkRenderPass render_pass) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = render_passes_.find(handle_key(render_pass));
+    if (it == render_passes_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    render_passes_.erase(it);
+    return true;
+}
+
+VkRenderPass ResourceTracker::get_real_render_pass(VkRenderPass render_pass) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = render_passes_.find(handle_key(render_pass));
+    if (it == render_passes_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkFramebuffer ResourceTracker::create_framebuffer(VkDevice device,
+                                                  VkDevice real_device,
+                                                  const VkFramebufferCreateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkFramebuffer real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateFramebuffer(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateFramebuffer failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkFramebuffer handle = reinterpret_cast<VkFramebuffer>(next_framebuffer_handle_++);
+    FramebufferResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    resource.render_pass = info.renderPass;
+    if (info.attachmentCount > 0 && info.pAttachments) {
+        resource.attachments.assign(info.pAttachments, info.pAttachments + info.attachmentCount);
+    }
+    framebuffers_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_framebuffer(VkFramebuffer framebuffer) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = framebuffers_.find(handle_key(framebuffer));
+    if (it == framebuffers_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    framebuffers_.erase(it);
+    return true;
+}
+
+VkFramebuffer ResourceTracker::get_real_framebuffer(VkFramebuffer framebuffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = framebuffers_.find(handle_key(framebuffer));
+    if (it == framebuffers_.end()) {
         return VK_NULL_HANDLE;
     }
     return it->second.real_handle;
@@ -1039,6 +1161,97 @@ VkResult ResourceTracker::create_compute_pipelines(
         resource.handle = handle;
         resource.real_handle = real_handles[i];
         resource.bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+        pipelines_[handle_key(handle)] = resource;
+        (*out_pipelines)[i] = handle;
+    }
+    return VK_SUCCESS;
+}
+
+VkResult ResourceTracker::create_graphics_pipelines(
+    VkDevice device,
+    VkDevice real_device,
+    VkPipelineCache cache,
+    uint32_t count,
+    const VkGraphicsPipelineCreateInfo* infos,
+    std::vector<VkPipeline>* out_pipelines) {
+
+    if (!infos || !out_pipelines || count == 0 || real_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkGraphicsPipelineCreateInfo> real_infos(count);
+    std::vector<std::vector<VkPipelineShaderStageCreateInfo>> stage_infos(count);
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (uint32_t i = 0; i < count; ++i) {
+            real_infos[i] = infos[i];
+
+            stage_infos[i].resize(infos[i].stageCount);
+            for (uint32_t j = 0; j < infos[i].stageCount; ++j) {
+                stage_infos[i][j] = infos[i].pStages[j];
+                auto module_it = shader_modules_.find(handle_key(infos[i].pStages[j].module));
+                if (module_it == shader_modules_.end()) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                stage_infos[i][j].module = module_it->second.real_handle;
+            }
+            if (!stage_infos[i].empty()) {
+                real_infos[i].pStages = stage_infos[i].data();
+            }
+
+            if (infos[i].layout != VK_NULL_HANDLE) {
+                auto layout_it = pipeline_layouts_.find(handle_key(infos[i].layout));
+                if (layout_it == pipeline_layouts_.end()) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                real_infos[i].layout = layout_it->second.real_handle;
+            }
+
+            if (infos[i].renderPass != VK_NULL_HANDLE) {
+                auto rp_it = render_passes_.find(handle_key(infos[i].renderPass));
+                if (rp_it == render_passes_.end()) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                real_infos[i].renderPass = rp_it->second.real_handle;
+            }
+
+            if (infos[i].basePipelineHandle != VK_NULL_HANDLE) {
+                auto base_it = pipelines_.find(handle_key(infos[i].basePipelineHandle));
+                if (base_it == pipelines_.end()) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                real_infos[i].basePipelineHandle = base_it->second.real_handle;
+            }
+        }
+    }
+
+    std::vector<VkPipeline> real_handles(count, VK_NULL_HANDLE);
+    VkResult result = vkCreateGraphicsPipelines(real_device,
+                                                cache,
+                                                count,
+                                                real_infos.data(),
+                                                nullptr,
+                                                real_handles.data());
+    if (result != VK_SUCCESS) {
+        for (VkPipeline pipe : real_handles) {
+            if (pipe != VK_NULL_HANDLE) {
+                vkDestroyPipeline(real_device, pipe, nullptr);
+            }
+        }
+        return result;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    out_pipelines->resize(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        VkPipeline handle = reinterpret_cast<VkPipeline>(next_pipeline_handle_++);
+        PipelineResource resource = {};
+        resource.handle_device = device;
+        resource.real_device = real_device;
+        resource.handle = handle;
+        resource.real_handle = real_handles[i];
+        resource.bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
         pipelines_[handle_key(handle)] = resource;
         (*out_pipelines)[i] = handle;
     }

@@ -530,6 +530,77 @@ VkPipelineLayout server_state_get_real_pipeline_layout(const ServerState* state,
     return state->resource_tracker.get_real_pipeline_layout(layout);
 }
 
+VkRenderPass server_state_create_render_pass(ServerState* state,
+                                             VkDevice device,
+                                             const VkRenderPassCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_render_pass(device, real_device, *info);
+}
+
+VkRenderPass server_state_create_render_pass2(ServerState* state,
+                                              VkDevice device,
+                                              const VkRenderPassCreateInfo2* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_render_pass2(device, real_device, info);
+}
+
+bool server_state_destroy_render_pass(ServerState* state, VkRenderPass render_pass) {
+    return state->resource_tracker.destroy_render_pass(render_pass);
+}
+
+VkRenderPass server_state_get_real_render_pass(const ServerState* state,
+                                               VkRenderPass render_pass) {
+    return state->resource_tracker.get_real_render_pass(render_pass);
+}
+
+VkFramebuffer server_state_create_framebuffer(ServerState* state,
+                                              VkDevice device,
+                                              const VkFramebufferCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+
+    VkFramebufferCreateInfo real_info = *info;
+    VkRenderPass real_render_pass = server_state_get_real_render_pass(state, info->renderPass);
+    if (real_render_pass == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    real_info.renderPass = real_render_pass;
+
+    std::vector<VkImageView> real_attachments(info->attachmentCount);
+    if (info->attachmentCount > 0 && info->pAttachments) {
+        for (uint32_t i = 0; i < info->attachmentCount; ++i) {
+            VkImageView real_view = server_state_get_real_image_view(state, info->pAttachments[i]);
+            if (real_view == VK_NULL_HANDLE) {
+                return VK_NULL_HANDLE;
+            }
+            real_attachments[i] = real_view;
+        }
+        real_info.pAttachments = real_attachments.data();
+    }
+
+    return state->resource_tracker.create_framebuffer(device, real_device, real_info);
+}
+
+bool server_state_destroy_framebuffer(ServerState* state, VkFramebuffer framebuffer) {
+    return state->resource_tracker.destroy_framebuffer(framebuffer);
+}
+
+VkFramebuffer server_state_get_real_framebuffer(const ServerState* state,
+                                                VkFramebuffer framebuffer) {
+    return state->resource_tracker.get_real_framebuffer(framebuffer);
+}
+
 VkResult server_state_create_compute_pipelines(ServerState* state,
                                                VkDevice device,
                                                VkPipelineCache cache,
@@ -549,6 +620,24 @@ bool server_state_destroy_pipeline(ServerState* state, VkPipeline pipeline) {
 
 VkPipeline server_state_get_real_pipeline(const ServerState* state, VkPipeline pipeline) {
     return state->resource_tracker.get_real_pipeline(pipeline);
+}
+
+VkResult server_state_create_graphics_pipelines(ServerState* state,
+                                                VkDevice device,
+                                                VkPipelineCache cache,
+                                                uint32_t count,
+                                                const VkGraphicsPipelineCreateInfo* infos,
+                                                std::vector<VkPipeline>* out_pipelines) {
+    if (!infos || !out_pipelines) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_graphics_pipelines(device,
+                                                             real_device,
+                                                             cache,
+                                                             count,
+                                                             infos,
+                                                             out_pipelines);
 }
 
 VkCommandPool server_state_create_command_pool(ServerState* state,
@@ -1083,6 +1172,42 @@ VkPipelineLayout server_state_bridge_get_real_pipeline_layout(const struct Serve
     return venus_plus::server_state_get_real_pipeline_layout(state, layout);
 }
 
+VkRenderPass server_state_bridge_create_render_pass(struct ServerState* state,
+                                                    VkDevice device,
+                                                    const VkRenderPassCreateInfo* info) {
+    return venus_plus::server_state_create_render_pass(state, device, info);
+}
+
+VkRenderPass server_state_bridge_create_render_pass2(struct ServerState* state,
+                                                     VkDevice device,
+                                                     const VkRenderPassCreateInfo2* info) {
+    return venus_plus::server_state_create_render_pass2(state, device, info);
+}
+
+void server_state_bridge_destroy_render_pass(struct ServerState* state, VkRenderPass render_pass) {
+    venus_plus::server_state_destroy_render_pass(state, render_pass);
+}
+
+VkRenderPass server_state_bridge_get_real_render_pass(const struct ServerState* state,
+                                                      VkRenderPass render_pass) {
+    return venus_plus::server_state_get_real_render_pass(state, render_pass);
+}
+
+VkFramebuffer server_state_bridge_create_framebuffer(struct ServerState* state,
+                                                     VkDevice device,
+                                                     const VkFramebufferCreateInfo* info) {
+    return venus_plus::server_state_create_framebuffer(state, device, info);
+}
+
+void server_state_bridge_destroy_framebuffer(struct ServerState* state, VkFramebuffer framebuffer) {
+    venus_plus::server_state_destroy_framebuffer(state, framebuffer);
+}
+
+VkFramebuffer server_state_bridge_get_real_framebuffer(const struct ServerState* state,
+                                                       VkFramebuffer framebuffer) {
+    return venus_plus::server_state_get_real_framebuffer(state, framebuffer);
+}
+
 VkResult server_state_bridge_create_compute_pipelines(struct ServerState* state,
                                                       VkDevice device,
                                                       VkPipelineCache cache,
@@ -1109,6 +1234,31 @@ void server_state_bridge_destroy_pipeline(struct ServerState* state, VkPipeline 
 
 VkPipeline server_state_bridge_get_real_pipeline(const struct ServerState* state, VkPipeline pipeline) {
     return venus_plus::server_state_get_real_pipeline(state, pipeline);
+}
+
+VkResult server_state_bridge_create_graphics_pipelines(struct ServerState* state,
+                                                       VkDevice device,
+                                                       VkPipelineCache cache,
+                                                       uint32_t createInfoCount,
+                                                       const VkGraphicsPipelineCreateInfo* pCreateInfos,
+                                                       VkPipeline* pPipelines) {
+    if (!pCreateInfos || !pPipelines) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkPipeline> pipelines;
+    VkResult result = venus_plus::server_state_create_graphics_pipelines(state,
+                                                                         device,
+                                                                         cache,
+                                                                         createInfoCount,
+                                                                         pCreateInfos,
+                                                                         &pipelines);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    for (size_t i = 0; i < pipelines.size(); ++i) {
+        pPipelines[i] = pipelines[i];
+    }
+    return VK_SUCCESS;
 }
 
 // Phase 3: C bridge functions for device management

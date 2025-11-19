@@ -49,6 +49,20 @@ public:
                              const VkSamplerCreateInfo& info);
     bool destroy_sampler(VkSampler sampler);
     VkSampler get_real_sampler(VkSampler sampler) const;
+    VkRenderPass create_render_pass(VkDevice client_device,
+                                    VkDevice real_device,
+                                    const VkRenderPassCreateInfo& info);
+    VkRenderPass create_render_pass2(VkDevice client_device,
+                                     VkDevice real_device,
+                                     const VkRenderPassCreateInfo2* info);
+    bool destroy_render_pass(VkRenderPass render_pass);
+    VkRenderPass get_real_render_pass(VkRenderPass render_pass) const;
+
+    VkFramebuffer create_framebuffer(VkDevice client_device,
+                                     VkDevice real_device,
+                                     const VkFramebufferCreateInfo& info);
+    bool destroy_framebuffer(VkFramebuffer framebuffer);
+    VkFramebuffer get_real_framebuffer(VkFramebuffer framebuffer) const;
 
     VkDeviceMemory allocate_memory(VkDevice client_device,
                                    VkDevice real_device,
@@ -106,6 +120,12 @@ public:
                                       uint32_t count,
                                       const VkComputePipelineCreateInfo* infos,
                                       std::vector<VkPipeline>* out_pipelines);
+    VkResult create_graphics_pipelines(VkDevice device,
+                                       VkDevice real_device,
+                                       VkPipelineCache cache,
+                                       uint32_t count,
+                                       const VkGraphicsPipelineCreateInfo* infos,
+                                       std::vector<VkPipeline>* out_pipelines);
     bool destroy_pipeline(VkPipeline pipeline);
     VkPipeline get_real_pipeline(VkPipeline pipeline) const;
 
@@ -170,6 +190,22 @@ private:
         VkDevice real_device;
         VkSampler handle;
         VkSampler real_handle;
+    };
+
+    struct RenderPassResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkRenderPass handle;
+        VkRenderPass real_handle;
+    };
+
+    struct FramebufferResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkFramebuffer handle;
+        VkFramebuffer real_handle;
+        VkRenderPass render_pass;
+        std::vector<VkImageView> attachments;
     };
 
     struct BufferBinding {
@@ -263,6 +299,8 @@ private:
     std::unordered_map<uint64_t, ImageViewResource> image_views_;
     std::unordered_map<uint64_t, BufferViewResource> buffer_views_;
     std::unordered_map<uint64_t, SamplerResource> samplers_;
+    std::unordered_map<uint64_t, RenderPassResource> render_passes_;
+    std::unordered_map<uint64_t, FramebufferResource> framebuffers_;
     std::unordered_map<uint64_t, MemoryResource> memories_;
     std::unordered_map<uint64_t, ShaderModuleResource> shader_modules_;
     std::unordered_map<uint64_t, DescriptorSetLayoutResource> descriptor_set_layouts_;
@@ -282,6 +320,8 @@ private:
     uint64_t next_descriptor_set_handle_;
     uint64_t next_pipeline_layout_handle_;
     uint64_t next_pipeline_handle_;
+    uint64_t next_render_pass_handle_;
+    uint64_t next_framebuffer_handle_;
 };
 
 } // namespace venus_plus

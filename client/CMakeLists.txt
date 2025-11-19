@@ -8,6 +8,8 @@ add_library(venus_icd SHARED
     state/command_buffer_state.cpp
     state/sync_state.cpp
     state/pipeline_state.cpp
+    state/swapchain_state.cpp
+    wsi/headless_wsi.cpp
 )
 
 # Set default symbol visibility to hidden - only VP_PUBLIC symbols should be exported

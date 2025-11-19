@@ -12,6 +12,7 @@ add_executable(venus-server
     state/command_buffer_state.cpp
     state/command_validator.cpp
     state/sync_manager.cpp
+    wsi/swapchain_manager.cpp
 )
 
 target_include_directories(venus-server PRIVATE

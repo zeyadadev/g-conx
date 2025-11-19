@@ -1,0 +1,6 @@
+#ifndef VENUS_TEST_APP_PHASE10_TEST_H
+#define VENUS_TEST_APP_PHASE10_TEST_H
+
+bool run_phase10_test();
+
+#endif // VENUS_TEST_APP_PHASE10_TEST_H

@@ -24,37 +24,37 @@ Platform-specific WSI implementations are in:
 ### Commands to Implement
 
 #### Render Pass
-- [ ] `vkCreateRenderPass`
-- [ ] `vkCreateRenderPass2`
-- [ ] `vkDestroyRenderPass`
+- [x] `vkCreateRenderPass`
+- [x] `vkCreateRenderPass2`
+- [x] `vkDestroyRenderPass`
 
 #### Framebuffer
-- [ ] `vkCreateFramebuffer`
-- [ ] `vkDestroyFramebuffer`
+- [x] `vkCreateFramebuffer`
+- [x] `vkDestroyFramebuffer`
 
 #### Image View
 - [ ] `vkCreateImageView`
 - [ ] `vkDestroyImageView`
 
 #### Graphics Pipeline
-- [ ] `vkCreateGraphicsPipelines`
-- [ ] Vertex input state
-- [ ] Input assembly state
-- [ ] Viewport state
-- [ ] Rasterization state
-- [ ] Multisample state
+- [x] `vkCreateGraphicsPipelines`
+- [x] Vertex input state
+- [x] Input assembly state
+- [x] Viewport state
+- [x] Rasterization state
+- [x] Multisample state
 - [ ] Depth stencil state
-- [ ] Color blend state
+- [x] Color blend state
 
 #### Drawing Commands
-- [ ] `vkCmdBeginRenderPass`
+- [x] `vkCmdBeginRenderPass`
 - [ ] `vkCmdNextSubpass`
-- [ ] `vkCmdEndRenderPass`
-- [ ] `vkCmdBindVertexBuffers`
+- [x] `vkCmdEndRenderPass`
+- [x] `vkCmdBindVertexBuffers`
 - [ ] `vkCmdBindIndexBuffer`
-- [ ] `vkCmdSetViewport`
-- [ ] `vkCmdSetScissor`
-- [ ] `vkCmdDraw`
+- [x] `vkCmdSetViewport`
+- [x] `vkCmdSetScissor`
+- [x] `vkCmdDraw`
 - [ ] `vkCmdDrawIndexed`
 - [ ] `vkCmdDrawIndirect`
 
@@ -66,7 +66,7 @@ Platform-specific WSI implementations are in:
 
 The Venus protocol needs extensions for WSI operations. These are Venus Plus-specific additions.
 
-#### Frame Transfer Command
+#### Frame Transfer Command *(implemented ✔️ for headless pipeline)*
 
 ```cpp
 // Command: VENUS_PLUS_CMD_TRANSFER_FRAME
@@ -100,7 +100,7 @@ enum CompressionType {
 };
 ```
 
-#### Swapchain Management Commands
+#### Swapchain Management Commands *(implemented ✔️)*
 
 ```cpp
 // VENUS_PLUS_CMD_CREATE_SWAPCHAIN
@@ -306,6 +306,8 @@ public:
     }
 };
 ```
+
+*Current implementation:* For headless validation we copy GPU content lazily and feed it through a lightweight run-length encoding (RLE) before returning `VENUS_PLUS_CMD_PRESENT`. This keeps payloads reasonably small without pulling in a full LZ4/ZSTD dependency yet.
 
 ---
 
@@ -621,43 +623,25 @@ VkResult vkGetSwapchainImagesKHR(
 
 ---
 
-## Part E: Platform WSI Interface
+## Part E: Platform WSI Interface *(headless stub ✔️)*
+
+A minimal headless implementation now writes the received frames to `swapchain_<id>_image_<n>.rgba` for inspection. Future work will swap in real window-system backends per platform.
 
 ### Abstract Interface
 
 ```cpp
-// platform_wsi.h
-
 class PlatformWSI {
 public:
     virtual ~PlatformWSI() = default;
 
-    // Buffer information including stride
-    struct BufferInfo {
-        void* data;         // Pointer to mapped buffer
-        uint32_t stride;    // Row pitch in bytes (may differ from width * bpp)
-    };
-
-    // Initialize buffers for receiving frames
-    virtual bool init_buffers(uint32_t width, uint32_t height,
-                              VkFormat format, uint32_t count) = 0;
-
-    // Get buffer info for receiving frame data
-    // Caller must respect stride when writing
-    virtual BufferInfo get_buffer(uint32_t index) = 0;
-
-    // Notify that buffer writing is complete (for unmap/sync)
-    virtual void end_buffer_access(uint32_t index) = 0;
-
-    // Present buffer to display
-    virtual void present(uint32_t index) = 0;
-
-    // Cleanup
-    virtual void destroy() = 0;
+    virtual bool init(const VkSwapchainCreateInfoKHR& info,
+                      uint32_t image_count) = 0;
+    virtual void handle_frame(const VenusFrameHeader& frame,
+                              const uint8_t* data) = 0;
+    virtual void shutdown() = 0;
 };
 
-// Factory function - implemented per platform
-std::unique_ptr<PlatformWSI> create_platform_wsi(VkSurfaceKHR surface);
+std::shared_ptr<PlatformWSI> create_platform_wsi();
 ```
 
 ---
@@ -736,12 +720,12 @@ int main() {
 ## Success Criteria
 
 - [ ] All graphics commands implemented
-- [ ] Render pass/framebuffer creation works
-- [ ] Graphics pipeline creation works
-- [ ] Drawing commands execute on server
-- [ ] Frame transfer protocol working
-- [ ] Compression reduces bandwidth
-- [ ] Triangle test renders correctly
+- [x] Render pass/framebuffer creation works
+- [x] Graphics pipeline creation works
+- [x] Drawing commands execute on server
+- [x] Frame transfer protocol working (headless swapchain round-trip)
+- [x] Compression reduces bandwidth (simple RLE encoding)
+- [x] Triangle test renders correctly (saves `triangle.png`)
 - [ ] No validation errors
 
 ---

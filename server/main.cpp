@@ -3,6 +3,8 @@
 #include "renderer_decoder.h"
 #include "server_state.h"
 #include "protocol/memory_transfer.h"
+#include "protocol/frame_transfer.h"
+#include "wsi/swapchain_manager.h"
 #include "utils/logging.h"
 #include <cstdint>
 #include <cstring>
@@ -18,6 +20,7 @@ using namespace venus_plus;
 static ServerState g_server_state;
 static VenusRenderer* g_renderer = nullptr;
 static MemoryTransferHandler g_memory_transfer(&g_server_state);
+static ServerSwapchainManager g_swapchain_manager;
 
 bool handle_client_message(int client_fd, const void* data, size_t size) {
     if (size >= sizeof(uint32_t)) {
@@ -45,6 +48,57 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
                 SERVER_LOG_ERROR() << "Failed to send read reply";
                 return false;
             }
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_CREATE_SWAPCHAIN) {
+            if (size < sizeof(VenusSwapchainCreateRequest)) {
+                return false;
+            }
+            auto* request = reinterpret_cast<const VenusSwapchainCreateRequest*>(data);
+            VenusSwapchainCreateReply reply = {};
+            reply.result = g_swapchain_manager.create_swapchain(request->create_info,
+                                                                &reply.actual_image_count);
+            NetworkServer::send_to_client(client_fd, &reply, sizeof(reply));
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_DESTROY_SWAPCHAIN) {
+            if (size < sizeof(VenusSwapchainDestroyRequest)) {
+                return false;
+            }
+            auto* request = reinterpret_cast<const VenusSwapchainDestroyRequest*>(data);
+            g_swapchain_manager.destroy_swapchain(request->swapchain_id);
+            VkResult result = VK_SUCCESS;
+            NetworkServer::send_to_client(client_fd, &result, sizeof(result));
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_ACQUIRE_IMAGE) {
+            if (size < sizeof(VenusSwapchainAcquireRequest)) {
+                return false;
+            }
+            auto* request = reinterpret_cast<const VenusSwapchainAcquireRequest*>(data);
+            VenusSwapchainAcquireReply reply = {};
+            reply.result = g_swapchain_manager.acquire_image(request->swapchain_id,
+                                                             &reply.image_index);
+            NetworkServer::send_to_client(client_fd, &reply, sizeof(reply));
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_PRESENT) {
+            if (size < sizeof(VenusSwapchainPresentRequest)) {
+                return false;
+            }
+            auto* request = reinterpret_cast<const VenusSwapchainPresentRequest*>(data);
+            VenusSwapchainPresentReply reply = {};
+            std::vector<uint8_t> payload;
+            reply.result = g_swapchain_manager.present(request->swapchain_id,
+                                                       request->image_index,
+                                                       &reply.frame,
+                                                       &payload);
+            std::vector<uint8_t> buffer(sizeof(reply) + (reply.result == VK_SUCCESS ? payload.size() : 0));
+            std::memcpy(buffer.data(), &reply, sizeof(reply));
+            if (reply.result == VK_SUCCESS && !payload.empty()) {
+                std::memcpy(buffer.data() + sizeof(reply), payload.data(), payload.size());
+            }
+            NetworkServer::send_to_client(client_fd, buffer.data(), buffer.size());
             return true;
         }
     }

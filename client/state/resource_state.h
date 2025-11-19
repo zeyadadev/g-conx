@@ -58,6 +58,18 @@ struct SamplerState {
     VkSampler remote_handle;
 };
 
+struct RenderPassState {
+    VkDevice device;
+    VkRenderPass remote_handle;
+};
+
+struct FramebufferState {
+    VkDevice device;
+    VkFramebuffer remote_handle;
+    VkRenderPass render_pass;
+    std::vector<VkImageView> attachments;
+};
+
 struct MemoryState {
     VkDevice device;
     VkDeviceMemory remote_handle;
@@ -108,6 +120,21 @@ public:
     bool has_sampler(VkSampler sampler) const;
     VkSampler get_remote_sampler(VkSampler sampler) const;
 
+    void add_render_pass(VkDevice device, VkRenderPass local, VkRenderPass remote);
+    void remove_render_pass(VkRenderPass render_pass);
+    bool has_render_pass(VkRenderPass render_pass) const;
+    VkRenderPass get_remote_render_pass(VkRenderPass render_pass) const;
+
+    void add_framebuffer(VkDevice device,
+                         VkFramebuffer local,
+                         VkFramebuffer remote,
+                         VkRenderPass render_pass,
+                         const VkFramebufferCreateInfo& info);
+    void remove_framebuffer(VkFramebuffer framebuffer);
+    bool has_framebuffer(VkFramebuffer framebuffer) const;
+    VkFramebuffer get_remote_framebuffer(VkFramebuffer framebuffer) const;
+    VkRenderPass get_framebuffer_render_pass(VkFramebuffer framebuffer) const;
+
     void add_memory(VkDevice device, VkDeviceMemory local, VkDeviceMemory remote, const VkMemoryAllocateInfo& info);
     void remove_memory(VkDeviceMemory memory);
     bool has_memory(VkDeviceMemory memory) const;
@@ -136,6 +163,8 @@ private:
     std::unordered_map<uint64_t, ImageViewState> image_views_;
     std::unordered_map<uint64_t, BufferViewState> buffer_views_;
     std::unordered_map<uint64_t, SamplerState> samplers_;
+    std::unordered_map<uint64_t, RenderPassState> render_passes_;
+    std::unordered_map<uint64_t, FramebufferState> framebuffers_;
     std::unordered_map<uint64_t, MemoryState> memories_;
 };
 

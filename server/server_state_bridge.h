@@ -73,6 +73,21 @@ VkPipelineLayout server_state_bridge_create_pipeline_layout(struct ServerState* 
 void server_state_bridge_destroy_pipeline_layout(struct ServerState* state, VkPipelineLayout layout);
 VkPipelineLayout server_state_bridge_get_real_pipeline_layout(const struct ServerState* state,
                                                               VkPipelineLayout layout);
+VkRenderPass server_state_bridge_create_render_pass(struct ServerState* state,
+                                                    VkDevice device,
+                                                    const VkRenderPassCreateInfo* info);
+VkRenderPass server_state_bridge_create_render_pass2(struct ServerState* state,
+                                                     VkDevice device,
+                                                     const VkRenderPassCreateInfo2* info);
+void server_state_bridge_destroy_render_pass(struct ServerState* state, VkRenderPass renderPass);
+VkRenderPass server_state_bridge_get_real_render_pass(const struct ServerState* state,
+                                                      VkRenderPass renderPass);
+VkFramebuffer server_state_bridge_create_framebuffer(struct ServerState* state,
+                                                     VkDevice device,
+                                                     const VkFramebufferCreateInfo* info);
+void server_state_bridge_destroy_framebuffer(struct ServerState* state, VkFramebuffer framebuffer);
+VkFramebuffer server_state_bridge_get_real_framebuffer(const struct ServerState* state,
+                                                       VkFramebuffer framebuffer);
 VkResult server_state_bridge_create_compute_pipelines(struct ServerState* state,
                                                       VkDevice device,
                                                       VkPipelineCache pipelineCache,
@@ -81,6 +96,12 @@ VkResult server_state_bridge_create_compute_pipelines(struct ServerState* state,
                                                       VkPipeline* pPipelines);
 void server_state_bridge_destroy_pipeline(struct ServerState* state, VkPipeline pipeline);
 VkPipeline server_state_bridge_get_real_pipeline(const struct ServerState* state, VkPipeline pipeline);
+VkResult server_state_bridge_create_graphics_pipelines(struct ServerState* state,
+                                                       VkDevice device,
+                                                       VkPipelineCache cache,
+                                                       uint32_t createInfoCount,
+                                                       const VkGraphicsPipelineCreateInfo* pCreateInfos,
+                                                       VkPipeline* pPipelines);
 
 // Phase 3: Device and queue management
 VkDevice server_state_bridge_alloc_device(struct ServerState* state,

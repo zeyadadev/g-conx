@@ -1132,6 +1132,98 @@ static void server_dispatch_vkDestroyPipelineLayout(struct vn_dispatch_context* 
     }
 }
 
+static void server_dispatch_vkCreateRenderPass(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCreateRenderPass* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateRenderPass");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pRenderPass) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
+        return;
+    }
+
+    VkRenderPass render_pass =
+        server_state_bridge_create_render_pass(state, args->device, args->pCreateInfo);
+    if (render_pass == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create render pass");
+        return;
+    }
+
+    *args->pRenderPass = render_pass;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Render pass created: %p", (void*)render_pass);
+}
+
+static void server_dispatch_vkCreateRenderPass2(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCreateRenderPass2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateRenderPass2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pRenderPass) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
+        return;
+    }
+
+    VkRenderPass render_pass =
+        server_state_bridge_create_render_pass2(state, args->device, args->pCreateInfo);
+    if (render_pass == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create render pass2");
+        return;
+    }
+
+    *args->pRenderPass = render_pass;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Render pass (v2) created: %p", (void*)render_pass);
+}
+
+static void server_dispatch_vkDestroyRenderPass(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkDestroyRenderPass* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyRenderPass (handle: %p)",
+           (void*)args->renderPass);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->renderPass != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_render_pass(state, args->renderPass);
+    }
+}
+
+static void server_dispatch_vkCreateFramebuffer(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCreateFramebuffer* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateFramebuffer");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pFramebuffer) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
+        return;
+    }
+
+    VkFramebuffer framebuffer =
+        server_state_bridge_create_framebuffer(state, args->device, args->pCreateInfo);
+    if (framebuffer == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create framebuffer");
+        return;
+    }
+
+    *args->pFramebuffer = framebuffer;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Framebuffer created: %p", (void*)framebuffer);
+}
+
+static void server_dispatch_vkDestroyFramebuffer(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkDestroyFramebuffer* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyFramebuffer (handle: %p)",
+           (void*)args->framebuffer);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->framebuffer != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_framebuffer(state, args->framebuffer);
+    }
+}
+
 static void server_dispatch_vkCreateComputePipelines(struct vn_dispatch_context* ctx,
                                                      struct vn_command_vkCreateComputePipelines* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateComputePipelines (count=%u)",
@@ -1155,6 +1247,32 @@ static void server_dispatch_vkCreateComputePipelines(struct vn_dispatch_context*
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Compute pipeline(s) created");
     } else {
         VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Compute pipeline creation failed (%d)", args->ret);
+    }
+}
+
+static void server_dispatch_vkCreateGraphicsPipelines(struct vn_dispatch_context* ctx,
+                                                      struct vn_command_vkCreateGraphicsPipelines* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateGraphicsPipelines (count=%u)",
+           args->createInfoCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfos || !args->pPipelines) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create infos or output array");
+        return;
+    }
+
+    args->ret = server_state_bridge_create_graphics_pipelines(state,
+                                                              args->device,
+                                                              args->pipelineCache,
+                                                              args->createInfoCount,
+                                                              args->pCreateInfos,
+                                                              args->pPipelines);
+    if (args->ret == VK_SUCCESS) {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Graphics pipeline(s) created");
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Graphics pipeline creation failed (%d)", args->ret);
     }
 }
 
@@ -1549,6 +1667,49 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdClearColorImage recorded");
 }
 
+static void server_dispatch_vkCmdBeginRenderPass(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCmdBeginRenderPass* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBeginRenderPass");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBeginRenderPass")) {
+        return;
+    }
+    if (!args->pRenderPassBegin) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing begin info");
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBeginRenderPass");
+    VkRenderPass real_rp =
+        server_state_bridge_get_real_render_pass(state, args->pRenderPassBegin->renderPass);
+    VkFramebuffer real_fb =
+        server_state_bridge_get_real_framebuffer(state, args->pRenderPassBegin->framebuffer);
+    if (real_cb == VK_NULL_HANDLE || real_rp == VK_NULL_HANDLE || real_fb == VK_NULL_HANDLE) {
+        return;
+    }
+    VkRenderPassBeginInfo begin_info = *args->pRenderPassBegin;
+    begin_info.renderPass = real_rp;
+    begin_info.framebuffer = real_fb;
+    vkCmdBeginRenderPass(real_cb, &begin_info, args->contents);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBeginRenderPass recorded");
+}
+
+static void server_dispatch_vkCmdEndRenderPass(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCmdEndRenderPass* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdEndRenderPass");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdEndRenderPass")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdEndRenderPass");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdEndRenderPass(real_cb);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdEndRenderPass recorded");
+}
+
 static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkCmdBindPipeline* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindPipeline");
@@ -1566,6 +1727,45 @@ static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdBindPipeline(real_cb, args->pipelineBindPoint, real_pipeline);
+}
+
+static void server_dispatch_vkCmdBindVertexBuffers(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdBindVertexBuffers* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindVertexBuffers (count=%u)",
+           args->bindingCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindVertexBuffers")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBindVertexBuffers");
+    if (!real_cb) {
+        return;
+    }
+    if (args->bindingCount == 0 || !args->pBuffers || !args->pOffsets) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkCmdBindVertexBuffers");
+        return;
+    }
+    VkBuffer* real_buffers = calloc(args->bindingCount, sizeof(*real_buffers));
+    if (!real_buffers) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for vertex buffers");
+        return;
+    }
+    for (uint32_t i = 0; i < args->bindingCount; ++i) {
+        real_buffers[i] =
+            get_real_buffer(state, args->pBuffers[i], "vkCmdBindVertexBuffers");
+        if (real_buffers[i] == VK_NULL_HANDLE) {
+            free(real_buffers);
+            return;
+        }
+    }
+    vkCmdBindVertexBuffers(real_cb,
+                           args->firstBinding,
+                           args->bindingCount,
+                           real_buffers,
+                           args->pOffsets);
+    free(real_buffers);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindVertexBuffers recorded");
 }
 
 static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* ctx,
@@ -1628,6 +1828,69 @@ static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdDispatch(real_cb, args->groupCountX, args->groupCountY, args->groupCountZ);
+}
+
+static void server_dispatch_vkCmdSetViewport(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkCmdSetViewport* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetViewport (count=%u)",
+           args->viewportCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetViewport")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetViewport");
+    if (!real_cb) {
+        return;
+    }
+    if (!args->pViewports || args->viewportCount == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid viewport data");
+        return;
+    }
+    vkCmdSetViewport(real_cb, args->firstViewport, args->viewportCount, args->pViewports);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdSetViewport recorded");
+}
+
+static void server_dispatch_vkCmdSetScissor(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdSetScissor* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetScissor (count=%u)",
+           args->scissorCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetScissor")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetScissor");
+    if (!real_cb) {
+        return;
+    }
+    if (!args->pScissors || args->scissorCount == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid scissor data");
+        return;
+    }
+    vkCmdSetScissor(real_cb, args->firstScissor, args->scissorCount, args->pScissors);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdSetScissor recorded");
+}
+
+static void server_dispatch_vkCmdDraw(struct vn_dispatch_context* ctx,
+                                      struct vn_command_vkCmdDraw* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDraw (verts=%u inst=%u)",
+           args->vertexCount, args->instanceCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDraw")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDraw");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdDraw(real_cb,
+              args->vertexCount,
+              args->instanceCount,
+              args->firstVertex,
+              args->firstInstance);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDraw recorded");
 }
 
 static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx,
@@ -1898,7 +2161,13 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkUpdateDescriptorSets = server_dispatch_vkUpdateDescriptorSets;
     renderer->ctx.dispatch_vkCreatePipelineLayout = server_dispatch_vkCreatePipelineLayout;
     renderer->ctx.dispatch_vkDestroyPipelineLayout = server_dispatch_vkDestroyPipelineLayout;
+    renderer->ctx.dispatch_vkCreateRenderPass = server_dispatch_vkCreateRenderPass;
+    renderer->ctx.dispatch_vkCreateRenderPass2 = server_dispatch_vkCreateRenderPass2;
+    renderer->ctx.dispatch_vkDestroyRenderPass = server_dispatch_vkDestroyRenderPass;
+    renderer->ctx.dispatch_vkCreateFramebuffer = server_dispatch_vkCreateFramebuffer;
+    renderer->ctx.dispatch_vkDestroyFramebuffer = server_dispatch_vkDestroyFramebuffer;
     renderer->ctx.dispatch_vkCreateComputePipelines = server_dispatch_vkCreateComputePipelines;
+    renderer->ctx.dispatch_vkCreateGraphicsPipelines = server_dispatch_vkCreateGraphicsPipelines;
     renderer->ctx.dispatch_vkDestroyPipeline = server_dispatch_vkDestroyPipeline;
     renderer->ctx.dispatch_vkCreateCommandPool = server_dispatch_vkCreateCommandPool;
     renderer->ctx.dispatch_vkDestroyCommandPool = server_dispatch_vkDestroyCommandPool;
@@ -1916,9 +2185,15 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdFillBuffer = server_dispatch_vkCmdFillBuffer;
     renderer->ctx.dispatch_vkCmdUpdateBuffer = server_dispatch_vkCmdUpdateBuffer;
     renderer->ctx.dispatch_vkCmdClearColorImage = server_dispatch_vkCmdClearColorImage;
+    renderer->ctx.dispatch_vkCmdBeginRenderPass = server_dispatch_vkCmdBeginRenderPass;
+    renderer->ctx.dispatch_vkCmdEndRenderPass = server_dispatch_vkCmdEndRenderPass;
     renderer->ctx.dispatch_vkCmdBindPipeline = server_dispatch_vkCmdBindPipeline;
+    renderer->ctx.dispatch_vkCmdBindVertexBuffers = server_dispatch_vkCmdBindVertexBuffers;
     renderer->ctx.dispatch_vkCmdBindDescriptorSets = server_dispatch_vkCmdBindDescriptorSets;
     renderer->ctx.dispatch_vkCmdDispatch = server_dispatch_vkCmdDispatch;
+    renderer->ctx.dispatch_vkCmdSetViewport = server_dispatch_vkCmdSetViewport;
+    renderer->ctx.dispatch_vkCmdSetScissor = server_dispatch_vkCmdSetScissor;
+    renderer->ctx.dispatch_vkCmdDraw = server_dispatch_vkCmdDraw;
     renderer->ctx.dispatch_vkCmdPipelineBarrier = server_dispatch_vkCmdPipelineBarrier;
     renderer->ctx.dispatch_vkCreateFence = server_dispatch_vkCreateFence;
     renderer->ctx.dispatch_vkDestroyFence = server_dispatch_vkDestroyFence;

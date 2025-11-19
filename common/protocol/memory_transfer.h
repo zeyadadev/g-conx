@@ -4,13 +4,9 @@
 #include <cstdint>
 #include <vulkan/vulkan.h>
 
-namespace venus_plus {
+#include "frame_transfer.h"
 
-// Custom Venus Plus command identifiers for host memory transfers.
-enum VenusPlusCommandType : uint32_t {
-    VENUS_PLUS_CMD_TRANSFER_MEMORY_DATA = 0x10000000u,
-    VENUS_PLUS_CMD_READ_MEMORY_DATA     = 0x10000001u,
-};
+namespace venus_plus {
 
 struct TransferMemoryDataHeader {
     uint32_t command;       // VenusPlusCommandType

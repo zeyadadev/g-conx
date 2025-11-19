@@ -284,6 +284,77 @@ VkSampler ResourceState::get_remote_sampler(VkSampler sampler) const {
     return it->second.remote_handle;
 }
 
+void ResourceState::add_render_pass(VkDevice device, VkRenderPass local, VkRenderPass remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    RenderPassState state = {};
+    state.device = device;
+    state.remote_handle = remote;
+    render_passes_[handle_key(local)] = state;
+}
+
+void ResourceState::remove_render_pass(VkRenderPass render_pass) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    render_passes_.erase(handle_key(render_pass));
+}
+
+bool ResourceState::has_render_pass(VkRenderPass render_pass) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return render_passes_.find(handle_key(render_pass)) != render_passes_.end();
+}
+
+VkRenderPass ResourceState::get_remote_render_pass(VkRenderPass render_pass) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = render_passes_.find(handle_key(render_pass));
+    if (it == render_passes_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void ResourceState::add_framebuffer(VkDevice device,
+                                    VkFramebuffer local,
+                                    VkFramebuffer remote,
+                                    VkRenderPass render_pass,
+                                    const VkFramebufferCreateInfo& info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    FramebufferState state = {};
+    state.device = device;
+    state.remote_handle = remote;
+    state.render_pass = render_pass;
+    if (info.attachmentCount > 0 && info.pAttachments) {
+        state.attachments.assign(info.pAttachments, info.pAttachments + info.attachmentCount);
+    }
+    framebuffers_[handle_key(local)] = state;
+}
+
+void ResourceState::remove_framebuffer(VkFramebuffer framebuffer) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    framebuffers_.erase(handle_key(framebuffer));
+}
+
+bool ResourceState::has_framebuffer(VkFramebuffer framebuffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return framebuffers_.find(handle_key(framebuffer)) != framebuffers_.end();
+}
+
+VkFramebuffer ResourceState::get_remote_framebuffer(VkFramebuffer framebuffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = framebuffers_.find(handle_key(framebuffer));
+    if (it == framebuffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkRenderPass ResourceState::get_framebuffer_render_pass(VkFramebuffer framebuffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = framebuffers_.find(handle_key(framebuffer));
+    if (it == framebuffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.render_pass;
+}
+
 void ResourceState::add_memory(VkDevice device, VkDeviceMemory local, VkDeviceMemory remote, const VkMemoryAllocateInfo& info) {
     std::lock_guard<std::mutex> lock(mutex_);
     MemoryState state = {};
@@ -462,6 +533,26 @@ void ResourceState::remove_device_resources(VkDevice device) {
     }
     for (uint64_t key : sampler_keys) {
         samplers_.erase(key);
+    }
+
+    std::vector<uint64_t> render_pass_keys;
+    for (const auto& pair : render_passes_) {
+        if (pair.second.device == device) {
+            render_pass_keys.push_back(pair.first);
+        }
+    }
+    for (uint64_t key : render_pass_keys) {
+        render_passes_.erase(key);
+    }
+
+    std::vector<uint64_t> framebuffer_keys;
+    for (const auto& pair : framebuffers_) {
+        if (pair.second.device == device) {
+            framebuffer_keys.push_back(pair.first);
+        }
+    }
+    for (uint64_t key : framebuffer_keys) {
+        framebuffers_.erase(key);
     }
 }
 

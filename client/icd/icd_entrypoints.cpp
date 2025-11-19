@@ -10,7 +10,10 @@
 #include "state/shadow_buffer.h"
 #include "state/command_buffer_state.h"
 #include "state/sync_state.h"
+#include "state/swapchain_state.h"
+#include "wsi/platform_wsi.h"
 #include "protocol/memory_transfer.h"
+#include "protocol/frame_transfer.h"
 #include "branding.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
@@ -123,6 +126,23 @@ static bool check_payload_size(size_t payload_size) {
     return true;
 }
 
+static bool send_swapchain_command(const void* request,
+                                   size_t request_size,
+                                   std::vector<uint8_t>* reply) {
+    if (!reply) {
+        return false;
+    }
+    if (!g_client.send(request, request_size)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send swapchain command";
+        return false;
+    }
+    if (!g_client.receive(*reply)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive swapchain reply";
+        return false;
+    }
+    return true;
+}
+
 static VkPhysicalDevice get_remote_physical_device_handle(VkPhysicalDevice physicalDevice,
                                                           const char* func_name) {
     InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
@@ -197,10 +217,15 @@ static bool is_wsi_device_extension(const char* name) {
 }
 
 static bool platform_supports_wsi_extension(const char* name, bool is_instance_extension) {
-    (void)name;
-    (void)is_instance_extension;
-    // Phase 9: no WSI implementation yet, so hide them for every platform.
-    // Once client-side WSI is implemented per platform, whitelist names here.
+    if (!name) {
+        return false;
+    }
+    if (is_instance_extension) {
+        return false;
+    }
+    if (std::strcmp(name, "VK_KHR_swapchain") == 0) {
+        return true;
+    }
     return false;
 }
 
@@ -1386,9 +1411,57 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkDestroyPipelineLayout\n";
         return (PFN_vkVoidFunction)vkDestroyPipelineLayout;
     }
+    if (strcmp(pName, "vkCreateSwapchainKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateSwapchainKHR\n";
+        return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
+    }
+    if (strcmp(pName, "vkDestroySwapchainKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroySwapchainKHR\n";
+        return (PFN_vkVoidFunction)vkDestroySwapchainKHR;
+    }
+    if (strcmp(pName, "vkGetSwapchainImagesKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkGetSwapchainImagesKHR\n";
+        return (PFN_vkVoidFunction)vkGetSwapchainImagesKHR;
+    }
+    if (strcmp(pName, "vkAcquireNextImageKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkAcquireNextImageKHR\n";
+        return (PFN_vkVoidFunction)vkAcquireNextImageKHR;
+    }
+    if (strcmp(pName, "vkAcquireNextImage2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkAcquireNextImage2KHR\n";
+        return (PFN_vkVoidFunction)vkAcquireNextImage2KHR;
+    }
+    if (strcmp(pName, "vkQueuePresentKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkQueuePresentKHR\n";
+        return (PFN_vkVoidFunction)vkQueuePresentKHR;
+    }
+    if (strcmp(pName, "vkCreateRenderPass") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateRenderPass\n";
+        return (PFN_vkVoidFunction)vkCreateRenderPass;
+    }
+    if (strcmp(pName, "vkCreateRenderPass2") == 0 || strcmp(pName, "vkCreateRenderPass2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateRenderPass2\n";
+        return (PFN_vkVoidFunction)vkCreateRenderPass2;
+    }
+    if (strcmp(pName, "vkDestroyRenderPass") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroyRenderPass\n";
+        return (PFN_vkVoidFunction)vkDestroyRenderPass;
+    }
+    if (strcmp(pName, "vkCreateFramebuffer") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateFramebuffer\n";
+        return (PFN_vkVoidFunction)vkCreateFramebuffer;
+    }
+    if (strcmp(pName, "vkDestroyFramebuffer") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroyFramebuffer\n";
+        return (PFN_vkVoidFunction)vkDestroyFramebuffer;
+    }
     if (strcmp(pName, "vkCreateComputePipelines") == 0) {
         ICD_LOG_INFO() << " -> vkCreateComputePipelines\n";
         return (PFN_vkVoidFunction)vkCreateComputePipelines;
+    }
+    if (strcmp(pName, "vkCreateGraphicsPipelines") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateGraphicsPipelines\n";
+        return (PFN_vkVoidFunction)vkCreateGraphicsPipelines;
     }
     if (strcmp(pName, "vkDestroyPipeline") == 0) {
         ICD_LOG_INFO() << " -> vkDestroyPipeline\n";
@@ -1462,9 +1535,33 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdClearColorImage\n";
         return (PFN_vkVoidFunction)vkCmdClearColorImage;
     }
+    if (strcmp(pName, "vkCmdBeginRenderPass") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBeginRenderPass\n";
+        return (PFN_vkVoidFunction)vkCmdBeginRenderPass;
+    }
+    if (strcmp(pName, "vkCmdEndRenderPass") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdEndRenderPass\n";
+        return (PFN_vkVoidFunction)vkCmdEndRenderPass;
+    }
     if (strcmp(pName, "vkCmdBindPipeline") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindPipeline\n";
         return (PFN_vkVoidFunction)vkCmdBindPipeline;
+    }
+    if (strcmp(pName, "vkCmdBindVertexBuffers") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindVertexBuffers\n";
+        return (PFN_vkVoidFunction)vkCmdBindVertexBuffers;
+    }
+    if (strcmp(pName, "vkCmdSetViewport") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetViewport\n";
+        return (PFN_vkVoidFunction)vkCmdSetViewport;
+    }
+    if (strcmp(pName, "vkCmdSetScissor") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetScissor\n";
+        return (PFN_vkVoidFunction)vkCmdSetScissor;
+    }
+    if (strcmp(pName, "vkCmdDraw") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDraw\n";
+        return (PFN_vkVoidFunction)vkCmdDraw;
     }
     if (strcmp(pName, "vkCmdBindDescriptorSets") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindDescriptorSets\n";
@@ -1777,6 +1874,13 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
         g_pipeline_state.remove_device_resources(device);
         g_sync_state.remove_device(device);
         g_shadow_buffer_manager.remove_device(device);
+        std::vector<SwapchainInfo> removed_swapchains;
+        g_swapchain_state.remove_device_swapchains(device, &removed_swapchains);
+        for (auto& info : removed_swapchains) {
+            if (info.wsi) {
+                info.wsi->shutdown();
+            }
+        }
         g_device_state.remove_device(device);
         delete icd_device;
         return;
@@ -1790,6 +1894,13 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
     g_pipeline_state.remove_device_resources(device);
     g_sync_state.remove_device(device);
     g_shadow_buffer_manager.remove_device(device);
+    std::vector<SwapchainInfo> removed_swapchains;
+    g_swapchain_state.remove_device_swapchains(device, &removed_swapchains);
+    for (auto& info : removed_swapchains) {
+        if (info.wsi) {
+            info.wsi->shutdown();
+        }
+    }
 
     // Remove from state
     g_device_state.remove_device(device);
@@ -3517,6 +3628,576 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyPipelineLayout(
     ICD_LOG_INFO() << "[Client ICD] Pipeline layout destroyed (local=" << pipelineLayout << ")\n";
 }
 
+// vkCreateSwapchainKHR - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
+    VkDevice device,
+    const VkSwapchainCreateInfoKHR* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkSwapchainKHR* pSwapchain) {
+
+    (void)pAllocator;
+    ICD_LOG_INFO() << "[Client ICD] vkCreateSwapchainKHR called\n";
+
+    if (!pCreateInfo || !pSwapchain) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (pCreateInfo->imageExtent.width == 0 || pCreateInfo->imageExtent.height == 0) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid swapchain extent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateSwapchainKHR\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    uint32_t swapchain_id = g_swapchain_state.allocate_swapchain_id();
+    VenusSwapchainCreateRequest request = {};
+    request.command = VENUS_PLUS_CMD_CREATE_SWAPCHAIN;
+    request.create_info.swapchain_id = swapchain_id;
+    request.create_info.width = pCreateInfo->imageExtent.width;
+    request.create_info.height = pCreateInfo->imageExtent.height;
+    request.create_info.format = static_cast<uint32_t>(pCreateInfo->imageFormat);
+    request.create_info.image_count = std::max(pCreateInfo->minImageCount, 1u);
+    request.create_info.usage = pCreateInfo->imageUsage;
+    request.create_info.present_mode = pCreateInfo->presentMode;
+
+    std::vector<uint8_t> reply_buffer;
+    if (!send_swapchain_command(&request, sizeof(request), &reply_buffer)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (reply_buffer.size() < sizeof(VenusSwapchainCreateReply)) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid swapchain reply size\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    const auto* reply = reinterpret_cast<const VenusSwapchainCreateReply*>(reply_buffer.data());
+    if (reply->result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateSwapchainKHR failed on server: " << reply->result << "\n";
+        return reply->result;
+    }
+
+    uint32_t image_count = reply->actual_image_count;
+    if (image_count == 0) {
+        image_count = request.create_info.image_count;
+    }
+
+    std::vector<VkImage> images(image_count);
+    for (uint32_t i = 0; i < image_count; ++i) {
+        images[i] = g_handle_allocator.allocate<VkImage>();
+    }
+
+    auto wsi = create_platform_wsi();
+    if (!wsi || !wsi->init(*pCreateInfo, image_count)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to initialize Platform WSI\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkSwapchainKHR handle = g_swapchain_state.add_swapchain(device,
+                                                           swapchain_id,
+                                                           *pCreateInfo,
+                                                           image_count,
+                                                           std::move(images),
+                                                           wsi);
+    *pSwapchain = handle;
+    ICD_LOG_INFO() << "[Client ICD] Swapchain created (id=" << swapchain_id << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroySwapchainKHR - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkDestroySwapchainKHR(
+    VkDevice device,
+    VkSwapchainKHR swapchain,
+    const VkAllocationCallbacks* pAllocator) {
+
+    (void)pAllocator;
+    ICD_LOG_INFO() << "[Client ICD] vkDestroySwapchainKHR called\n";
+
+    if (swapchain == VK_NULL_HANDLE) {
+        return;
+    }
+
+    SwapchainInfo info = {};
+    if (!g_swapchain_state.remove_swapchain(swapchain, &info)) {
+        ICD_LOG_WARN() << "[Client ICD] Swapchain not tracked locally\n";
+        return;
+    }
+
+    if (info.wsi) {
+        info.wsi->shutdown();
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during swapchain destroy\n";
+        return;
+    }
+
+    VenusSwapchainDestroyRequest request = {};
+    request.command = VENUS_PLUS_CMD_DESTROY_SWAPCHAIN;
+    request.swapchain_id = info.swapchain_id;
+
+    std::vector<uint8_t> reply_buffer;
+    if (!send_swapchain_command(&request, sizeof(request), &reply_buffer)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send destroy swapchain command\n";
+        return;
+    }
+
+    if (reply_buffer.size() < sizeof(VkResult)) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid destroy reply size\n";
+        return;
+    }
+
+    VkResult result = *reinterpret_cast<VkResult*>(reply_buffer.data());
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] Server failed to destroy swapchain: " << result << "\n";
+    }
+}
+
+// vkGetSwapchainImagesKHR - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
+    VkDevice device,
+    VkSwapchainKHR swapchain,
+    uint32_t* pSwapchainImageCount,
+    VkImage* pSwapchainImages) {
+
+    (void)device;
+    ICD_LOG_INFO() << "[Client ICD] vkGetSwapchainImagesKHR called\n";
+
+    if (!pSwapchainImageCount) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkImage> images;
+    if (!g_swapchain_state.get_images(swapchain, &images)) {
+        ICD_LOG_ERROR() << "[Client ICD] Swapchain not tracked for images\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!pSwapchainImages) {
+        *pSwapchainImageCount = static_cast<uint32_t>(images.size());
+        return VK_SUCCESS;
+    }
+
+    uint32_t count = std::min(*pSwapchainImageCount, static_cast<uint32_t>(images.size()));
+    for (uint32_t i = 0; i < count; ++i) {
+        pSwapchainImages[i] = images[i];
+    }
+    *pSwapchainImageCount = count;
+    return (count < images.size()) ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
+// vkAcquireNextImageKHR - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImageKHR(
+    VkDevice device,
+    VkSwapchainKHR swapchain,
+    uint64_t timeout,
+    VkSemaphore semaphore,
+    VkFence fence,
+    uint32_t* pImageIndex) {
+
+    (void)device;
+    (void)timeout;
+    (void)semaphore;
+    (void)fence;
+
+    ICD_LOG_INFO() << "[Client ICD] vkAcquireNextImageKHR called\n";
+
+    if (!pImageIndex) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    uint32_t remote_id = g_swapchain_state.get_remote_id(swapchain);
+    if (remote_id == 0) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown swapchain in acquire\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VenusSwapchainAcquireRequest request = {};
+    request.command = VENUS_PLUS_CMD_ACQUIRE_IMAGE;
+    request.swapchain_id = remote_id;
+    request.timeout = timeout;
+
+    std::vector<uint8_t> reply_buffer;
+    if (!send_swapchain_command(&request, sizeof(request), &reply_buffer)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (reply_buffer.size() < sizeof(VenusSwapchainAcquireReply)) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid acquire reply size\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    const auto* reply = reinterpret_cast<const VenusSwapchainAcquireReply*>(reply_buffer.data());
+    if (reply->result == VK_SUCCESS) {
+        *pImageIndex = reply->image_index;
+    }
+    return reply->result;
+}
+
+// vkAcquireNextImage2KHR - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImage2KHR(
+    VkDevice device,
+    const VkAcquireNextImageInfoKHR* pAcquireInfo,
+    uint32_t* pImageIndex) {
+
+    if (!pAcquireInfo) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return vkAcquireNextImageKHR(device,
+                                 pAcquireInfo->swapchain,
+                                 pAcquireInfo->timeout,
+                                 pAcquireInfo->semaphore,
+                                 pAcquireInfo->fence,
+                                 pImageIndex);
+}
+// vkCreateRenderPass - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(
+    VkDevice device,
+    const VkRenderPassCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkRenderPass* pRenderPass) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateRenderPass called\n";
+
+    if (!pCreateInfo || !pRenderPass) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateRenderPass\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateRenderPass\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkRenderPass remote_render_pass = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateRenderPass(&g_ring,
+                                                 icd_device->remote_handle,
+                                                 pCreateInfo,
+                                                 pAllocator,
+                                                 &remote_render_pass);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateRenderPass failed: " << result << "\n";
+        return result;
+    }
+
+    VkRenderPass local = g_handle_allocator.allocate<VkRenderPass>();
+    *pRenderPass = local;
+    g_resource_state.add_render_pass(device, local, remote_render_pass);
+    ICD_LOG_INFO() << "[Client ICD] Render pass created (local=" << local << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkCreateRenderPass2 - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass2(
+    VkDevice device,
+    const VkRenderPassCreateInfo2* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkRenderPass* pRenderPass) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateRenderPass2 called\n";
+
+    if (!pCreateInfo || !pRenderPass) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateRenderPass2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateRenderPass2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkRenderPass remote_render_pass = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateRenderPass2(&g_ring,
+                                                  icd_device->remote_handle,
+                                                  pCreateInfo,
+                                                  pAllocator,
+                                                  &remote_render_pass);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateRenderPass2 failed: " << result << "\n";
+        return result;
+    }
+
+    VkRenderPass local = g_handle_allocator.allocate<VkRenderPass>();
+    *pRenderPass = local;
+    g_resource_state.add_render_pass(device, local, remote_render_pass);
+    ICD_LOG_INFO() << "[Client ICD] Render pass (v2) created (local=" << local << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyRenderPass - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkDestroyRenderPass(
+    VkDevice device,
+    VkRenderPass renderPass,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyRenderPass called\n";
+
+    if (renderPass == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkRenderPass remote_render_pass = g_resource_state.get_remote_render_pass(renderPass);
+    g_resource_state.remove_render_pass(renderPass);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyRenderPass\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyRenderPass\n";
+        return;
+    }
+
+    if (remote_render_pass == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote render pass handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyRenderPass(&g_ring,
+                                 icd_device->remote_handle,
+                                 remote_render_pass,
+                                 pAllocator);
+    ICD_LOG_INFO() << "[Client ICD] Render pass destroyed (local=" << renderPass << ")\n";
+}
+
+// vkCreateFramebuffer - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(
+    VkDevice device,
+    const VkFramebufferCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkFramebuffer* pFramebuffer) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateFramebuffer called\n";
+
+    if (!pCreateInfo || !pFramebuffer) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateFramebuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateFramebuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkRenderPass remote_render_pass =
+        g_resource_state.get_remote_render_pass(pCreateInfo->renderPass);
+    if (remote_render_pass == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Render pass not tracked for framebuffer\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkImageView> remote_attachments;
+    if (pCreateInfo->attachmentCount > 0) {
+        remote_attachments.resize(pCreateInfo->attachmentCount);
+        for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
+            remote_attachments[i] =
+                g_resource_state.get_remote_image_view(pCreateInfo->pAttachments[i]);
+            if (remote_attachments[i] == VK_NULL_HANDLE) {
+                ICD_LOG_ERROR() << "[Client ICD] Attachment image view not tracked for framebuffer\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+    }
+
+    VkFramebufferCreateInfo remote_info = *pCreateInfo;
+    remote_info.renderPass = remote_render_pass;
+    if (!remote_attachments.empty()) {
+        remote_info.pAttachments = remote_attachments.data();
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkFramebuffer remote_framebuffer = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateFramebuffer(&g_ring,
+                                                  icd_device->remote_handle,
+                                                  &remote_info,
+                                                  pAllocator,
+                                                  &remote_framebuffer);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateFramebuffer failed: " << result << "\n";
+        return result;
+    }
+
+    VkFramebuffer local = g_handle_allocator.allocate<VkFramebuffer>();
+    *pFramebuffer = local;
+    g_resource_state.add_framebuffer(device, local, remote_framebuffer, pCreateInfo->renderPass, *pCreateInfo);
+    ICD_LOG_INFO() << "[Client ICD] Framebuffer created (local=" << local << ")\n";
+    return VK_SUCCESS;
+}
+
+// vkDestroyFramebuffer - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkDestroyFramebuffer(
+    VkDevice device,
+    VkFramebuffer framebuffer,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyFramebuffer called\n";
+
+    if (framebuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkFramebuffer remote_framebuffer = g_resource_state.get_remote_framebuffer(framebuffer);
+    g_resource_state.remove_framebuffer(framebuffer);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyFramebuffer\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyFramebuffer\n";
+        return;
+    }
+
+    if (remote_framebuffer == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote framebuffer handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyFramebuffer(&g_ring,
+                                  icd_device->remote_handle,
+                                  remote_framebuffer,
+                                  pAllocator);
+    ICD_LOG_INFO() << "[Client ICD] Framebuffer destroyed (local=" << framebuffer << ")\n";
+}
+
+// vkCreateGraphicsPipelines - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(
+    VkDevice device,
+    VkPipelineCache pipelineCache,
+    uint32_t createInfoCount,
+    const VkGraphicsPipelineCreateInfo* pCreateInfos,
+    const VkAllocationCallbacks* pAllocator,
+    VkPipeline* pPipelines) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateGraphicsPipelines called (count=" << createInfoCount << ")\n";
+
+    if (!pCreateInfos || (!pPipelines && createInfoCount > 0)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (createInfoCount == 0) {
+        return VK_SUCCESS;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateGraphicsPipelines\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkGraphicsPipelineCreateInfo> remote_infos(createInfoCount);
+    std::vector<std::vector<VkPipelineShaderStageCreateInfo>> stage_infos(createInfoCount);
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        remote_infos[i] = pCreateInfos[i];
+
+        stage_infos[i].resize(remote_infos[i].stageCount);
+        for (uint32_t j = 0; j < remote_infos[i].stageCount; ++j) {
+            stage_infos[i][j] = pCreateInfos[i].pStages[j];
+            VkShaderModule remote_module =
+                g_pipeline_state.get_remote_shader_module(pCreateInfos[i].pStages[j].module);
+            if (remote_module == VK_NULL_HANDLE) {
+                ICD_LOG_ERROR() << "[Client ICD] Shader module not tracked for graphics pipeline\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            stage_infos[i][j].module = remote_module;
+        }
+        if (!stage_infos[i].empty()) {
+            remote_infos[i].pStages = stage_infos[i].data();
+        }
+
+        VkPipelineLayout remote_layout =
+            g_pipeline_state.get_remote_pipeline_layout(pCreateInfos[i].layout);
+        if (remote_layout == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Pipeline layout not tracked for graphics pipeline\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_infos[i].layout = remote_layout;
+
+        if (pCreateInfos[i].renderPass != VK_NULL_HANDLE) {
+            VkRenderPass remote_render_pass =
+                g_resource_state.get_remote_render_pass(pCreateInfos[i].renderPass);
+            if (remote_render_pass == VK_NULL_HANDLE) {
+                ICD_LOG_ERROR() << "[Client ICD] Render pass not tracked for graphics pipeline\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            remote_infos[i].renderPass = remote_render_pass;
+        }
+
+        if (pCreateInfos[i].basePipelineHandle != VK_NULL_HANDLE) {
+            VkPipeline remote_base =
+                g_pipeline_state.get_remote_pipeline(pCreateInfos[i].basePipelineHandle);
+            if (remote_base == VK_NULL_HANDLE) {
+                ICD_LOG_ERROR() << "[Client ICD] Base pipeline not tracked for graphics pipeline\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            remote_infos[i].basePipelineHandle = remote_base;
+        }
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    std::vector<VkPipeline> remote_pipelines(createInfoCount, VK_NULL_HANDLE);
+    VkResult result = vn_call_vkCreateGraphicsPipelines(&g_ring,
+                                                       icd_device->remote_handle,
+                                                       pipelineCache,
+                                                       createInfoCount,
+                                                       remote_infos.data(),
+                                                       pAllocator,
+                                                       remote_pipelines.data());
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateGraphicsPipelines failed: " << result << "\n";
+        return result;
+    }
+
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        VkPipeline local = g_handle_allocator.allocate<VkPipeline>();
+        g_pipeline_state.add_pipeline(device,
+                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      local,
+                                      remote_pipelines[i]);
+        pPipelines[i] = local;
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] Graphics pipeline(s) created\n";
+    return VK_SUCCESS;
+}
+
 // vkCreateComputePipelines - Phase 9
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(
     VkDevice device,
@@ -4421,6 +5102,81 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(
     ICD_LOG_INFO() << "[Client ICD] vkCmdClearColorImage recorded\n";
 }
 
+// vkCmdBeginRenderPass - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
+    VkCommandBuffer commandBuffer,
+    const VkRenderPassBeginInfo* pRenderPassBegin,
+    VkSubpassContents contents) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBeginRenderPass called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBeginRenderPass")) {
+        return;
+    }
+
+    if (!pRenderPassBegin) {
+        ICD_LOG_ERROR() << "[Client ICD] pRenderPassBegin is NULL in vkCmdBeginRenderPass\n";
+        return;
+    }
+
+    VkRenderPass remote_render_pass =
+        g_resource_state.get_remote_render_pass(pRenderPassBegin->renderPass);
+    if (remote_render_pass == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Render pass not tracked for vkCmdBeginRenderPass\n";
+        return;
+    }
+
+    VkFramebuffer remote_framebuffer =
+        g_resource_state.get_remote_framebuffer(pRenderPassBegin->framebuffer);
+    if (remote_framebuffer == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Framebuffer not tracked for vkCmdBeginRenderPass\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdBeginRenderPass\n";
+        return;
+    }
+
+    VkRenderPassBeginInfo remote_begin = *pRenderPassBegin;
+    remote_begin.renderPass = remote_render_pass;
+    remote_begin.framebuffer = remote_framebuffer;
+
+    vn_async_vkCmdBeginRenderPass(&g_ring, remote_cb, &remote_begin, contents);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBeginRenderPass recorded\n";
+}
+
+// vkCmdEndRenderPass - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(
+    VkCommandBuffer commandBuffer) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdEndRenderPass called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdEndRenderPass")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdEndRenderPass\n";
+        return;
+    }
+
+    vn_async_vkCmdEndRenderPass(&g_ring, remote_cb);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdEndRenderPass recorded\n";
+}
+
 // vkCmdBindPipeline - Phase 9
 VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(
     VkCommandBuffer commandBuffer,
@@ -4433,8 +5189,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(
         return;
     }
 
-    if (pipelineBindPoint != VK_PIPELINE_BIND_POINT_COMPUTE) {
-        ICD_LOG_ERROR() << "[Client ICD] Only compute bind point supported in vkCmdBindPipeline\n";
+    if (pipelineBindPoint != VK_PIPELINE_BIND_POINT_COMPUTE &&
+        pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS) {
+        ICD_LOG_ERROR() << "[Client ICD] Unsupported bind point in vkCmdBindPipeline\n";
         return;
     }
 
@@ -4462,7 +5219,159 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(
     }
 
     vn_async_vkCmdBindPipeline(&g_ring, remote_cb, pipelineBindPoint, remote_pipeline);
-    ICD_LOG_INFO() << "[Client ICD] Compute pipeline bound\n";
+    ICD_LOG_INFO() << "[Client ICD] Pipeline bound (bindPoint=" << pipelineBindPoint << ")\n";
+}
+
+// vkCmdBindVertexBuffers - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(
+    VkCommandBuffer commandBuffer,
+    uint32_t firstBinding,
+    uint32_t bindingCount,
+    const VkBuffer* pBuffers,
+    const VkDeviceSize* pOffsets) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBindVertexBuffers called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBindVertexBuffers")) {
+        return;
+    }
+
+    if (bindingCount == 0) {
+        return;
+    }
+
+    if (!pBuffers || !pOffsets) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid buffers or offsets for vkCmdBindVertexBuffers\n";
+        return;
+    }
+
+    std::vector<VkBuffer> remote_buffers(bindingCount, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < bindingCount; ++i) {
+        remote_buffers[i] = g_resource_state.get_remote_buffer(pBuffers[i]);
+        if (remote_buffers[i] == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked for vkCmdBindVertexBuffers\n";
+            return;
+        }
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdBindVertexBuffers\n";
+        return;
+    }
+
+    vn_async_vkCmdBindVertexBuffers(&g_ring,
+                                    remote_cb,
+                                    firstBinding,
+                                    bindingCount,
+                                    remote_buffers.data(),
+                                    pOffsets);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBindVertexBuffers recorded\n";
+}
+
+// vkCmdSetViewport - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
+    VkCommandBuffer commandBuffer,
+    uint32_t firstViewport,
+    uint32_t viewportCount,
+    const VkViewport* pViewports) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetViewport called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetViewport")) {
+        return;
+    }
+
+    if (viewportCount == 0 || !pViewports) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid viewport parameters in vkCmdSetViewport\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetViewport\n";
+        return;
+    }
+
+    vn_async_vkCmdSetViewport(&g_ring, remote_cb, firstViewport, viewportCount, pViewports);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetViewport recorded\n";
+}
+
+// vkCmdSetScissor - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
+    VkCommandBuffer commandBuffer,
+    uint32_t firstScissor,
+    uint32_t scissorCount,
+    const VkRect2D* pScissors) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetScissor called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetScissor")) {
+        return;
+    }
+
+    if (scissorCount == 0 || !pScissors) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid scissor parameters in vkCmdSetScissor\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetScissor\n";
+        return;
+    }
+
+    vn_async_vkCmdSetScissor(&g_ring, remote_cb, firstScissor, scissorCount, pScissors);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetScissor recorded\n";
+}
+
+// vkCmdDraw - Phase 10
+VKAPI_ATTR void VKAPI_CALL vkCmdDraw(
+    VkCommandBuffer commandBuffer,
+    uint32_t vertexCount,
+    uint32_t instanceCount,
+    uint32_t firstVertex,
+    uint32_t firstInstance) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDraw called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDraw")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDraw\n";
+        return;
+    }
+
+    vn_async_vkCmdDraw(&g_ring,
+                       remote_cb,
+                       vertexCount,
+                       instanceCount,
+                       firstVertex,
+                       firstInstance);
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDraw recorded\n";
 }
 
 // vkCmdBindDescriptorSets - Phase 9
@@ -5210,6 +6119,75 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 
     ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit completed\n";
     return VK_SUCCESS;
+}
+
+// vkQueuePresentKHR - Phase 10
+VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
+    VkQueue queue,
+    const VkPresentInfoKHR* pPresentInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueuePresentKHR called\n";
+
+    if (!pPresentInfo || pPresentInfo->swapchainCount == 0 || !pPresentInfo->pSwapchains) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    (void)remote_queue;
+
+    VkResult final_result = VK_SUCCESS;
+    for (uint32_t i = 0; i < pPresentInfo->swapchainCount; ++i) {
+        VkSwapchainKHR swapchain = pPresentInfo->pSwapchains[i];
+        uint32_t image_index = pPresentInfo->pImageIndices ? pPresentInfo->pImageIndices[i] : 0;
+        uint32_t remote_id = g_swapchain_state.get_remote_id(swapchain);
+        if (remote_id == 0) {
+            ICD_LOG_ERROR() << "[Client ICD] Unknown swapchain in queue present\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        VenusSwapchainPresentRequest request = {};
+        request.command = VENUS_PLUS_CMD_PRESENT;
+        request.swapchain_id = remote_id;
+        request.image_index = image_index;
+
+        std::vector<uint8_t> reply_buffer;
+        if (!send_swapchain_command(&request, sizeof(request), &reply_buffer)) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (reply_buffer.size() < sizeof(VenusSwapchainPresentReply)) {
+            ICD_LOG_ERROR() << "[Client ICD] Invalid present reply size\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        const auto* reply = reinterpret_cast<const VenusSwapchainPresentReply*>(reply_buffer.data());
+        if (reply->result != VK_SUCCESS) {
+            final_result = reply->result;
+            continue;
+        }
+
+        size_t payload_size = reply_buffer.size() - sizeof(VenusSwapchainPresentReply);
+        if (payload_size < reply->frame.payload_size) {
+            ICD_LOG_ERROR() << "[Client ICD] Present payload truncated\n";
+            final_result = VK_ERROR_INITIALIZATION_FAILED;
+            continue;
+        }
+
+        const uint8_t* payload = reply_buffer.data() + sizeof(VenusSwapchainPresentReply);
+        auto wsi = g_swapchain_state.get_wsi(swapchain);
+        if (wsi) {
+            wsi->handle_frame(reply->frame, payload);
+        }
+    }
+
+    return final_result;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
