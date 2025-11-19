@@ -1,4 +1,5 @@
 #include "fake_gpu_data.h"
+#include "branding.h"
 #include <cstring>
 #include <algorithm>
 
@@ -6,14 +7,7 @@ namespace venus_plus {
 
 void generate_fake_physical_device_properties(VkPhysicalDeviceProperties* props) {
     memset(props, 0, sizeof(*props));
-
-    // Basic device info
-    props->apiVersion = VK_API_VERSION_1_3;
-    props->driverVersion = VK_MAKE_VERSION(1, 0, 0);
-    props->vendorID = 0x10DE;  // NVIDIA-like
-    props->deviceID = 0x1234;
-    props->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-    strncpy(props->deviceName, "Venus Plus Virtual GPU", VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1);
+    vp_branding_apply_properties(props);
 
     // Limits - set reasonable values for Phase 3
     VkPhysicalDeviceLimits& limits = props->limits;

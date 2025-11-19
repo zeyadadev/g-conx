@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "server_state_bridge.h"
-#include "state/fake_gpu_data_bridge.h"
+#include "branding.h"
 #include "vn_protocol_renderer.h"
 #include "vn_cs.h"
 #include "utils/logging_c.h"
@@ -193,7 +193,8 @@ static void server_dispatch_vkGetPhysicalDeviceProperties(
         return;
     }
     vkGetPhysicalDeviceProperties(real_device, args->pProperties);
-    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real properties");
+    vp_branding_apply_properties(args->pProperties);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned branded properties");
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFeatures(
@@ -356,6 +357,7 @@ static void server_dispatch_vkGetPhysicalDeviceProperties2(
         return;
     }
     vkGetPhysicalDeviceProperties2(real_device, args->pProperties);
+    vp_branding_apply_properties2(args->pProperties);
 }
 
 static void server_dispatch_vkGetPhysicalDeviceFeatures2(

@@ -1,4 +1,5 @@
 add_library(venus_common STATIC
+    branding.c
     network/socket_utils.cpp
     network/network_client.cpp
     network/network_server.cpp

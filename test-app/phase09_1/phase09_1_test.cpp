@@ -1,6 +1,7 @@
 #include "phase09_1_test.h"
 
 #include "logging.h"
+#include "branding.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -100,6 +101,10 @@ bool test_properties_and_features(VkPhysicalDevice physical_device) {
     VkPhysicalDeviceDriverProperties driver_props = {};
     driver_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
 
+    VkPhysicalDeviceIDProperties id_props = {};
+    id_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+    driver_props.pNext = &id_props;
+
     VkPhysicalDeviceProperties2 props2 = {};
     props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
     props2.pNext = &driver_props;
@@ -107,6 +112,23 @@ bool test_properties_and_features(VkPhysicalDevice physical_device) {
     vkGetPhysicalDeviceProperties2(physical_device, &props2);
     TEST_LOG_INFO() << "✅ vkGetPhysicalDeviceProperties2: device=" << props2.properties.deviceName
                     << " driver=" << driver_props.driverName;
+
+    const VPBrandingInfo* branding = vp_get_branding_info();
+    if (strcmp(driver_props.driverName, branding->driver_name) != 0 ||
+        strcmp(driver_props.driverInfo, branding->driver_info) != 0 ||
+        driver_props.driverID != branding->driver_id) {
+        TEST_LOG_ERROR() << "✗ Driver properties do not match branding";
+        return false;
+    }
+    uint8_t expected_device_uuid[VK_UUID_SIZE];
+    uint8_t expected_driver_uuid[VK_UUID_SIZE];
+    vp_branding_get_device_uuid(expected_device_uuid);
+    vp_branding_get_driver_uuid(expected_driver_uuid);
+    if (memcmp(id_props.deviceUUID, expected_device_uuid, VK_UUID_SIZE) != 0 ||
+        memcmp(id_props.driverUUID, expected_driver_uuid, VK_UUID_SIZE) != 0) {
+        TEST_LOG_ERROR() << "✗ Device/driver UUIDs do not match branding";
+        return false;
+    }
 
     VkPhysicalDeviceVulkan12Features features12 = {};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;

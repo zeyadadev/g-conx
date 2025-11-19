@@ -11,6 +11,7 @@
 #include "state/command_buffer_state.h"
 #include "state/sync_state.h"
 #include "protocol/memory_transfer.h"
+#include "branding.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
 #include "utils/logging.h"
@@ -20,6 +21,7 @@
 #include <limits>
 #include <new>
 #include <vector>
+#include <string>
 
 using namespace venus_plus;
 
@@ -137,10 +139,90 @@ static VkPhysicalDevice get_remote_physical_device_handle(VkPhysicalDevice physi
     return VK_NULL_HANDLE;
 }
 
+static bool matches_extension(const char* name, const char* const* list, size_t count) {
+    if (!name || name[0] == '\0') {
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (std::strcmp(name, list[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool is_wsi_instance_extension(const char* name) {
+    static constexpr const char* kInstanceWsiExtensions[] = {
+        "VK_KHR_surface",
+        "VK_KHR_wayland_surface",
+        "VK_KHR_xcb_surface",
+        "VK_KHR_xlib_surface",
+        "VK_KHR_win32_surface",
+        "VK_KHR_android_surface",
+        "VK_KHR_get_surface_capabilities2",
+        "VK_KHR_surface_protected_capabilities",
+        "VK_EXT_swapchain_colorspace",
+        "VK_EXT_surface_maintenance1",
+        "VK_EXT_headless_surface",
+        "VK_EXT_directfb_surface",
+        "VK_EXT_metal_surface",
+        "VK_GOOGLE_surfaceless_query",
+        "VK_MVK_ios_surface",
+        "VK_MVK_macos_surface",
+        "VK_QNX_screen_surface",
+    };
+    return matches_extension(
+        name,
+        kInstanceWsiExtensions,
+        sizeof(kInstanceWsiExtensions) / sizeof(kInstanceWsiExtensions[0]));
+}
+
+static bool is_wsi_device_extension(const char* name) {
+    static constexpr const char* kDeviceWsiExtensions[] = {
+        "VK_KHR_swapchain",
+        "VK_KHR_display_swapchain",
+        "VK_KHR_incremental_present",
+        "VK_EXT_display_control",
+        "VK_EXT_full_screen_exclusive",
+        "VK_EXT_swapchain_colorspace",
+        "VK_EXT_surface_maintenance1",
+        "VK_NV_present_barrier",
+        "VK_QCOM_render_pass_store_ops",
+        "VK_EXT_acquire_xlib_display",
+    };
+    return matches_extension(
+        name,
+        kDeviceWsiExtensions,
+        sizeof(kDeviceWsiExtensions) / sizeof(kDeviceWsiExtensions[0]));
+}
+
+static bool platform_supports_wsi_extension(const char* name, bool is_instance_extension) {
+    (void)name;
+    (void)is_instance_extension;
+    // Phase 9: no WSI implementation yet, so hide them for every platform.
+    // Once client-side WSI is implemented per platform, whitelist names here.
+    return false;
+}
+
+static bool should_filter_instance_extension(const VkExtensionProperties& prop) {
+    const char* name = prop.extensionName;
+    if (!name || name[0] == '\0') {
+        return false;
+    }
+    if (is_wsi_instance_extension(name) && !platform_supports_wsi_extension(name, true)) {
+        return true;
+    }
+    return false;
+}
+
 static bool should_filter_device_extension(const VkExtensionProperties& prop) {
     const char* name = prop.extensionName;
     if (!name || name[0] == '\0') {
         return false;
+    }
+
+    if (is_wsi_device_extension(name) && !platform_supports_wsi_extension(name, false)) {
+        return true;
     }
 
     static constexpr const char* kUnsupportedPrefixes[] = {
@@ -541,19 +623,72 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
         return VK_ERROR_LAYER_NOT_PRESENT;
     }
 
+    if (!pPropertyCount) {
+        ICD_LOG_ERROR() << "[Client ICD] pPropertyCount is NULL\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     if (!ensure_connected()) {
         ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    VkResult result = vn_call_vkEnumerateInstanceExtensionProperties(
-        &g_ring, pLayerName, pPropertyCount, pProperties);
-
-    if (result == VK_SUCCESS && pPropertyCount) {
-        ICD_LOG_INFO() << "[Client ICD] Returning " << *pPropertyCount << " extensions\n";
+    uint32_t remote_count = 0;
+    VkResult count_result = vn_call_vkEnumerateInstanceExtensionProperties(
+        &g_ring, pLayerName, &remote_count, nullptr);
+    if (count_result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to query instance extension count: " << count_result << "\n";
+        return count_result;
     }
 
-    return result;
+    std::vector<VkExtensionProperties> remote_props;
+    if (remote_count > 0) {
+        remote_props.resize(remote_count);
+        uint32_t write_count = remote_count;
+        VkResult list_result = vn_call_vkEnumerateInstanceExtensionProperties(
+            &g_ring, pLayerName, &write_count, remote_props.data());
+        if (list_result != VK_SUCCESS && list_result != VK_INCOMPLETE) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to fetch instance extensions: " << list_result << "\n";
+            return list_result;
+        }
+        remote_props.resize(write_count);
+        if (list_result == VK_INCOMPLETE) {
+            ICD_LOG_WARN() << "[Client ICD] Server reported VK_INCOMPLETE while fetching instance extensions\n";
+        }
+    }
+
+    std::vector<VkExtensionProperties> filtered;
+    filtered.reserve(remote_props.size());
+    for (const auto& prop : remote_props) {
+        if (should_filter_instance_extension(prop)) {
+            ICD_LOG_WARN() << "[Client ICD] Filtering unsupported instance extension: " << prop.extensionName << "\n";
+        } else {
+            filtered.push_back(prop);
+        }
+    }
+
+    const uint32_t filtered_count = static_cast<uint32_t>(filtered.size());
+    if (!pProperties) {
+        *pPropertyCount = filtered_count;
+        ICD_LOG_INFO() << "[Client ICD] Returning instance extension count: " << filtered_count << "\n";
+        return VK_SUCCESS;
+    }
+
+    const uint32_t requested = *pPropertyCount;
+    const uint32_t copy_count = std::min(filtered_count, requested);
+    for (uint32_t i = 0; i < copy_count; ++i) {
+        pProperties[i] = filtered[i];
+    }
+    *pPropertyCount = filtered_count;
+
+    if (copy_count < filtered_count) {
+        ICD_LOG_INFO() << "[Client ICD] Provided " << copy_count << " instance extensions (need " << filtered_count
+                  << "), returning VK_INCOMPLETE\n";
+        return VK_INCOMPLETE;
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] Returning " << copy_count << " instance extensions\n";
+    return VK_SUCCESS;
 }
 
 // vkCreateInstance - Phase 2
@@ -922,6 +1057,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 
     vn_call_vkGetPhysicalDeviceProperties(&g_ring, remote_device, pProperties);
     ICD_LOG_INFO() << "[Client ICD] Returned device properties from server: " << pProperties->deviceName << "\n";
+    vp_branding_apply_properties(pProperties);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(
@@ -948,6 +1084,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(
     }
 
     vn_call_vkGetPhysicalDeviceProperties2(&g_ring, remote_device, pProperties);
+    vp_branding_apply_properties2(pProperties);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2KHR(

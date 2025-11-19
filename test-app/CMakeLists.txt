@@ -18,6 +18,7 @@ target_include_directories(venus-test-app PRIVATE
 )
 
 target_link_libraries(venus-test-app PRIVATE
+    venus_common
     Vulkan::Vulkan
 )
 

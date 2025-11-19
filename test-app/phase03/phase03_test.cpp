@@ -1,5 +1,6 @@
 #include "phase03_test.h"
 #include "logging.h"
+#include "branding.h"
 #include <cstring>
 #include <vector>
 #include <iomanip>
@@ -126,8 +127,14 @@ bool run_phase03_test() {
     print_properties(properties);
 
     // Verify the device name
-    if (strcmp(properties.deviceName, "Venus Plus Virtual GPU") != 0) {
+    const VPBrandingInfo* branding = vp_get_branding_info();
+    if (strcmp(properties.deviceName, branding->device_name) != 0) {
         TEST_LOG_ERROR() << "✗ Unexpected device name: " << properties.deviceName << "\n";
+        vkDestroyInstance(instance, nullptr);
+        return false;
+    }
+    if (properties.vendorID != branding->vendor_id || properties.deviceID != branding->device_id) {
+        TEST_LOG_ERROR() << "✗ Unexpected vendor/device IDs\n";
         vkDestroyInstance(instance, nullptr);
         return false;
     }

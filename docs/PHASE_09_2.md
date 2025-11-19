@@ -156,6 +156,16 @@ void generate_venus_plus_uuid(uint8_t uuid[VK_UUID_SIZE]) {
     // UUID v5 namespace: 6ba7b810-9dad-11d1-80b4-00c04fd430c8 (DNS)
     // Name: "venus-plus.local"
 }
+
+### WSI Extension Filtering
+
+Venus Plus does not implement any window-system integration (WSI) entry points in Phase 9.2. To prevent the Vulkan
+loader from invoking missing functions like `vkGetPhysicalDeviceSurfaceSupportKHR`, the ICD now filters all
+surface/swapchain-related instance and device extensions (`VK_KHR_surface`, platform-specific surface extensions,
+`VK_KHR_swapchain`, etc.). This filtering happens on the client and `platform_supports_wsi_extension()` always returns
+`false`, meaning no WSI extension is reported regardless of the host GPU’s capabilities. When a future phase delivers
+platform-specific WSI shims (e.g., Wayland/X11/Win32), update the helper to return `true` for that platform and allow
+the relevant extensions to pass through.
 ```
 
 ### Part 4: Update Branding Constants
