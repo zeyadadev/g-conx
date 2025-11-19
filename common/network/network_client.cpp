@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
@@ -49,6 +50,10 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
         fd_ = -1;
         return false;
     }
+
+    // Disable Nagle's algorithm for low latency
+    int flag = 1;
+    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
     NETWORK_LOG_INFO() << "Connected to " << host << ":" << port;
     return true;

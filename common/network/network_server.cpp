@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
@@ -78,6 +79,10 @@ void NetworkServer::run(ClientHandler handler) {
             }
             continue;
         }
+
+        // Disable Nagle's algorithm for low latency
+        int flag = 1;
+        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
