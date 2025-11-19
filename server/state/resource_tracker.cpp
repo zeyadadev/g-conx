@@ -22,7 +22,9 @@ ResourceTracker::ResourceTracker()
       next_pipeline_layout_handle_(0x74000000ull),
       next_pipeline_handle_(0x75000000ull),
       next_render_pass_handle_(0x7a000000ull),
-      next_framebuffer_handle_(0x7b000000ull) {}
+      next_framebuffer_handle_(0x7b000000ull),
+      next_pipeline_cache_handle_(0x7c000000ull),
+      next_query_pool_handle_(0x7d000000ull) {}
 
 VkBuffer ResourceTracker::create_buffer(VkDevice device,
                                         VkDevice real_device,
@@ -1312,6 +1314,136 @@ VkPipeline ResourceTracker::get_real_pipeline(VkPipeline pipeline) const {
         return VK_NULL_HANDLE;
     }
     return it->second.real_handle;
+}
+
+VkPipelineCache ResourceTracker::create_pipeline_cache(VkDevice device,
+                                                       VkDevice real_device,
+                                                       const VkPipelineCacheCreateInfo* info) {
+    if (!info || real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkPipelineCache real_cache = VK_NULL_HANDLE;
+    VkResult result = vkCreatePipelineCache(real_device, info, nullptr, &real_cache);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreatePipelineCache failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkPipelineCache handle = reinterpret_cast<VkPipelineCache>(next_pipeline_cache_handle_++);
+    PipelineCacheResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_cache;
+    pipeline_caches_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_pipeline_cache(VkPipelineCache cache) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_caches_.find(handle_key(cache));
+    if (it == pipeline_caches_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyPipelineCache(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    pipeline_caches_.erase(it);
+    return true;
+}
+
+VkPipelineCache ResourceTracker::get_real_pipeline_cache(VkPipelineCache cache) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_caches_.find(handle_key(cache));
+    if (it == pipeline_caches_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkDevice ResourceTracker::get_pipeline_cache_real_device(VkPipelineCache cache) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_caches_.find(handle_key(cache));
+    if (it == pipeline_caches_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_device;
+}
+
+VkQueryPool ResourceTracker::create_query_pool(VkDevice device,
+                                               VkDevice real_device,
+                                               const VkQueryPoolCreateInfo* info) {
+    if (!info || real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkQueryPool real_pool = VK_NULL_HANDLE;
+    VkResult result = vkCreateQueryPool(real_device, info, nullptr, &real_pool);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateQueryPool failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkQueryPool handle = reinterpret_cast<VkQueryPool>(next_query_pool_handle_++);
+    QueryPoolResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_pool;
+    resource.type = info->queryType;
+    resource.query_count = info->queryCount;
+    resource.statistics = info->pipelineStatistics;
+    query_pools_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_query_pool(VkQueryPool pool) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = query_pools_.find(handle_key(pool));
+    if (it == query_pools_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    query_pools_.erase(it);
+    return true;
+}
+
+VkQueryPool ResourceTracker::get_real_query_pool(VkQueryPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = query_pools_.find(handle_key(pool));
+    if (it == query_pools_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkDevice ResourceTracker::get_query_pool_real_device(VkQueryPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = query_pools_.find(handle_key(pool));
+    if (it == query_pools_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_device;
+}
+
+VkQueryType ResourceTracker::get_query_pool_type(VkQueryPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = query_pools_.find(handle_key(pool));
+    if (it == query_pools_.end()) {
+        return VK_QUERY_TYPE_MAX_ENUM;
+    }
+    return it->second.type;
+}
+
+uint32_t ResourceTracker::get_query_pool_count(VkQueryPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = query_pools_.find(handle_key(pool));
+    if (it == query_pools_.end()) {
+        return 0;
+    }
+    return it->second.query_count;
 }
 
 } // namespace venus_plus

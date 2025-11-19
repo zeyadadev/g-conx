@@ -155,12 +155,18 @@ VkDescriptorPool PipelineState::get_descriptor_set_pool(VkDescriptorSet set) con
 
 void PipelineState::add_pipeline_layout(VkDevice device,
                                         VkPipelineLayout local,
-                                        VkPipelineLayout remote) {
+                                        VkPipelineLayout remote,
+                                        const VkPipelineLayoutCreateInfo* create_info) {
     std::lock_guard<std::mutex> lock(mutex_);
-    PipelineLayoutInfo info = {};
-    info.device = device;
-    info.remote_handle = remote;
-    pipeline_layouts_[handle_key(local)] = info;
+    PipelineLayoutInfo layout_info = {};
+    layout_info.device = device;
+    layout_info.remote_handle = remote;
+    if (create_info && create_info->pPushConstantRanges && create_info->pushConstantRangeCount > 0) {
+        layout_info.push_constant_ranges.assign(create_info->pPushConstantRanges,
+                                                create_info->pPushConstantRanges +
+                                                    create_info->pushConstantRangeCount);
+    }
+    pipeline_layouts_[handle_key(local)] = layout_info;
 }
 
 void PipelineState::remove_pipeline_layout(VkPipelineLayout layout) {
@@ -175,6 +181,30 @@ VkPipelineLayout PipelineState::get_remote_pipeline_layout(VkPipelineLayout layo
         return VK_NULL_HANDLE;
     }
     return it->second.remote_handle;
+}
+
+bool PipelineState::validate_push_constant_range(VkPipelineLayout layout,
+                                                 uint32_t offset,
+                                                 uint32_t size,
+                                                 VkShaderStageFlags stages) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_layouts_.find(handle_key(layout));
+    if (it == pipeline_layouts_.end()) {
+        return false;
+    }
+    if (size == 0) {
+        return true;
+    }
+    uint64_t end = static_cast<uint64_t>(offset) + size;
+    for (const auto& range : it->second.push_constant_ranges) {
+        uint64_t range_end = static_cast<uint64_t>(range.offset) + range.size;
+        if (offset >= range.offset && end <= range_end) {
+            if ((stages & ~range.stageFlags) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void PipelineState::add_pipeline(VkDevice device,
@@ -210,6 +240,39 @@ VkPipelineBindPoint PipelineState::get_pipeline_bind_point(VkPipeline pipeline) 
         return VK_PIPELINE_BIND_POINT_MAX_ENUM;
     }
     return it->second.bind_point;
+}
+
+void PipelineState::add_pipeline_cache(VkDevice device,
+                                       VkPipelineCache local,
+                                       VkPipelineCache remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    PipelineCacheInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    pipeline_caches_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_pipeline_cache(VkPipelineCache cache) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pipeline_caches_.erase(handle_key(cache));
+}
+
+VkPipelineCache PipelineState::get_remote_pipeline_cache(VkPipelineCache cache) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_caches_.find(handle_key(cache));
+    if (it == pipeline_caches_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkDevice PipelineState::get_pipeline_cache_device(VkPipelineCache cache) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pipeline_caches_.find(handle_key(cache));
+    if (it == pipeline_caches_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.device;
 }
 
 void PipelineState::remove_device_resources(VkDevice device) {
@@ -269,6 +332,14 @@ void PipelineState::remove_device_resources(VkDevice device) {
     for (auto it = pipelines_.begin(); it != pipelines_.end();) {
         if (it->second.device == device) {
             it = pipelines_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = pipeline_caches_.begin(); it != pipeline_caches_.end();) {
+        if (it->second.device == device) {
+            it = pipeline_caches_.erase(it);
         } else {
             ++it;
         }

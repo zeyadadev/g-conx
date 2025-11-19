@@ -140,6 +140,21 @@ VkDescriptorSet server_state_get_real_descriptor_set(const ServerState* state, V
 VkPipelineLayout server_state_create_pipeline_layout(ServerState* state, VkDevice device, const VkPipelineLayoutCreateInfo* info);
 bool server_state_destroy_pipeline_layout(ServerState* state, VkPipelineLayout layout);
 VkPipelineLayout server_state_get_real_pipeline_layout(const ServerState* state, VkPipelineLayout layout);
+VkPipelineCache server_state_create_pipeline_cache(ServerState* state,
+                                                   VkDevice device,
+                                                   const VkPipelineCacheCreateInfo* info);
+bool server_state_destroy_pipeline_cache(ServerState* state, VkPipelineCache cache);
+VkPipelineCache server_state_get_real_pipeline_cache(const ServerState* state, VkPipelineCache cache);
+VkResult server_state_get_pipeline_cache_data(ServerState* state,
+                                              VkDevice device,
+                                              VkPipelineCache cache,
+                                              size_t* pDataSize,
+                                              void* pData);
+VkResult server_state_merge_pipeline_caches(ServerState* state,
+                                            VkDevice device,
+                                            VkPipelineCache dst_cache,
+                                            uint32_t src_count,
+                                            const VkPipelineCache* src_caches);
 VkResult server_state_create_compute_pipelines(ServerState* state,
                                                VkDevice device,
                                                VkPipelineCache cache,
@@ -184,9 +199,33 @@ bool server_state_destroy_semaphore(ServerState* state, VkSemaphore semaphore);
 VkResult server_state_get_semaphore_counter_value(ServerState* state, VkSemaphore semaphore, uint64_t* pValue);
 VkResult server_state_signal_semaphore(ServerState* state, const VkSemaphoreSignalInfo* info);
 VkResult server_state_wait_semaphores(ServerState* state, const VkSemaphoreWaitInfo* info, uint64_t timeout);
+VkEvent server_state_create_event(ServerState* state,
+                                  VkDevice device,
+                                  const VkEventCreateInfo* info);
+bool server_state_destroy_event(ServerState* state, VkEvent event);
+VkEvent server_state_get_real_event(const ServerState* state, VkEvent event);
+VkResult server_state_get_event_status(ServerState* state, VkEvent event);
+VkResult server_state_set_event(ServerState* state, VkEvent event);
+VkResult server_state_reset_event(ServerState* state, VkEvent event);
 VkResult server_state_queue_submit(ServerState* state, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
 VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue);
 VkResult server_state_device_wait_idle(ServerState* state, VkDevice device);
+VkQueryPool server_state_create_query_pool(ServerState* state,
+                                           VkDevice device,
+                                           const VkQueryPoolCreateInfo* info);
+bool server_state_destroy_query_pool(ServerState* state, VkQueryPool pool);
+VkQueryPool server_state_get_real_query_pool(const ServerState* state, VkQueryPool pool);
+VkDevice server_state_get_query_pool_real_device(const ServerState* state, VkQueryPool pool);
+uint32_t server_state_get_query_pool_count(const ServerState* state, VkQueryPool pool);
+VkResult server_state_get_query_pool_results(ServerState* state,
+                                             VkDevice device,
+                                             VkQueryPool pool,
+                                             uint32_t first_query,
+                                             uint32_t query_count,
+                                             size_t dataSize,
+                                             void* pData,
+                                             VkDeviceSize stride,
+                                             VkQueryResultFlags flags);
 
 } // namespace venus_plus
 

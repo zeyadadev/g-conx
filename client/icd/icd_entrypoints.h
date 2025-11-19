@@ -131,12 +131,33 @@ VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer comma
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer commandBuffer);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer,
+                                                         VkPipelineLayout layout,
+                                                         VkShaderStageFlags stageFlags,
+                                                         uint32_t offset,
+                                                         uint32_t size,
+                                                         const void* pValues);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer* pBuffers, const VkDeviceSize* pOffsets);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount, const VkViewport* pViewports);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount, const VkRect2D* pScissors);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdDispatchBase(VkCommandBuffer commandBuffer,
+                                                        uint32_t baseGroupX,
+                                                        uint32_t baseGroupY,
+                                                        uint32_t baseGroupZ,
+                                                        uint32_t groupCountX,
+                                                        uint32_t groupCountY,
+                                                        uint32_t groupCountZ);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdDispatchBaseKHR(VkCommandBuffer commandBuffer,
+                                                           uint32_t baseGroupX,
+                                                           uint32_t baseGroupY,
+                                                           uint32_t baseGroupZ,
+                                                           uint32_t groupCountX,
+                                                           uint32_t groupCountY,
+                                                           uint32_t groupCountZ);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer commandBuffer,
                                                            VkPipelineStageFlags srcStageMask,
                                                            VkPipelineStageFlags dstStageMask,
@@ -147,6 +168,90 @@ VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer comma
                                                            const VkBufferMemoryBarrier* pBufferMemoryBarriers,
                                                            uint32_t imageMemoryBarrierCount,
                                                            const VkImageMemoryBarrier* pImageMemoryBarriers);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdResetQueryPool(VkCommandBuffer commandBuffer,
+                                                          VkQueryPool queryPool,
+                                                          uint32_t firstQuery,
+                                                          uint32_t queryCount);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdBeginQuery(VkCommandBuffer commandBuffer,
+                                                      VkQueryPool queryPool,
+                                                      uint32_t query,
+                                                      VkQueryControlFlags flags);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdEndQuery(VkCommandBuffer commandBuffer,
+                                                    VkQueryPool queryPool,
+                                                    uint32_t query);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdWriteTimestamp(VkCommandBuffer commandBuffer,
+                                                          VkPipelineStageFlagBits pipelineStage,
+                                                          VkQueryPool queryPool,
+                                                          uint32_t query);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdCopyQueryPoolResults(VkCommandBuffer commandBuffer,
+                                                                VkQueryPool queryPool,
+                                                                uint32_t firstQuery,
+                                                                uint32_t queryCount,
+                                                                VkBuffer dstBuffer,
+                                                                VkDeviceSize dstOffset,
+                                                                VkDeviceSize stride,
+                                                                VkQueryResultFlags flags);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdSetEvent(VkCommandBuffer commandBuffer,
+                                                    VkEvent event,
+                                                    VkPipelineStageFlags stageMask);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdResetEvent(VkCommandBuffer commandBuffer,
+                                                      VkEvent event,
+                                                      VkPipelineStageFlags stageMask);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdWaitEvents(VkCommandBuffer commandBuffer,
+                                                      uint32_t eventCount,
+                                                      const VkEvent* pEvents,
+                                                      VkPipelineStageFlags srcStageMask,
+                                                      VkPipelineStageFlags dstStageMask,
+                                                      uint32_t memoryBarrierCount,
+                                                      const VkMemoryBarrier* pMemoryBarriers,
+                                                      uint32_t bufferMemoryBarrierCount,
+                                                      const VkBufferMemoryBarrier* pBufferMemoryBarriers,
+                                                      uint32_t imageMemoryBarrierCount,
+                                                      const VkImageMemoryBarrier* pImageMemoryBarriers);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineCache(VkDevice device,
+                                                                const VkPipelineCacheCreateInfo* pCreateInfo,
+                                                                const VkAllocationCallbacks* pAllocator,
+                                                                VkPipelineCache* pPipelineCache);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyPipelineCache(VkDevice device,
+                                                             VkPipelineCache pipelineCache,
+                                                             const VkAllocationCallbacks* pAllocator);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelineCacheData(VkDevice device,
+                                                                 VkPipelineCache pipelineCache,
+                                                                 size_t* pDataSize,
+                                                                 void* pData);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkMergePipelineCaches(VkDevice device,
+                                                                VkPipelineCache dstCache,
+                                                                uint32_t srcCacheCount,
+                                                                const VkPipelineCache* pSrcCaches);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateQueryPool(VkDevice device,
+                                                            const VkQueryPoolCreateInfo* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            VkQueryPool* pQueryPool);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyQueryPool(VkDevice device,
+                                                         VkQueryPool queryPool,
+                                                         const VkAllocationCallbacks* pAllocator);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkResetQueryPool(VkDevice device,
+                                                       VkQueryPool queryPool,
+                                                       uint32_t firstQuery,
+                                                       uint32_t queryCount);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetQueryPoolResults(VkDevice device,
+                                                                VkQueryPool queryPool,
+                                                                uint32_t firstQuery,
+                                                                uint32_t queryCount,
+                                                                size_t dataSize,
+                                                                void* pData,
+                                                                VkDeviceSize stride,
+                                                                VkQueryResultFlags flags);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateEvent(VkDevice device,
+                                                        const VkEventCreateInfo* pCreateInfo,
+                                                        const VkAllocationCallbacks* pAllocator,
+                                                        VkEvent* pEvent);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyEvent(VkDevice device,
+                                                     VkEvent event,
+                                                     const VkAllocationCallbacks* pAllocator);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetEventStatus(VkDevice device, VkEvent event);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkSetEvent(VkDevice device, VkEvent event);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkResetEvent(VkDevice device, VkEvent event);
 VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(VkDevice device, const VkFenceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkFence* pFence);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks* pAllocator);
 VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence);

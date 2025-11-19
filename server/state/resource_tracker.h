@@ -135,6 +135,22 @@ public:
     bool destroy_pipeline(VkPipeline pipeline);
     VkPipeline get_real_pipeline(VkPipeline pipeline) const;
 
+    VkPipelineCache create_pipeline_cache(VkDevice device,
+                                          VkDevice real_device,
+                                          const VkPipelineCacheCreateInfo* info);
+    bool destroy_pipeline_cache(VkPipelineCache cache);
+    VkPipelineCache get_real_pipeline_cache(VkPipelineCache cache) const;
+    VkDevice get_pipeline_cache_real_device(VkPipelineCache cache) const;
+
+    VkQueryPool create_query_pool(VkDevice device,
+                                  VkDevice real_device,
+                                  const VkQueryPoolCreateInfo* info);
+    bool destroy_query_pool(VkQueryPool pool);
+    VkQueryPool get_real_query_pool(VkQueryPool pool) const;
+    VkDevice get_query_pool_real_device(VkQueryPool pool) const;
+    VkQueryType get_query_pool_type(VkQueryPool pool) const;
+    uint32_t get_query_pool_count(VkQueryPool pool) const;
+
 private:
     struct BufferResource {
         VkDevice handle_device;
@@ -281,9 +297,26 @@ private:
     struct PipelineResource {
         VkDevice handle_device;
         VkDevice real_device;
-        VkPipeline handle;
-        VkPipeline real_handle;
-        VkPipelineBindPoint bind_point;
+    VkPipeline handle;
+    VkPipeline real_handle;
+    VkPipelineBindPoint bind_point;
+};
+
+    struct PipelineCacheResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkPipelineCache handle;
+        VkPipelineCache real_handle;
+    };
+
+    struct QueryPoolResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkQueryPool handle;
+        VkQueryPool real_handle;
+        VkQueryType type;
+        uint32_t query_count;
+        VkQueryPipelineStatisticFlags statistics;
     };
 
     template <typename T>
@@ -315,6 +348,8 @@ private:
     std::unordered_map<uint64_t, DescriptorSetResource> descriptor_sets_;
     std::unordered_map<uint64_t, PipelineLayoutResource> pipeline_layouts_;
     std::unordered_map<uint64_t, PipelineResource> pipelines_;
+    std::unordered_map<uint64_t, PipelineCacheResource> pipeline_caches_;
+    std::unordered_map<uint64_t, QueryPoolResource> query_pools_;
     uint64_t next_buffer_handle_;
     uint64_t next_image_handle_;
     uint64_t next_memory_handle_;
@@ -329,6 +364,8 @@ private:
     uint64_t next_pipeline_handle_;
     uint64_t next_render_pass_handle_;
     uint64_t next_framebuffer_handle_;
+    uint64_t next_pipeline_cache_handle_;
+    uint64_t next_query_pool_handle_;
 };
 
 } // namespace venus_plus

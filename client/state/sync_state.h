@@ -21,6 +21,12 @@ struct SemaphoreState {
     uint64_t timeline_value = 0;
 };
 
+struct EventState {
+    VkDevice device = VK_NULL_HANDLE;
+    VkEvent remote_handle = VK_NULL_HANDLE;
+    bool signaled = false;
+};
+
 class SyncState {
 public:
     void add_fence(VkDevice device, VkFence local, VkFence remote, bool signaled);
@@ -30,6 +36,13 @@ public:
     void set_fence_signaled(VkFence fence, bool signaled);
     bool is_fence_signaled(VkFence fence) const;
     void remove_device(VkDevice device);
+
+    void add_event(VkDevice device, VkEvent local, VkEvent remote, bool signaled);
+    void remove_event(VkEvent event);
+    bool has_event(VkEvent event) const;
+    VkEvent get_remote_event(VkEvent event) const;
+    void set_event_signaled(VkEvent event, bool signaled);
+    bool is_event_signaled(VkEvent event) const;
 
     void add_semaphore(VkDevice device,
                        VkSemaphore local,
@@ -55,6 +68,7 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, FenceState> fences_;
     std::unordered_map<uint64_t, SemaphoreState> semaphores_;
+    std::unordered_map<uint64_t, EventState> events_;
 };
 
 extern SyncState g_sync_state;

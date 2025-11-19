@@ -530,6 +530,111 @@ VkPipelineLayout server_state_get_real_pipeline_layout(const ServerState* state,
     return state->resource_tracker.get_real_pipeline_layout(layout);
 }
 
+VkPipelineCache server_state_create_pipeline_cache(ServerState* state,
+                                                   VkDevice device,
+                                                   const VkPipelineCacheCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_pipeline_cache(device, real_device, info);
+}
+
+bool server_state_destroy_pipeline_cache(ServerState* state, VkPipelineCache cache) {
+    return state->resource_tracker.destroy_pipeline_cache(cache);
+}
+
+VkPipelineCache server_state_get_real_pipeline_cache(const ServerState* state,
+                                                     VkPipelineCache cache) {
+    return state->resource_tracker.get_real_pipeline_cache(cache);
+}
+
+VkResult server_state_get_pipeline_cache_data(ServerState* state,
+                                              VkDevice device,
+                                              VkPipelineCache cache,
+                                              size_t* pDataSize,
+                                              void* pData) {
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkPipelineCache real_cache = state->resource_tracker.get_real_pipeline_cache(cache);
+    if (real_device == VK_NULL_HANDLE || real_cache == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return vkGetPipelineCacheData(real_device, real_cache, pDataSize, pData);
+}
+
+VkResult server_state_merge_pipeline_caches(ServerState* state,
+                                            VkDevice device,
+                                            VkPipelineCache dst_cache,
+                                            uint32_t src_count,
+                                            const VkPipelineCache* src_caches) {
+    if (!src_caches || !src_count) {
+        return VK_SUCCESS;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkPipelineCache real_dst = state->resource_tracker.get_real_pipeline_cache(dst_cache);
+    if (real_device == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    std::vector<VkPipelineCache> real_src(src_count);
+    for (uint32_t i = 0; i < src_count; ++i) {
+        real_src[i] = state->resource_tracker.get_real_pipeline_cache(src_caches[i]);
+        if (real_src[i] == VK_NULL_HANDLE) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+    return vkMergePipelineCaches(real_device, real_dst, src_count, real_src.data());
+}
+
+VkQueryPool server_state_create_query_pool(ServerState* state,
+                                           VkDevice device,
+                                           const VkQueryPoolCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_query_pool(device, real_device, info);
+}
+
+bool server_state_destroy_query_pool(ServerState* state, VkQueryPool pool) {
+    return state->resource_tracker.destroy_query_pool(pool);
+}
+
+VkQueryPool server_state_get_real_query_pool(const ServerState* state, VkQueryPool pool) {
+    return state->resource_tracker.get_real_query_pool(pool);
+}
+
+VkDevice server_state_get_query_pool_real_device(const ServerState* state, VkQueryPool pool) {
+    return state->resource_tracker.get_query_pool_real_device(pool);
+}
+
+uint32_t server_state_get_query_pool_count(const ServerState* state, VkQueryPool pool) {
+    return state->resource_tracker.get_query_pool_count(pool);
+}
+
+VkResult server_state_get_query_pool_results(ServerState* state,
+                                             VkDevice device,
+                                             VkQueryPool pool,
+                                             uint32_t first_query,
+                                             uint32_t query_count,
+                                             size_t dataSize,
+                                             void* pData,
+                                             VkDeviceSize stride,
+                                             VkQueryResultFlags flags) {
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkQueryPool real_pool = state->resource_tracker.get_real_query_pool(pool);
+    if (real_device == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return vkGetQueryPoolResults(real_device,
+                                 real_pool,
+                                 first_query,
+                                 query_count,
+                                 dataSize,
+                                 pData,
+                                 stride,
+                                 flags);
+}
+
 VkRenderPass server_state_create_render_pass(ServerState* state,
                                              VkDevice device,
                                              const VkRenderPassCreateInfo* info) {
@@ -899,6 +1004,37 @@ VkResult server_state_wait_semaphores(ServerState* state,
     return VK_SUCCESS;
 }
 
+VkEvent server_state_create_event(ServerState* state,
+                                  VkDevice device,
+                                  const VkEventCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    return state->sync_manager.create_event(device,
+                                            server_state_get_real_device(state, device),
+                                            *info);
+}
+
+bool server_state_destroy_event(ServerState* state, VkEvent event) {
+    return state->sync_manager.destroy_event(event);
+}
+
+VkEvent server_state_get_real_event(const ServerState* state, VkEvent event) {
+    return state->sync_manager.get_real_event(event);
+}
+
+VkResult server_state_get_event_status(ServerState* state, VkEvent event) {
+    return state->sync_manager.get_event_status(event);
+}
+
+VkResult server_state_set_event(ServerState* state, VkEvent event) {
+    return state->sync_manager.set_event(event);
+}
+
+VkResult server_state_reset_event(ServerState* state, VkEvent event) {
+    return state->sync_manager.reset_event(event);
+}
+
 VkResult server_state_queue_submit(ServerState* state,
                                    VkQueue queue,
                                    uint32_t submitCount,
@@ -1170,6 +1306,37 @@ void server_state_bridge_destroy_pipeline_layout(struct ServerState* state, VkPi
 VkPipelineLayout server_state_bridge_get_real_pipeline_layout(const struct ServerState* state,
                                                               VkPipelineLayout layout) {
     return venus_plus::server_state_get_real_pipeline_layout(state, layout);
+}
+
+VkPipelineCache server_state_bridge_create_pipeline_cache(struct ServerState* state,
+                                                          VkDevice device,
+                                                          const VkPipelineCacheCreateInfo* info) {
+    return venus_plus::server_state_create_pipeline_cache(state, device, info);
+}
+
+bool server_state_bridge_destroy_pipeline_cache(struct ServerState* state, VkPipelineCache cache) {
+    return venus_plus::server_state_destroy_pipeline_cache(state, cache);
+}
+
+VkPipelineCache server_state_bridge_get_real_pipeline_cache(const struct ServerState* state,
+                                                            VkPipelineCache cache) {
+    return venus_plus::server_state_get_real_pipeline_cache(state, cache);
+}
+
+VkResult server_state_bridge_get_pipeline_cache_data(struct ServerState* state,
+                                                     VkDevice device,
+                                                     VkPipelineCache cache,
+                                                     size_t* pDataSize,
+                                                     void* pData) {
+    return venus_plus::server_state_get_pipeline_cache_data(state, device, cache, pDataSize, pData);
+}
+
+VkResult server_state_bridge_merge_pipeline_caches(struct ServerState* state,
+                                                   VkDevice device,
+                                                   VkPipelineCache dstCache,
+                                                   uint32_t srcCacheCount,
+                                                   const VkPipelineCache* pSrcCaches) {
+    return venus_plus::server_state_merge_pipeline_caches(state, device, dstCache, srcCacheCount, pSrcCaches);
 }
 
 VkRenderPass server_state_bridge_create_render_pass(struct ServerState* state,
@@ -1548,6 +1715,32 @@ VkResult server_state_bridge_wait_semaphores(struct ServerState* state,
     return venus_plus::server_state_wait_semaphores(state, info, timeout);
 }
 
+VkEvent server_state_bridge_create_event(struct ServerState* state,
+                                         VkDevice device,
+                                         const VkEventCreateInfo* info) {
+    return venus_plus::server_state_create_event(state, device, info);
+}
+
+bool server_state_bridge_destroy_event(struct ServerState* state, VkEvent event) {
+    return venus_plus::server_state_destroy_event(state, event);
+}
+
+VkEvent server_state_bridge_get_real_event(const struct ServerState* state, VkEvent event) {
+    return venus_plus::server_state_get_real_event(state, event);
+}
+
+VkResult server_state_bridge_get_event_status(struct ServerState* state, VkEvent event) {
+    return venus_plus::server_state_get_event_status(state, event);
+}
+
+VkResult server_state_bridge_set_event(struct ServerState* state, VkEvent event) {
+    return venus_plus::server_state_set_event(state, event);
+}
+
+VkResult server_state_bridge_reset_event(struct ServerState* state, VkEvent event) {
+    return venus_plus::server_state_reset_event(state, event);
+}
+
 VkResult server_state_bridge_queue_submit(struct ServerState* state,
                                           VkQueue queue,
                                           uint32_t submitCount,
@@ -1562,6 +1755,44 @@ VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue 
 
 VkResult server_state_bridge_device_wait_idle(struct ServerState* state, VkDevice device) {
     return venus_plus::server_state_device_wait_idle(state, device);
+}
+
+VkQueryPool server_state_bridge_create_query_pool(struct ServerState* state,
+                                                  VkDevice device,
+                                                  const VkQueryPoolCreateInfo* info) {
+    return venus_plus::server_state_create_query_pool(state, device, info);
+}
+
+bool server_state_bridge_destroy_query_pool(struct ServerState* state, VkQueryPool queryPool) {
+    return venus_plus::server_state_destroy_query_pool(state, queryPool);
+}
+
+VkQueryPool server_state_bridge_get_real_query_pool(const struct ServerState* state, VkQueryPool pool) {
+    return venus_plus::server_state_get_real_query_pool(state, pool);
+}
+
+VkDevice server_state_bridge_get_query_pool_real_device(const struct ServerState* state, VkQueryPool pool) {
+    return venus_plus::server_state_get_query_pool_real_device(state, pool);
+}
+
+VkResult server_state_bridge_get_query_pool_results(struct ServerState* state,
+                                                    VkDevice device,
+                                                    VkQueryPool queryPool,
+                                                    uint32_t firstQuery,
+                                                    uint32_t queryCount,
+                                                    size_t dataSize,
+                                                    void* pData,
+                                                    VkDeviceSize stride,
+                                                    VkQueryResultFlags flags) {
+    return venus_plus::server_state_get_query_pool_results(state,
+                                                           device,
+                                                           queryPool,
+                                                           firstQuery,
+                                                           queryCount,
+                                                           dataSize,
+                                                           pData,
+                                                           stride,
+                                                           flags);
 }
 
 } // extern "C"

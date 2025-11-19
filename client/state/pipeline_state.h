@@ -36,6 +36,12 @@ struct DescriptorSetInfo {
 struct PipelineLayoutInfo {
     VkDevice device = VK_NULL_HANDLE;
     VkPipelineLayout remote_handle = VK_NULL_HANDLE;
+    std::vector<VkPushConstantRange> push_constant_ranges;
+};
+
+struct PipelineCacheInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkPipelineCache remote_handle = VK_NULL_HANDLE;
 };
 
 struct PipelineInfo {
@@ -71,9 +77,16 @@ public:
     VkDescriptorSet get_remote_descriptor_set(VkDescriptorSet set) const;
     VkDescriptorPool get_descriptor_set_pool(VkDescriptorSet set) const;
 
-    void add_pipeline_layout(VkDevice device, VkPipelineLayout local, VkPipelineLayout remote);
+    void add_pipeline_layout(VkDevice device,
+                             VkPipelineLayout local,
+                             VkPipelineLayout remote,
+                             const VkPipelineLayoutCreateInfo* info);
     void remove_pipeline_layout(VkPipelineLayout layout);
     VkPipelineLayout get_remote_pipeline_layout(VkPipelineLayout layout) const;
+    bool validate_push_constant_range(VkPipelineLayout layout,
+                                      uint32_t offset,
+                                      uint32_t size,
+                                      VkShaderStageFlags stages) const;
 
     void add_pipeline(VkDevice device,
                       VkPipelineBindPoint bind_point,
@@ -82,6 +95,11 @@ public:
     void remove_pipeline(VkPipeline pipeline);
     VkPipeline get_remote_pipeline(VkPipeline pipeline) const;
     VkPipelineBindPoint get_pipeline_bind_point(VkPipeline pipeline) const;
+
+    void add_pipeline_cache(VkDevice device, VkPipelineCache local, VkPipelineCache remote);
+    void remove_pipeline_cache(VkPipelineCache cache);
+    VkPipelineCache get_remote_pipeline_cache(VkPipelineCache cache) const;
+    VkDevice get_pipeline_cache_device(VkPipelineCache cache) const;
 
     void remove_device_resources(VkDevice device);
 
@@ -98,6 +116,7 @@ private:
     std::unordered_map<uint64_t, DescriptorSetInfo> descriptor_sets_;
     std::unordered_map<uint64_t, PipelineLayoutInfo> pipeline_layouts_;
     std::unordered_map<uint64_t, PipelineInfo> pipelines_;
+    std::unordered_map<uint64_t, PipelineCacheInfo> pipeline_caches_;
 };
 
 extern PipelineState g_pipeline_state;

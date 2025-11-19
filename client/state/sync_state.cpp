@@ -65,6 +65,13 @@ void SyncState::remove_device(VkDevice device) {
             ++it;
         }
     }
+    for (auto it = events_.begin(); it != events_.end();) {
+        if (it->second.device == device) {
+            it = events_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void SyncState::add_semaphore(VkDevice device,
@@ -145,6 +152,51 @@ void SyncState::set_timeline_value(VkSemaphore semaphore, uint64_t value) {
             it->second.timeline_value = value;
         }
     }
+}
+
+void SyncState::add_event(VkDevice device, VkEvent local, VkEvent remote, bool signaled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    EventState state;
+    state.device = device;
+    state.remote_handle = remote;
+    state.signaled = signaled;
+    events_[handle_key(local)] = state;
+}
+
+void SyncState::remove_event(VkEvent event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    events_.erase(handle_key(event));
+}
+
+bool SyncState::has_event(VkEvent event) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return events_.find(handle_key(event)) != events_.end();
+}
+
+VkEvent SyncState::get_remote_event(VkEvent event) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+void SyncState::set_event_signaled(VkEvent event, bool signaled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it != events_.end()) {
+        it->second.signaled = signaled;
+    }
+}
+
+bool SyncState::is_event_signaled(VkEvent event) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return false;
+    }
+    return it->second.signaled;
 }
 
 } // namespace venus_plus

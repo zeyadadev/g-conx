@@ -184,6 +184,45 @@ VkResult server_state_bridge_queue_submit(struct ServerState* state,
                                           VkFence fence);
 VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue queue);
 VkResult server_state_bridge_device_wait_idle(struct ServerState* state, VkDevice device);
+VkPipelineCache server_state_bridge_create_pipeline_cache(struct ServerState* state,
+                                                          VkDevice device,
+                                                          const VkPipelineCacheCreateInfo* info);
+bool server_state_bridge_destroy_pipeline_cache(struct ServerState* state, VkPipelineCache cache);
+VkPipelineCache server_state_bridge_get_real_pipeline_cache(const struct ServerState* state,
+                                                            VkPipelineCache cache);
+VkResult server_state_bridge_get_pipeline_cache_data(struct ServerState* state,
+                                                     VkDevice device,
+                                                     VkPipelineCache cache,
+                                                     size_t* pDataSize,
+                                                     void* pData);
+VkResult server_state_bridge_merge_pipeline_caches(struct ServerState* state,
+                                                   VkDevice device,
+                                                   VkPipelineCache dstCache,
+                                                   uint32_t srcCacheCount,
+                                                   const VkPipelineCache* pSrcCaches);
+VkQueryPool server_state_bridge_create_query_pool(struct ServerState* state,
+                                                  VkDevice device,
+                                                  const VkQueryPoolCreateInfo* info);
+bool server_state_bridge_destroy_query_pool(struct ServerState* state, VkQueryPool queryPool);
+VkQueryPool server_state_bridge_get_real_query_pool(const struct ServerState* state, VkQueryPool pool);
+VkDevice server_state_bridge_get_query_pool_real_device(const struct ServerState* state, VkQueryPool pool);
+VkResult server_state_bridge_get_query_pool_results(struct ServerState* state,
+                                                    VkDevice device,
+                                                    VkQueryPool queryPool,
+                                                    uint32_t firstQuery,
+                                                    uint32_t queryCount,
+                                                    size_t dataSize,
+                                                    void* pData,
+                                                    VkDeviceSize stride,
+                                                    VkQueryResultFlags flags);
+VkEvent server_state_bridge_create_event(struct ServerState* state,
+                                         VkDevice device,
+                                         const VkEventCreateInfo* info);
+bool server_state_bridge_destroy_event(struct ServerState* state, VkEvent event);
+VkEvent server_state_bridge_get_real_event(const struct ServerState* state, VkEvent event);
+VkResult server_state_bridge_get_event_status(struct ServerState* state, VkEvent event);
+VkResult server_state_bridge_set_event(struct ServerState* state, VkEvent event);
+VkResult server_state_bridge_reset_event(struct ServerState* state, VkEvent event);
 
 #ifdef __cplusplus
 }

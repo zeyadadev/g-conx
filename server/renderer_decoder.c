@@ -1132,6 +1132,56 @@ static void server_dispatch_vkDestroyPipelineLayout(struct vn_dispatch_context* 
     }
 }
 
+static void server_dispatch_vkCreatePipelineCache(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkCreatePipelineCache* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreatePipelineCache");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+    if (!args->pPipelineCache || !args->pCreateInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing output pointer or create info");
+        return;
+    }
+    VkPipelineCache cache =
+        server_state_bridge_create_pipeline_cache(state, args->device, args->pCreateInfo);
+    if (cache == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create pipeline cache");
+        return;
+    }
+    *args->pPipelineCache = cache;
+    args->ret = VK_SUCCESS;
+}
+
+static void server_dispatch_vkDestroyPipelineCache(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkDestroyPipelineCache* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyPipelineCache");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->pipelineCache != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_pipeline_cache(state, args->pipelineCache);
+    }
+}
+
+static void server_dispatch_vkGetPipelineCacheData(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkGetPipelineCacheData* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPipelineCacheData");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_get_pipeline_cache_data(state,
+                                                            args->device,
+                                                            args->pipelineCache,
+                                                            args->pDataSize,
+                                                            args->pData);
+}
+
+static void server_dispatch_vkMergePipelineCaches(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkMergePipelineCaches* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkMergePipelineCaches");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_merge_pipeline_caches(state,
+                                                          args->device,
+                                                          args->dstCache,
+                                                          args->srcCacheCount,
+                                                          args->pSrcCaches);
+}
+
 static void server_dispatch_vkCreateRenderPass(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkCreateRenderPass* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateRenderPass");
@@ -1178,6 +1228,63 @@ static void server_dispatch_vkCreateRenderPass2(struct vn_dispatch_context* ctx,
 
     *args->pRenderPass = render_pass;
     VP_LOG_INFO(SERVER, "[Venus Server]   -> Render pass (v2) created: %p", (void*)render_pass);
+}
+
+static void server_dispatch_vkCreateQueryPool(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCreateQueryPool* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateQueryPool");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+    if (!args->pCreateInfo || !args->pQueryPool) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
+        return;
+    }
+    VkQueryPool pool =
+        server_state_bridge_create_query_pool(state, args->device, args->pCreateInfo);
+    if (pool == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create query pool");
+        return;
+    }
+    *args->pQueryPool = pool;
+    args->ret = VK_SUCCESS;
+}
+
+static void server_dispatch_vkDestroyQueryPool(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkDestroyQueryPool* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyQueryPool");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->queryPool != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_query_pool(state, args->queryPool);
+    }
+}
+
+static void server_dispatch_vkResetQueryPool(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkResetQueryPool* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetQueryPool");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    VkDevice real_device =
+        server_state_bridge_get_query_pool_real_device(state, args->queryPool);
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    if (real_device == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown query pool");
+        return;
+    }
+    vkResetQueryPool(real_device, real_pool, args->firstQuery, args->queryCount);
+}
+
+static void server_dispatch_vkGetQueryPoolResults(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkGetQueryPoolResults* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetQueryPoolResults");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_get_query_pool_results(state,
+                                                           args->device,
+                                                           args->queryPool,
+                                                           args->firstQuery,
+                                                           args->queryCount,
+                                                           args->dataSize,
+                                                           args->pData,
+                                                           args->stride,
+                                                           args->flags);
 }
 
 static void server_dispatch_vkDestroyRenderPass(struct vn_dispatch_context* ctx,
@@ -1815,6 +1922,28 @@ static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* 
     free(real_sets);
 }
 
+static void server_dispatch_vkCmdPushConstants(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCmdPushConstants* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushConstants");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdPushConstants")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdPushConstants");
+    VkPipelineLayout real_layout =
+        server_state_bridge_get_real_pipeline_layout(state, args->layout);
+    if (real_cb == VK_NULL_HANDLE || real_layout == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdPushConstants(real_cb,
+                       real_layout,
+                       args->stageFlags,
+                       args->offset,
+                       args->size,
+                       args->pValues);
+}
+
 static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCmdDispatch* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDispatch (%u, %u, %u)",
@@ -1828,6 +1957,43 @@ static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdDispatch(real_cb, args->groupCountX, args->groupCountY, args->groupCountZ);
+}
+
+static void server_dispatch_vkCmdDispatchIndirect(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkCmdDispatchIndirect* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDispatchIndirect");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDispatchIndirect")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDispatchIndirect");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdDispatchIndirect");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDispatchIndirect(real_cb, real_buffer, args->offset);
+}
+
+static void server_dispatch_vkCmdDispatchBase(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdDispatchBase* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDispatchBase");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDispatchBase")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDispatchBase");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDispatchBase(real_cb,
+                      args->baseGroupX,
+                      args->baseGroupY,
+                      args->baseGroupZ,
+                      args->groupCountX,
+                      args->groupCountY,
+                      args->groupCountZ);
 }
 
 static void server_dispatch_vkCmdSetViewport(struct vn_dispatch_context* ctx,
@@ -1963,6 +2129,219 @@ static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx
     free(image_barriers);
 }
 
+static void server_dispatch_vkCmdResetQueryPool(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdResetQueryPool* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdResetQueryPool");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdResetQueryPool")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdResetQueryPool");
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    if (real_cb == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdResetQueryPool(real_cb, real_pool, args->firstQuery, args->queryCount);
+}
+
+static void server_dispatch_vkCmdBeginQuery(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdBeginQuery* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBeginQuery");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBeginQuery")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBeginQuery");
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    if (real_cb == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdBeginQuery(real_cb, real_pool, args->query, args->flags);
+}
+
+static void server_dispatch_vkCmdEndQuery(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCmdEndQuery* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdEndQuery");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdEndQuery")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdEndQuery");
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    if (real_cb == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdEndQuery(real_cb, real_pool, args->query);
+}
+
+static void server_dispatch_vkCmdWriteTimestamp(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdWriteTimestamp* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdWriteTimestamp");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdWriteTimestamp")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdWriteTimestamp");
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    if (real_cb == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdWriteTimestamp(real_cb, args->pipelineStage, real_pool, args->query);
+}
+
+static void server_dispatch_vkCmdCopyQueryPoolResults(struct vn_dispatch_context* ctx,
+                                                      struct vn_command_vkCmdCopyQueryPoolResults* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdCopyQueryPoolResults");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdCopyQueryPoolResults")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdCopyQueryPoolResults");
+    VkQueryPool real_pool = server_state_bridge_get_real_query_pool(state, args->queryPool);
+    VkBuffer real_buffer = get_real_buffer(state, args->dstBuffer, "vkCmdCopyQueryPoolResults");
+    if (real_cb == VK_NULL_HANDLE || real_pool == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdCopyQueryPoolResults(real_cb,
+                              real_pool,
+                              args->firstQuery,
+                              args->queryCount,
+                              real_buffer,
+                              args->dstOffset,
+                              args->stride,
+                              args->flags);
+}
+
+static void server_dispatch_vkCmdSetEvent(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCmdSetEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetEvent")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetEvent");
+    VkEvent real_event = server_state_bridge_get_real_event(state, args->event);
+    if (real_cb == VK_NULL_HANDLE || real_event == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdSetEvent(real_cb, real_event, args->stageMask);
+}
+
+static void server_dispatch_vkCmdResetEvent(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdResetEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdResetEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdResetEvent")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdResetEvent");
+    VkEvent real_event = server_state_bridge_get_real_event(state, args->event);
+    if (real_cb == VK_NULL_HANDLE || real_event == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdResetEvent(real_cb, real_event, args->stageMask);
+}
+
+static void server_dispatch_vkCmdWaitEvents(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCmdWaitEvents* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdWaitEvents");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdWaitEvents")) {
+        return;
+    }
+
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdWaitEvents");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+
+    uint32_t eventCount = args->eventCount;
+    VkEvent* real_events = NULL;
+    if (eventCount > 0) {
+        real_events = calloc(eventCount, sizeof(VkEvent));
+        if (!real_events) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for events");
+            return;
+        }
+        for (uint32_t i = 0; i < eventCount; ++i) {
+            real_events[i] = server_state_bridge_get_real_event(state, args->pEvents[i]);
+            if (real_events[i] == VK_NULL_HANDLE) {
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown event in vkCmdWaitEvents");
+                free(real_events);
+                return;
+            }
+        }
+    }
+
+    VkBufferMemoryBarrier* buffer_barriers = NULL;
+    if (args->bufferMemoryBarrierCount > 0) {
+        buffer_barriers =
+            calloc(args->bufferMemoryBarrierCount, sizeof(VkBufferMemoryBarrier));
+        if (!buffer_barriers) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for buffer barriers");
+            free(real_events);
+            return;
+        }
+        for (uint32_t i = 0; i < args->bufferMemoryBarrierCount; ++i) {
+            buffer_barriers[i] = args->pBufferMemoryBarriers[i];
+            buffer_barriers[i].buffer =
+                get_real_buffer(state, args->pBufferMemoryBarriers[i].buffer, "vkCmdWaitEvents");
+            if (buffer_barriers[i].buffer == VK_NULL_HANDLE) {
+                free(buffer_barriers);
+                free(real_events);
+                return;
+            }
+        }
+    }
+
+    VkImageMemoryBarrier* image_barriers = NULL;
+    if (args->imageMemoryBarrierCount > 0) {
+        image_barriers =
+            calloc(args->imageMemoryBarrierCount, sizeof(VkImageMemoryBarrier));
+        if (!image_barriers) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for image barriers");
+            free(buffer_barriers);
+            free(real_events);
+            return;
+        }
+        for (uint32_t i = 0; i < args->imageMemoryBarrierCount; ++i) {
+            image_barriers[i] = args->pImageMemoryBarriers[i];
+            image_barriers[i].image =
+                get_real_image(state, args->pImageMemoryBarriers[i].image, "vkCmdWaitEvents");
+            if (image_barriers[i].image == VK_NULL_HANDLE) {
+                free(image_barriers);
+                free(buffer_barriers);
+                free(real_events);
+                return;
+            }
+        }
+    }
+
+    vkCmdWaitEvents(real_cb,
+                    eventCount,
+                    real_events,
+                    args->srcStageMask,
+                    args->dstStageMask,
+                    args->memoryBarrierCount,
+                    args->pMemoryBarriers,
+                    args->bufferMemoryBarrierCount,
+                    buffer_barriers,
+                    args->imageMemoryBarrierCount,
+                    image_barriers);
+
+    free(real_events);
+    free(buffer_barriers);
+    free(image_barriers);
+}
+
 static void server_dispatch_vkCreateFence(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkCreateFence* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateFence");
@@ -2059,6 +2438,52 @@ static void server_dispatch_vkWaitSemaphores(struct vn_dispatch_context* ctx,
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkWaitSemaphores");
     struct ServerState* state = (struct ServerState*)ctx->data;
     args->ret = server_state_bridge_wait_semaphores(state, args->pWaitInfo, args->timeout);
+}
+
+static void server_dispatch_vkCreateEvent(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkCreateEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+    if (!args->pEvent || !args->pCreateInfo) {
+        return;
+    }
+    VkEvent event = server_state_bridge_create_event(state, args->device, args->pCreateInfo);
+    if (event == VK_NULL_HANDLE) {
+        return;
+    }
+    *args->pEvent = event;
+    args->ret = VK_SUCCESS;
+}
+
+static void server_dispatch_vkDestroyEvent(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkDestroyEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->event != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_event(state, args->event);
+    }
+}
+
+static void server_dispatch_vkGetEventStatus(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkGetEventStatus* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetEventStatus");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_get_event_status(state, args->event);
+}
+
+static void server_dispatch_vkSetEvent(struct vn_dispatch_context* ctx,
+                                       struct vn_command_vkSetEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkSetEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_set_event(state, args->event);
+}
+
+static void server_dispatch_vkResetEvent(struct vn_dispatch_context* ctx,
+                                         struct vn_command_vkResetEvent* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkResetEvent");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_reset_event(state, args->event);
 }
 
 static void server_dispatch_vkQueueSubmit(struct vn_dispatch_context* ctx,
@@ -2161,6 +2586,10 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkUpdateDescriptorSets = server_dispatch_vkUpdateDescriptorSets;
     renderer->ctx.dispatch_vkCreatePipelineLayout = server_dispatch_vkCreatePipelineLayout;
     renderer->ctx.dispatch_vkDestroyPipelineLayout = server_dispatch_vkDestroyPipelineLayout;
+    renderer->ctx.dispatch_vkCreatePipelineCache = server_dispatch_vkCreatePipelineCache;
+    renderer->ctx.dispatch_vkDestroyPipelineCache = server_dispatch_vkDestroyPipelineCache;
+    renderer->ctx.dispatch_vkGetPipelineCacheData = server_dispatch_vkGetPipelineCacheData;
+    renderer->ctx.dispatch_vkMergePipelineCaches = server_dispatch_vkMergePipelineCaches;
     renderer->ctx.dispatch_vkCreateRenderPass = server_dispatch_vkCreateRenderPass;
     renderer->ctx.dispatch_vkCreateRenderPass2 = server_dispatch_vkCreateRenderPass2;
     renderer->ctx.dispatch_vkDestroyRenderPass = server_dispatch_vkDestroyRenderPass;
@@ -2190,11 +2619,22 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdBindPipeline = server_dispatch_vkCmdBindPipeline;
     renderer->ctx.dispatch_vkCmdBindVertexBuffers = server_dispatch_vkCmdBindVertexBuffers;
     renderer->ctx.dispatch_vkCmdBindDescriptorSets = server_dispatch_vkCmdBindDescriptorSets;
+    renderer->ctx.dispatch_vkCmdPushConstants = server_dispatch_vkCmdPushConstants;
     renderer->ctx.dispatch_vkCmdDispatch = server_dispatch_vkCmdDispatch;
+    renderer->ctx.dispatch_vkCmdDispatchIndirect = server_dispatch_vkCmdDispatchIndirect;
+    renderer->ctx.dispatch_vkCmdDispatchBase = server_dispatch_vkCmdDispatchBase;
     renderer->ctx.dispatch_vkCmdSetViewport = server_dispatch_vkCmdSetViewport;
     renderer->ctx.dispatch_vkCmdSetScissor = server_dispatch_vkCmdSetScissor;
     renderer->ctx.dispatch_vkCmdDraw = server_dispatch_vkCmdDraw;
     renderer->ctx.dispatch_vkCmdPipelineBarrier = server_dispatch_vkCmdPipelineBarrier;
+    renderer->ctx.dispatch_vkCmdResetQueryPool = server_dispatch_vkCmdResetQueryPool;
+    renderer->ctx.dispatch_vkCmdBeginQuery = server_dispatch_vkCmdBeginQuery;
+    renderer->ctx.dispatch_vkCmdEndQuery = server_dispatch_vkCmdEndQuery;
+    renderer->ctx.dispatch_vkCmdWriteTimestamp = server_dispatch_vkCmdWriteTimestamp;
+    renderer->ctx.dispatch_vkCmdCopyQueryPoolResults = server_dispatch_vkCmdCopyQueryPoolResults;
+    renderer->ctx.dispatch_vkCmdSetEvent = server_dispatch_vkCmdSetEvent;
+    renderer->ctx.dispatch_vkCmdResetEvent = server_dispatch_vkCmdResetEvent;
+    renderer->ctx.dispatch_vkCmdWaitEvents = server_dispatch_vkCmdWaitEvents;
     renderer->ctx.dispatch_vkCreateFence = server_dispatch_vkCreateFence;
     renderer->ctx.dispatch_vkDestroyFence = server_dispatch_vkDestroyFence;
     renderer->ctx.dispatch_vkGetFenceStatus = server_dispatch_vkGetFenceStatus;
@@ -2205,9 +2645,18 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetSemaphoreCounterValue = server_dispatch_vkGetSemaphoreCounterValue;
     renderer->ctx.dispatch_vkSignalSemaphore = server_dispatch_vkSignalSemaphore;
     renderer->ctx.dispatch_vkWaitSemaphores = server_dispatch_vkWaitSemaphores;
+    renderer->ctx.dispatch_vkCreateEvent = server_dispatch_vkCreateEvent;
+    renderer->ctx.dispatch_vkDestroyEvent = server_dispatch_vkDestroyEvent;
+    renderer->ctx.dispatch_vkGetEventStatus = server_dispatch_vkGetEventStatus;
+    renderer->ctx.dispatch_vkSetEvent = server_dispatch_vkSetEvent;
+    renderer->ctx.dispatch_vkResetEvent = server_dispatch_vkResetEvent;
     renderer->ctx.dispatch_vkQueueSubmit = server_dispatch_vkQueueSubmit;
     renderer->ctx.dispatch_vkQueueWaitIdle = server_dispatch_vkQueueWaitIdle;
     renderer->ctx.dispatch_vkDeviceWaitIdle = server_dispatch_vkDeviceWaitIdle;
+    renderer->ctx.dispatch_vkCreateQueryPool = server_dispatch_vkCreateQueryPool;
+    renderer->ctx.dispatch_vkDestroyQueryPool = server_dispatch_vkDestroyQueryPool;
+    renderer->ctx.dispatch_vkResetQueryPool = server_dispatch_vkResetQueryPool;
+    renderer->ctx.dispatch_vkGetQueryPoolResults = server_dispatch_vkGetQueryPoolResults;
 
     return renderer;
 }

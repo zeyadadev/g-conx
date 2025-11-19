@@ -41,6 +41,16 @@ public:
     VkResult wait_timeline_value(VkSemaphore semaphore, uint64_t value);
     VkResult signal_timeline_value(VkSemaphore semaphore, uint64_t value);
 
+    VkEvent create_event(VkDevice device,
+                         VkDevice real_device,
+                         const VkEventCreateInfo& info);
+    bool destroy_event(VkEvent event);
+    VkEvent get_real_event(VkEvent event) const;
+    VkDevice get_event_real_device(VkEvent event) const;
+    VkResult get_event_status(VkEvent event);
+    VkResult set_event(VkEvent event);
+    VkResult reset_event(VkEvent event);
+
 private:
     template <typename T>
     static uint64_t handle_key(T handle) {
@@ -65,10 +75,19 @@ private:
         uint64_t timeline_value = 0;
     };
 
+    struct EventEntry {
+        VkDevice device = VK_NULL_HANDLE;
+        VkDevice real_device = VK_NULL_HANDLE;
+        VkEvent real_event = VK_NULL_HANDLE;
+        bool signaled = false;
+    };
+
     std::unordered_map<uint64_t, FenceEntry> fences_;
     std::unordered_map<uint64_t, SemaphoreEntry> semaphores_;
+    std::unordered_map<uint64_t, EventEntry> events_;
     uint64_t next_fence_handle_;
     uint64_t next_semaphore_handle_;
+    uint64_t next_event_handle_;
 };
 
 } // namespace venus_plus

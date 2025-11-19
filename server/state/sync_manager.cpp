@@ -7,7 +7,8 @@ namespace venus_plus {
 
 SyncManager::SyncManager()
     : next_fence_handle_(0x80000000ull),
-      next_semaphore_handle_(0x90000000ull) {}
+      next_semaphore_handle_(0x90000000ull),
+      next_event_handle_(0xa0000000ull) {}
 
 VkFence SyncManager::create_fence(VkDevice device,
                                   VkDevice real_device,
@@ -167,6 +168,16 @@ void SyncManager::remove_device(VkDevice device) {
             ++it;
         }
     }
+    for (auto it = events_.begin(); it != events_.end();) {
+        if (it->second.device == device) {
+            if (it->second.real_event != VK_NULL_HANDLE) {
+                vkDestroyEvent(it->second.real_device, it->second.real_event, nullptr);
+            }
+            it = events_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 VkSemaphore SyncManager::create_semaphore(VkDevice device,
@@ -294,6 +305,98 @@ VkResult SyncManager::signal_timeline_value(VkSemaphore semaphore, uint64_t valu
     }
     it->second.timeline_value = std::max(it->second.timeline_value, value);
     return VK_SUCCESS;
+}
+
+VkEvent SyncManager::create_event(VkDevice device,
+                                  VkDevice real_device,
+                                  const VkEventCreateInfo& info) {
+    VkEvent real_event = VK_NULL_HANDLE;
+    VkResult result = vkCreateEvent(real_device, &info, nullptr, &real_event);
+    if (result != VK_SUCCESS) {
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkEvent handle = reinterpret_cast<VkEvent>(next_event_handle_++);
+    EventEntry entry;
+    entry.device = device;
+    entry.real_device = real_device;
+    entry.real_event = real_event;
+    entry.signaled = false;
+    events_[handle_key(handle)] = entry;
+    return handle;
+}
+
+bool SyncManager::destroy_event(VkEvent event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return false;
+    }
+    if (it->second.real_event != VK_NULL_HANDLE) {
+        vkDestroyEvent(it->second.real_device, it->second.real_event, nullptr);
+    }
+    events_.erase(it);
+    return true;
+}
+
+VkEvent SyncManager::get_real_event(VkEvent event) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_event;
+}
+
+VkDevice SyncManager::get_event_real_device(VkEvent event) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_device;
+}
+
+VkResult SyncManager::get_event_status(VkEvent event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult result = vkGetEventStatus(it->second.real_device, it->second.real_event);
+    if (result == VK_EVENT_SET) {
+        it->second.signaled = true;
+    } else if (result == VK_EVENT_RESET) {
+        it->second.signaled = false;
+    }
+    return result;
+}
+
+VkResult SyncManager::set_event(VkEvent event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult result = vkSetEvent(it->second.real_device, it->second.real_event);
+    if (result == VK_SUCCESS) {
+        it->second.signaled = true;
+    }
+    return result;
+}
+
+VkResult SyncManager::reset_event(VkEvent event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = events_.find(handle_key(event));
+    if (it == events_.end()) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult result = vkResetEvent(it->second.real_device, it->second.real_event);
+    if (result == VK_SUCCESS) {
+        it->second.signaled = false;
+    }
+    return result;
 }
 
 } // namespace venus_plus
