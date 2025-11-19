@@ -21,6 +21,16 @@ VkDevice server_state_bridge_get_real_device(const struct ServerState* state, Vk
 VkQueue server_state_bridge_get_real_queue(const struct ServerState* state, VkQueue queue);
 VkBuffer server_state_bridge_get_real_buffer(const struct ServerState* state, VkBuffer buffer);
 VkImage server_state_bridge_get_real_image(const struct ServerState* state, VkImage image);
+VkImageView server_state_bridge_create_image_view(struct ServerState* state,
+                                                  VkDevice device,
+                                                  const VkImageViewCreateInfo* info);
+bool server_state_bridge_destroy_image_view(struct ServerState* state, VkImageView view);
+VkImageView server_state_bridge_get_real_image_view(const struct ServerState* state, VkImageView view);
+VkBufferView server_state_bridge_create_buffer_view(struct ServerState* state,
+                                                    VkDevice device,
+                                                    const VkBufferViewCreateInfo* info);
+bool server_state_bridge_destroy_buffer_view(struct ServerState* state, VkBufferView view);
+VkBufferView server_state_bridge_get_real_buffer_view(const struct ServerState* state, VkBufferView view);
 VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* state, VkDeviceMemory memory);
 VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
                                                             VkCommandBuffer commandBuffer);
@@ -130,6 +140,11 @@ VkResult server_state_bridge_wait_for_fences(struct ServerState* state,
                                              const VkFence* pFences,
                                              VkBool32 waitAll,
                                              uint64_t timeout);
+VkSampler server_state_bridge_create_sampler(struct ServerState* state,
+                                             VkDevice device,
+                                             const VkSamplerCreateInfo* info);
+bool server_state_bridge_destroy_sampler(struct ServerState* state, VkSampler sampler);
+VkSampler server_state_bridge_get_real_sampler(const struct ServerState* state, VkSampler sampler);
 VkSemaphore server_state_bridge_create_semaphore(struct ServerState* state,
                                                  VkDevice device,
                                                  const VkSemaphoreCreateInfo* info);

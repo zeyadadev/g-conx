@@ -98,9 +98,48 @@ static void server_dispatch_vkEnumerateInstanceExtensionProperties(
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateInstanceExtensionProperties");
     (void)ctx;
     args->ret = VK_SUCCESS;
-    if (args->pPropertyCount) {
-        *args->pPropertyCount = 0;
-        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning 0 extensions");
+
+    if (!args->pPropertyCount) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPropertyCount is NULL");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkEnumerateInstanceExtensionProperties(
+        args->pLayerName, args->pPropertyCount, args->pProperties);
+    if (args->ret == VK_SUCCESS || args->ret == VK_INCOMPLETE) {
+        VP_LOG_INFO(SERVER,
+                    "[Venus Server]   -> Returned %u instance extensions%s",
+                    args->pPropertyCount ? *args->pPropertyCount : 0,
+                    args->ret == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "");
+    } else if (args->ret == VK_ERROR_LAYER_NOT_PRESENT) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Requested layer not present");
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkEnumerateInstanceExtensionProperties failed: %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkEnumerateInstanceLayerProperties(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkEnumerateInstanceLayerProperties* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateInstanceLayerProperties");
+    (void)ctx;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pPropertyCount) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPropertyCount is NULL");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkEnumerateInstanceLayerProperties(args->pPropertyCount, args->pProperties);
+    if (args->ret == VK_SUCCESS || args->ret == VK_INCOMPLETE) {
+        VP_LOG_INFO(SERVER,
+                    "[Venus Server]   -> Returned %u instance layers%s",
+                    args->pPropertyCount ? *args->pPropertyCount : 0,
+                    args->ret == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "");
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkEnumerateInstanceLayerProperties failed: %d", args->ret);
     }
 }
 
@@ -237,6 +276,214 @@ static void server_dispatch_vkGetPhysicalDeviceFormatProperties(
     }
     vkGetPhysicalDeviceFormatProperties(real_device, args->format, args->pFormatProperties);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real format properties");
+}
+
+static void server_dispatch_vkGetPhysicalDeviceImageFormatProperties(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceImageFormatProperties* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceImageFormatProperties");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pImageFormatProperties) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pImageFormatProperties is NULL");
+        args->ret = VK_ERROR_FORMAT_NOT_SUPPORTED;
+        return;
+    }
+
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkGetPhysicalDeviceImageFormatProperties(real_device,
+                                                         args->format,
+                                                         args->type,
+                                                         args->tiling,
+                                                         args->usage,
+                                                         args->flags,
+                                                         args->pImageFormatProperties);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> vkGetPhysicalDeviceImageFormatProperties returned %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkGetPhysicalDeviceImageFormatProperties2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceImageFormatProperties2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceImageFormatProperties2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pImageFormatInfo || !args->pImageFormatProperties) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pImageFormatInfo/pImageFormatProperties is NULL");
+        args->ret = VK_ERROR_FORMAT_NOT_SUPPORTED;
+        return;
+    }
+
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkGetPhysicalDeviceImageFormatProperties2(real_device,
+                                                          args->pImageFormatInfo,
+                                                          args->pImageFormatProperties);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> vkGetPhysicalDeviceImageFormatProperties2 returned %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkGetPhysicalDeviceProperties2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceProperties2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceProperties2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pProperties) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pProperties is NULL");
+        return;
+    }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        return;
+    }
+    vkGetPhysicalDeviceProperties2(real_device, args->pProperties);
+}
+
+static void server_dispatch_vkGetPhysicalDeviceFeatures2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceFeatures2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceFeatures2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pFeatures) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pFeatures is NULL");
+        return;
+    }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        return;
+    }
+    vkGetPhysicalDeviceFeatures2(real_device, args->pFeatures);
+}
+
+static void server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceQueueFamilyProperties2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceQueueFamilyProperties2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pQueueFamilyPropertyCount) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pQueueFamilyPropertyCount is NULL");
+        return;
+    }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        return;
+    }
+    vkGetPhysicalDeviceQueueFamilyProperties2(real_device,
+                                              args->pQueueFamilyPropertyCount,
+                                              args->pQueueFamilyProperties);
+}
+
+static void server_dispatch_vkGetPhysicalDeviceMemoryProperties2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceMemoryProperties2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceMemoryProperties2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pMemoryProperties) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pMemoryProperties is NULL");
+        return;
+    }
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        return;
+    }
+    vkGetPhysicalDeviceMemoryProperties2(real_device, args->pMemoryProperties);
+}
+
+static void server_dispatch_vkEnumerateDeviceExtensionProperties(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkEnumerateDeviceExtensionProperties* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateDeviceExtensionProperties");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pPropertyCount) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPropertyCount is NULL");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    if (args->pLayerName) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Layer request unsupported: %s", args->pLayerName);
+        args->ret = VK_ERROR_LAYER_NOT_PRESENT;
+        return;
+    }
+
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkEnumerateDeviceExtensionProperties(
+        real_device, args->pLayerName, args->pPropertyCount, args->pProperties);
+    if (args->ret == VK_SUCCESS || args->ret == VK_INCOMPLETE) {
+        VP_LOG_INFO(SERVER,
+                    "[Venus Server]   -> Returned %u extensions%s",
+                    args->pPropertyCount ? *args->pPropertyCount : 0,
+                    args->ret == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "");
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkEnumerateDeviceExtensionProperties failed: %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkEnumerateDeviceLayerProperties(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkEnumerateDeviceLayerProperties* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumerateDeviceLayerProperties");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pPropertyCount) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPropertyCount is NULL");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    args->ret = vkEnumerateDeviceLayerProperties(
+        real_device, args->pPropertyCount, args->pProperties);
+    if (args->ret == VK_SUCCESS || args->ret == VK_INCOMPLETE) {
+        VP_LOG_INFO(SERVER,
+                    "[Venus Server]   -> Returned %u layers%s",
+                    args->pPropertyCount ? *args->pPropertyCount : 0,
+                    args->ret == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "");
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkEnumerateDeviceLayerProperties failed: %d", args->ret);
+    }
 }
 
 // Phase 3: Device creation/destruction handlers
@@ -462,6 +709,117 @@ static void server_dispatch_vkDestroyImage(struct vn_dispatch_context* ctx,
         VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image not found");
     } else {
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Image destroyed");
+    }
+}
+
+static void server_dispatch_vkCreateImageView(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCreateImageView* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateImageView");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pView || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pView or pCreateInfo is NULL");
+        return;
+    }
+
+    VkImageView handle = server_state_bridge_create_image_view(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create image view");
+        return;
+    }
+
+    *args->pView = handle;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created image view handle: %p", (void*)handle);
+}
+
+static void server_dispatch_vkDestroyImageView(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkDestroyImageView* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyImageView (view: %p)", (void*)args->imageView);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->imageView) {
+        return;
+    }
+    if (!server_state_bridge_destroy_image_view(state, args->imageView)) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image view not found");
+    } else {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Image view destroyed");
+    }
+}
+
+static void server_dispatch_vkCreateBufferView(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCreateBufferView* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateBufferView");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pView || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pView or pCreateInfo is NULL");
+        return;
+    }
+
+    VkBufferView handle = server_state_bridge_create_buffer_view(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create buffer view");
+        return;
+    }
+
+    *args->pView = handle;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created buffer view handle: %p", (void*)handle);
+}
+
+static void server_dispatch_vkDestroyBufferView(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkDestroyBufferView* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyBufferView (view: %p)", (void*)args->bufferView);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->bufferView) {
+        return;
+    }
+    if (!server_state_bridge_destroy_buffer_view(state, args->bufferView)) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Buffer view not found");
+    } else {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Buffer view destroyed");
+    }
+}
+
+static void server_dispatch_vkCreateSampler(struct vn_dispatch_context* ctx,
+                                            struct vn_command_vkCreateSampler* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateSampler");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pSampler || !args->pCreateInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pSampler or pCreateInfo is NULL");
+        return;
+    }
+
+    VkSampler handle = server_state_bridge_create_sampler(state, args->device, args->pCreateInfo);
+    if (handle == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create sampler");
+        return;
+    }
+
+    *args->pSampler = handle;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created sampler handle: %p", (void*)handle);
+}
+
+static void server_dispatch_vkDestroySampler(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkDestroySampler* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroySampler (sampler: %p)", (void*)args->sampler);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->sampler) {
+        return;
+    }
+    if (!server_state_bridge_destroy_sampler(state, args->sampler)) {
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Sampler not found");
+    } else {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Sampler destroyed");
     }
 }
 
@@ -1485,6 +1843,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkEnumerateInstanceVersion = server_dispatch_vkEnumerateInstanceVersion;
     renderer->ctx.dispatch_vkEnumerateInstanceExtensionProperties =
         server_dispatch_vkEnumerateInstanceExtensionProperties;
+    renderer->ctx.dispatch_vkEnumerateInstanceLayerProperties = server_dispatch_vkEnumerateInstanceLayerProperties;
     renderer->ctx.dispatch_vkEnumeratePhysicalDevices = server_dispatch_vkEnumeratePhysicalDevices;
 
     // Phase 3 handlers: Physical device queries
@@ -1493,6 +1852,14 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetPhysicalDeviceQueueFamilyProperties = server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties;
     renderer->ctx.dispatch_vkGetPhysicalDeviceMemoryProperties = server_dispatch_vkGetPhysicalDeviceMemoryProperties;
     renderer->ctx.dispatch_vkGetPhysicalDeviceFormatProperties = server_dispatch_vkGetPhysicalDeviceFormatProperties;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceImageFormatProperties = server_dispatch_vkGetPhysicalDeviceImageFormatProperties;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceImageFormatProperties2 = server_dispatch_vkGetPhysicalDeviceImageFormatProperties2;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceProperties2 = server_dispatch_vkGetPhysicalDeviceProperties2;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceFeatures2 = server_dispatch_vkGetPhysicalDeviceFeatures2;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceQueueFamilyProperties2 = server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties2;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceMemoryProperties2 = server_dispatch_vkGetPhysicalDeviceMemoryProperties2;
+    renderer->ctx.dispatch_vkEnumerateDeviceExtensionProperties = server_dispatch_vkEnumerateDeviceExtensionProperties;
+    renderer->ctx.dispatch_vkEnumerateDeviceLayerProperties = server_dispatch_vkEnumerateDeviceLayerProperties;
 
     // Phase 3 handlers: Device management
     renderer->ctx.dispatch_vkCreateDevice = server_dispatch_vkCreateDevice;
@@ -1511,6 +1878,12 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetImageMemoryRequirements = server_dispatch_vkGetImageMemoryRequirements;
     renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
     renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
+    renderer->ctx.dispatch_vkCreateImageView = server_dispatch_vkCreateImageView;
+    renderer->ctx.dispatch_vkDestroyImageView = server_dispatch_vkDestroyImageView;
+    renderer->ctx.dispatch_vkCreateBufferView = server_dispatch_vkCreateBufferView;
+    renderer->ctx.dispatch_vkDestroyBufferView = server_dispatch_vkDestroyBufferView;
+    renderer->ctx.dispatch_vkCreateSampler = server_dispatch_vkCreateSampler;
+    renderer->ctx.dispatch_vkDestroySampler = server_dispatch_vkDestroySampler;
     renderer->ctx.dispatch_vkCreateShaderModule = server_dispatch_vkCreateShaderModule;
     renderer->ctx.dispatch_vkDestroyShaderModule = server_dispatch_vkDestroyShaderModule;
     renderer->ctx.dispatch_vkCreateDescriptorSetLayout = server_dispatch_vkCreateDescriptorSetLayout;

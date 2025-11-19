@@ -28,6 +28,27 @@ public:
     bool get_image_requirements(VkImage image, VkMemoryRequirements* requirements);
     bool get_image_subresource_layout(VkImage image, const VkImageSubresource& subresource, VkSubresourceLayout* layout) const;
     VkImage get_real_image(VkImage image) const;
+    VkImageView create_image_view(VkDevice client_device,
+                                  VkDevice real_device,
+                                  const VkImageViewCreateInfo& info,
+                                  VkImage client_image,
+                                  VkImage real_image);
+    bool destroy_image_view(VkImageView view);
+    VkImageView get_real_image_view(VkImageView view) const;
+
+    VkBufferView create_buffer_view(VkDevice client_device,
+                                    VkDevice real_device,
+                                    const VkBufferViewCreateInfo& info,
+                                    VkBuffer client_buffer,
+                                    VkBuffer real_buffer);
+    bool destroy_buffer_view(VkBufferView view);
+    VkBufferView get_real_buffer_view(VkBufferView view) const;
+
+    VkSampler create_sampler(VkDevice client_device,
+                             VkDevice real_device,
+                             const VkSamplerCreateInfo& info);
+    bool destroy_sampler(VkSampler sampler);
+    VkSampler get_real_sampler(VkSampler sampler) const;
 
     VkDeviceMemory allocate_memory(VkDevice client_device,
                                    VkDevice real_device,
@@ -123,6 +144,34 @@ private:
         bool requirements_valid = false;
     };
 
+    struct ImageViewResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkImageView handle;
+        VkImageView real_handle;
+        VkImage image;
+        VkImage real_image;
+    };
+
+    struct BufferViewResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkBufferView handle;
+        VkBufferView real_handle;
+        VkBuffer buffer;
+        VkBuffer real_buffer;
+        VkFormat format;
+        VkDeviceSize offset;
+        VkDeviceSize range;
+    };
+
+    struct SamplerResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkSampler handle;
+        VkSampler real_handle;
+    };
+
     struct BufferBinding {
         VkBuffer buffer;
         VkDeviceSize offset;
@@ -211,6 +260,9 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, BufferResource> buffers_;
     std::unordered_map<uint64_t, ImageResource> images_;
+    std::unordered_map<uint64_t, ImageViewResource> image_views_;
+    std::unordered_map<uint64_t, BufferViewResource> buffer_views_;
+    std::unordered_map<uint64_t, SamplerResource> samplers_;
     std::unordered_map<uint64_t, MemoryResource> memories_;
     std::unordered_map<uint64_t, ShaderModuleResource> shader_modules_;
     std::unordered_map<uint64_t, DescriptorSetLayoutResource> descriptor_set_layouts_;
@@ -221,6 +273,9 @@ private:
     uint64_t next_buffer_handle_;
     uint64_t next_image_handle_;
     uint64_t next_memory_handle_;
+    uint64_t next_image_view_handle_;
+    uint64_t next_buffer_view_handle_;
+    uint64_t next_sampler_handle_;
     uint64_t next_shader_module_handle_;
     uint64_t next_descriptor_set_layout_handle_;
     uint64_t next_descriptor_pool_handle_;

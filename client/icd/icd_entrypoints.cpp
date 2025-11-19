@@ -121,6 +121,45 @@ static bool check_payload_size(size_t payload_size) {
     return true;
 }
 
+static VkPhysicalDevice get_remote_physical_device_handle(VkPhysicalDevice physicalDevice,
+                                                          const char* func_name) {
+    InstanceState* state = g_instance_state.get_instance_by_physical_device(physicalDevice);
+    if (!state) {
+        ICD_LOG_ERROR() << "[Client ICD] " << func_name << " called with unknown physical device (no instance state)\n";
+        return VK_NULL_HANDLE;
+    }
+    for (const auto& entry : state->physical_devices) {
+        if (entry.local_handle == physicalDevice) {
+            return entry.remote_handle;
+        }
+    }
+    ICD_LOG_ERROR() << "[Client ICD] " << func_name << " unable to find remote handle for " << physicalDevice << "\n";
+    return VK_NULL_HANDLE;
+}
+
+static bool should_filter_device_extension(const VkExtensionProperties& prop) {
+    const char* name = prop.extensionName;
+    if (!name || name[0] == '\0') {
+        return false;
+    }
+
+    static constexpr const char* kUnsupportedPrefixes[] = {
+        "VK_KHR_video",
+        "VK_STD_vulkan_video",
+        "VK_EXT_video",
+        "VK_NV_video",
+        "VK_AMD_video",
+    };
+
+    for (const char* prefix : kUnsupportedPrefixes) {
+        const size_t prefix_len = std::strlen(prefix);
+        if (std::strncmp(name, prefix, prefix_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static VkResult send_transfer_memory_data(VkDeviceMemory memory,
                                           VkDeviceSize offset,
                                           VkDeviceSize size,
@@ -319,17 +358,66 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceImageFormatProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceImageFormatProperties;
     }
+    if (strcmp(pName, "vkCreateImageView") == 0) {
+        ICD_LOG_INFO() << " -> returning vkCreateImageView\n";
+        return (PFN_vkVoidFunction)vkCreateImageView;
+    }
+    if (strcmp(pName, "vkDestroyImageView") == 0) {
+        ICD_LOG_INFO() << " -> returning vkDestroyImageView\n";
+        return (PFN_vkVoidFunction)vkDestroyImageView;
+    }
+    if (strcmp(pName, "vkCreateBufferView") == 0) {
+        ICD_LOG_INFO() << " -> returning vkCreateBufferView\n";
+        return (PFN_vkVoidFunction)vkCreateBufferView;
+    }
+    if (strcmp(pName, "vkDestroyBufferView") == 0) {
+        ICD_LOG_INFO() << " -> returning vkDestroyBufferView\n";
+        return (PFN_vkVoidFunction)vkDestroyBufferView;
+    }
+    if (strcmp(pName, "vkCreateSampler") == 0) {
+        ICD_LOG_INFO() << " -> returning vkCreateSampler\n";
+        return (PFN_vkVoidFunction)vkCreateSampler;
+    }
+    if (strcmp(pName, "vkDestroySampler") == 0) {
+        ICD_LOG_INFO() << " -> returning vkDestroySampler\n";
+        return (PFN_vkVoidFunction)vkDestroySampler;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceImageFormatProperties2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceImageFormatProperties2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceImageFormatProperties2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceImageFormatProperties2;
+    }
     if (strcmp(pName, "vkGetPhysicalDeviceProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceProperties2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceProperties2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceProperties2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceProperties2;
     }
     if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceQueueFamilyProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceQueueFamilyProperties;
     }
+    if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyProperties2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceQueueFamilyProperties2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceQueueFamilyProperties2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceQueueFamilyProperties2;
+    }
     if (strcmp(pName, "vkGetPhysicalDeviceMemoryProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceMemoryProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceMemoryProperties;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceMemoryProperties2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceMemoryProperties2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceMemoryProperties2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceMemoryProperties2;
+    }
+    if (strcmp(pName, "vkGetPhysicalDeviceFeatures2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceFeatures2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceFeatures2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceFeatures2;
     }
     if (strcmp(pName, "vkGetDeviceProcAddr") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetDeviceProcAddr\n";
@@ -342,6 +430,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
     if (strcmp(pName, "vkEnumerateDeviceExtensionProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkEnumerateDeviceExtensionProperties\n";
         return (PFN_vkVoidFunction)vkEnumerateDeviceExtensionProperties;
+    }
+    if (strcmp(pName, "vkEnumerateDeviceLayerProperties") == 0) {
+        ICD_LOG_INFO() << " -> returning vkEnumerateDeviceLayerProperties\n";
+        return (PFN_vkVoidFunction)vkEnumerateDeviceLayerProperties;
     }
     if (strcmp(pName, "vkGetPhysicalDeviceSparseImageFormatProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceSparseImageFormatProperties\n";
@@ -418,10 +510,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInsta
         return nullptr;
     }
 
-    // For Phase 2, we don't implement any physical device functions yet
-    // Later phases will add these
-    ICD_LOG_INFO() << " -> NOT IMPLEMENTED, returning nullptr\n";
-    return nullptr;
+    PFN_vkVoidFunction func = vk_icdGetInstanceProcAddr(instance, pName);
+    if (!func) {
+        ICD_LOG_INFO() << " -> Not found (nullptr)\n";
+    }
+    return func;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t* pApiVersion) {
@@ -659,6 +752,38 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
     ICD_LOG_INFO() << "[Client ICD] Returned features from server\n";
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures2(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceFeatures2* pFeatures) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceFeatures2 called\n";
+
+    if (!pFeatures) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures2));
+        return;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceFeatures2");
+    if (remote_device == VK_NULL_HANDLE) {
+        memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures2));
+        return;
+    }
+
+    vn_call_vkGetPhysicalDeviceFeatures2(&g_ring, remote_device, pFeatures);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceFeatures2* pFeatures) {
+    vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
+}
+
 // vkGetPhysicalDeviceFormatProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
     VkPhysicalDevice physicalDevice,
@@ -705,11 +830,65 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(
     ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceImageFormatProperties called\n";
 
     if (!pImageFormatProperties) {
+        ICD_LOG_ERROR() << "[Client ICD] pImageFormatProperties is NULL\n";
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
-    // For Phase 2: Return unsupported for all formats
-    return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceImageFormatProperties");
+    if (remote_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkGetPhysicalDeviceImageFormatProperties(
+        &g_ring, remote_device, format, type, tiling, usage, flags, pImageFormatProperties);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_WARN() << "[Client ICD] vkGetPhysicalDeviceImageFormatProperties returned " << result << "\n";
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+    VkImageFormatProperties2* pImageFormatProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceImageFormatProperties2 called\n";
+
+    if (!pImageFormatInfo || !pImageFormatProperties) {
+        ICD_LOG_ERROR() << "[Client ICD] pImageFormatInfo/pImageFormatProperties is NULL\n";
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceImageFormatProperties2");
+    if (remote_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkGetPhysicalDeviceImageFormatProperties2(
+        &g_ring, remote_device, pImageFormatInfo, pImageFormatProperties);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_WARN() << "[Client ICD] vkGetPhysicalDeviceImageFormatProperties2 returned " << result << "\n";
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+    VkImageFormatProperties2* pImageFormatProperties) {
+    return vkGetPhysicalDeviceImageFormatProperties2(physicalDevice, pImageFormatInfo, pImageFormatProperties);
 }
 
 // vkGetPhysicalDeviceProperties - Phase 3
@@ -743,6 +922,38 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 
     vn_call_vkGetPhysicalDeviceProperties(&g_ring, remote_device, pProperties);
     ICD_LOG_INFO() << "[Client ICD] Returned device properties from server: " << pProperties->deviceName << "\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceProperties2* pProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceProperties2 called\n";
+
+    if (!pProperties) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        memset(pProperties, 0, sizeof(VkPhysicalDeviceProperties2));
+        return;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceProperties2");
+    if (remote_device == VK_NULL_HANDLE) {
+        memset(pProperties, 0, sizeof(VkPhysicalDeviceProperties2));
+        return;
+    }
+
+    vn_call_vkGetPhysicalDeviceProperties2(&g_ring, remote_device, pProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceProperties2* pProperties) {
+    vkGetPhysicalDeviceProperties2(physicalDevice, pProperties);
 }
 
 // vkGetPhysicalDeviceQueueFamilyProperties - Phase 3
@@ -784,6 +995,41 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(
     }
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties2(
+    VkPhysicalDevice physicalDevice,
+    uint32_t* pQueueFamilyPropertyCount,
+    VkQueueFamilyProperties2* pQueueFamilyProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceQueueFamilyProperties2 called\n";
+
+    if (!pQueueFamilyPropertyCount) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        *pQueueFamilyPropertyCount = 0;
+        return;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceQueueFamilyProperties2");
+    if (remote_device == VK_NULL_HANDLE) {
+        *pQueueFamilyPropertyCount = 0;
+        return;
+    }
+
+    vn_call_vkGetPhysicalDeviceQueueFamilyProperties2(
+        &g_ring, remote_device, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    uint32_t* pQueueFamilyPropertyCount,
+    VkQueueFamilyProperties2* pQueueFamilyProperties) {
+    vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+}
+
 // vkGetPhysicalDeviceMemoryProperties - Phase 3
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
     VkPhysicalDevice physicalDevice,
@@ -817,6 +1063,38 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
     ICD_LOG_INFO() << "[Client ICD] Returned memory properties from server: "
               << pMemoryProperties->memoryTypeCount << " types, "
               << pMemoryProperties->memoryHeapCount << " heaps\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties2(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceMemoryProperties2* pMemoryProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceMemoryProperties2 called\n";
+
+    if (!pMemoryProperties) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        memset(pMemoryProperties, 0, sizeof(VkPhysicalDeviceMemoryProperties2));
+        return;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceMemoryProperties2");
+    if (remote_device == VK_NULL_HANDLE) {
+        memset(pMemoryProperties, 0, sizeof(VkPhysicalDeviceMemoryProperties2));
+        return;
+    }
+
+    vn_call_vkGetPhysicalDeviceMemoryProperties2(&g_ring, remote_device, pMemoryProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceMemoryProperties2* pMemoryProperties) {
+    vkGetPhysicalDeviceMemoryProperties2(physicalDevice, pMemoryProperties);
 }
 
 // vkGetDeviceProcAddr - Phase 3
@@ -890,6 +1168,30 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkDestroyImage") == 0) {
         ICD_LOG_INFO() << " -> vkDestroyImage\n";
         return (PFN_vkVoidFunction)vkDestroyImage;
+    }
+    if (strcmp(pName, "vkCreateImageView") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateImageView\n";
+        return (PFN_vkVoidFunction)vkCreateImageView;
+    }
+    if (strcmp(pName, "vkDestroyImageView") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroyImageView\n";
+        return (PFN_vkVoidFunction)vkDestroyImageView;
+    }
+    if (strcmp(pName, "vkCreateBufferView") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateBufferView\n";
+        return (PFN_vkVoidFunction)vkCreateBufferView;
+    }
+    if (strcmp(pName, "vkDestroyBufferView") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroyBufferView\n";
+        return (PFN_vkVoidFunction)vkDestroyBufferView;
+    }
+    if (strcmp(pName, "vkCreateSampler") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateSampler\n";
+        return (PFN_vkVoidFunction)vkCreateSampler;
+    }
+    if (strcmp(pName, "vkDestroySampler") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroySampler\n";
+        return (PFN_vkVoidFunction)vkDestroySampler;
     }
     if (strcmp(pName, "vkGetImageMemoryRequirements") == 0) {
         ICD_LOG_INFO() << " -> vkGetImageMemoryRequirements\n";
@@ -1096,7 +1398,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     return nullptr;
 }
 
-// vkEnumerateDeviceExtensionProperties - Phase 2 stub
+// vkEnumerateDeviceExtensionProperties - Phase 9.1
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
     VkPhysicalDevice physicalDevice,
     const char* pLayerName,
@@ -1105,14 +1407,120 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
 
     ICD_LOG_INFO() << "[Client ICD] vkEnumerateDeviceExtensionProperties called\n";
 
-    // We don't support layers
+    if (!pPropertyCount) {
+        ICD_LOG_ERROR() << "[Client ICD] pPropertyCount is NULL\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // Device layers are not supported per spec
     if (pLayerName != nullptr) {
+        ICD_LOG_ERROR() << "[Client ICD] Layer requested: " << pLayerName << " -> VK_ERROR_LAYER_NOT_PRESENT\n";
         return VK_ERROR_LAYER_NOT_PRESENT;
     }
 
-    // For Phase 2: Return 0 device extensions
-    *pPropertyCount = 0;
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkEnumerateDeviceExtensionProperties");
+    if (remote_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    uint32_t remote_count = 0;
+    VkResult count_result =
+        vn_call_vkEnumerateDeviceExtensionProperties(&g_ring, remote_device, pLayerName, &remote_count, nullptr);
+    if (count_result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to query device extension count: " << count_result << "\n";
+        return count_result;
+    }
+
+    std::vector<VkExtensionProperties> remote_props;
+    if (remote_count > 0) {
+        remote_props.resize(remote_count);
+        uint32_t write_count = remote_count;
+        VkResult list_result = vn_call_vkEnumerateDeviceExtensionProperties(
+            &g_ring, remote_device, pLayerName, &write_count, remote_props.data());
+        if (list_result != VK_SUCCESS && list_result != VK_INCOMPLETE) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to fetch device extensions: " << list_result << "\n";
+            return list_result;
+        }
+        remote_props.resize(write_count);
+        if (list_result == VK_INCOMPLETE) {
+            ICD_LOG_WARN() << "[Client ICD] Server reported VK_INCOMPLETE while fetching extensions (extensions may have changed)\n";
+        }
+    }
+
+    std::vector<VkExtensionProperties> filtered;
+    filtered.reserve(remote_props.size());
+    for (const auto& prop : remote_props) {
+        if (!should_filter_device_extension(prop)) {
+            filtered.push_back(prop);
+        } else {
+            ICD_LOG_WARN() << "[Client ICD] Filtering unsupported device extension: " << prop.extensionName << "\n";
+        }
+    }
+
+    const uint32_t filtered_count = static_cast<uint32_t>(filtered.size());
+    if (!pProperties) {
+        *pPropertyCount = filtered_count;
+        ICD_LOG_INFO() << "[Client ICD] Returning device extension count: " << filtered_count << "\n";
+        return VK_SUCCESS;
+    }
+
+    const uint32_t requested = *pPropertyCount;
+    const uint32_t copy_count = std::min(filtered_count, requested);
+    for (uint32_t i = 0; i < copy_count; ++i) {
+        pProperties[i] = filtered[i];
+    }
+
+    *pPropertyCount = filtered_count;
+    if (copy_count < filtered_count) {
+        ICD_LOG_INFO() << "[Client ICD] Provided " << copy_count << " extensions (need " << filtered_count << "), returning VK_INCOMPLETE\n";
+        return VK_INCOMPLETE;
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] Returning " << copy_count << " device extensions\n";
     return VK_SUCCESS;
+}
+
+// vkEnumerateDeviceLayerProperties - Phase 9.1
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
+    VkPhysicalDevice physicalDevice,
+    uint32_t* pPropertyCount,
+    VkLayerProperties* pProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkEnumerateDeviceLayerProperties called\n";
+
+    if (!pPropertyCount) {
+        ICD_LOG_ERROR() << "[Client ICD] pPropertyCount is NULL\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkEnumerateDeviceLayerProperties");
+    if (remote_device == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkResult result = vn_call_vkEnumerateDeviceLayerProperties(
+        &g_ring, remote_device, pPropertyCount, pProperties);
+
+    if ((result == VK_SUCCESS || result == VK_INCOMPLETE) && pPropertyCount) {
+        ICD_LOG_INFO() << "[Client ICD] Returning " << *pPropertyCount << " layer properties"
+                       << (result == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "") << "\n";
+    } else if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        ICD_LOG_ERROR() << "[Client ICD] vkEnumerateDeviceLayerProperties failed: " << result << "\n";
+    }
+
+    return result;
 }
 
 // vkGetPhysicalDeviceSparseImageFormatProperties - Phase 2 stub
@@ -1949,6 +2357,268 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyImage(
     vn_async_vkDestroyImage(&g_ring, icd_device->remote_handle, remote_image, pAllocator);
     g_resource_state.remove_image(image);
     ICD_LOG_INFO() << "[Client ICD] Image destroyed (local=" << image << ", remote=" << remote_image << ")\n";
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(
+    VkDevice device,
+    const VkImageViewCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkImageView* pView) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateImageView called\n";
+
+    if (!pCreateInfo || !pView) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateImageView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateImageView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_resource_state.has_image(pCreateInfo->image)) {
+        ICD_LOG_ERROR() << "[Client ICD] Image not tracked in vkCreateImageView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkImage remote_image = g_resource_state.get_remote_image(pCreateInfo->image);
+    if (remote_image == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote image handle missing for vkCreateImageView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkImageViewCreateInfo remote_info = *pCreateInfo;
+    remote_info.image = remote_image;
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkImageView remote_view = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateImageView(&g_ring,
+                                                icd_device->remote_handle,
+                                                &remote_info,
+                                                pAllocator,
+                                                &remote_view);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateImageView failed: " << result << "\n";
+        return result;
+    }
+
+    VkImageView local = g_handle_allocator.allocate<VkImageView>();
+    g_resource_state.add_image_view(device, local, remote_view, pCreateInfo->image);
+    *pView = local;
+    ICD_LOG_INFO() << "[Client ICD] Image view created (local=" << local << ", remote=" << remote_view << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(
+    VkDevice device,
+    VkImageView imageView,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyImageView called\n";
+
+    if (imageView == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkImageView remote_view = g_resource_state.get_remote_image_view(imageView);
+    g_resource_state.remove_image_view(imageView);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyImageView\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyImageView\n";
+        return;
+    }
+
+    if (remote_view == VK_NULL_HANDLE) {
+        ICD_LOG_WARN() << "[Client ICD] Remote image view handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyImageView(&g_ring, icd_device->remote_handle, remote_view, pAllocator);
+    ICD_LOG_INFO() << "[Client ICD] Image view destroyed (local=" << imageView << ", remote=" << remote_view << ")\n";
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateBufferView(
+    VkDevice device,
+    const VkBufferViewCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkBufferView* pView) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateBufferView called\n";
+
+    if (!pCreateInfo || !pView) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateBufferView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateBufferView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_resource_state.has_buffer(pCreateInfo->buffer)) {
+        ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked in vkCreateBufferView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkBuffer remote_buffer = g_resource_state.get_remote_buffer(pCreateInfo->buffer);
+    if (remote_buffer == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote buffer handle missing for vkCreateBufferView\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkBufferViewCreateInfo remote_info = *pCreateInfo;
+    remote_info.buffer = remote_buffer;
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkBufferView remote_view = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateBufferView(&g_ring,
+                                                 icd_device->remote_handle,
+                                                 &remote_info,
+                                                 pAllocator,
+                                                 &remote_view);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateBufferView failed: " << result << "\n";
+        return result;
+    }
+
+    VkBufferView local = g_handle_allocator.allocate<VkBufferView>();
+    g_resource_state.add_buffer_view(device,
+                                     local,
+                                     remote_view,
+                                     pCreateInfo->buffer,
+                                     pCreateInfo->format,
+                                     pCreateInfo->offset,
+                                     pCreateInfo->range);
+    *pView = local;
+    ICD_LOG_INFO() << "[Client ICD] Buffer view created (local=" << local << ", remote=" << remote_view << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyBufferView(
+    VkDevice device,
+    VkBufferView bufferView,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyBufferView called\n";
+
+    if (bufferView == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkBufferView remote_view = g_resource_state.get_remote_buffer_view(bufferView);
+    g_resource_state.remove_buffer_view(bufferView);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyBufferView\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyBufferView\n";
+        return;
+    }
+
+    if (remote_view == VK_NULL_HANDLE) {
+        ICD_LOG_WARN() << "[Client ICD] Remote buffer view handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyBufferView(&g_ring, icd_device->remote_handle, remote_view, pAllocator);
+    ICD_LOG_INFO() << "[Client ICD] Buffer view destroyed (local=" << bufferView << ", remote=" << remote_view << ")\n";
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(
+    VkDevice device,
+    const VkSamplerCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkSampler* pSampler) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateSampler called\n";
+
+    if (!pCreateInfo || !pSampler) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateSampler\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateSampler\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkSampler remote_sampler = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateSampler(&g_ring,
+                                              icd_device->remote_handle,
+                                              pCreateInfo,
+                                              pAllocator,
+                                              &remote_sampler);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateSampler failed: " << result << "\n";
+        return result;
+    }
+
+    VkSampler local = g_handle_allocator.allocate<VkSampler>();
+    g_resource_state.add_sampler(device, local, remote_sampler);
+    *pSampler = local;
+    ICD_LOG_INFO() << "[Client ICD] Sampler created (local=" << local << ", remote=" << remote_sampler << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroySampler(
+    VkDevice device,
+    VkSampler sampler,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroySampler called\n";
+
+    if (sampler == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkSampler remote_sampler = g_resource_state.get_remote_sampler(sampler);
+    g_resource_state.remove_sampler(sampler);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroySampler\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroySampler\n";
+        return;
+    }
+
+    if (remote_sampler == VK_NULL_HANDLE) {
+        ICD_LOG_WARN() << "[Client ICD] Remote sampler handle missing\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroySampler(&g_ring, icd_device->remote_handle, remote_sampler, pAllocator);
+    ICD_LOG_INFO() << "[Client ICD] Sampler destroyed (local=" << sampler << ", remote=" << remote_sampler << ")\n";
 }
 
 // vkGetImageMemoryRequirements - Phase 4

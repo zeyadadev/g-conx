@@ -174,6 +174,116 @@ bool ResourceState::bind_image(VkImage image, VkDeviceMemory memory, VkDeviceSiz
     return true;
 }
 
+void ResourceState::add_image_view(VkDevice device, VkImageView local, VkImageView remote, VkImage image) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ImageViewState state = {};
+    state.device = device;
+    state.remote_handle = remote;
+    state.image = image;
+    image_views_[handle_key(local)] = state;
+}
+
+void ResourceState::remove_image_view(VkImageView view) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    image_views_.erase(handle_key(view));
+}
+
+bool ResourceState::has_image_view(VkImageView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return image_views_.find(handle_key(view)) != image_views_.end();
+}
+
+VkImageView ResourceState::get_remote_image_view(VkImageView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = image_views_.find(handle_key(view));
+    if (it == image_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkImage ResourceState::get_image_from_view(VkImageView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = image_views_.find(handle_key(view));
+    if (it == image_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.image;
+}
+
+void ResourceState::add_buffer_view(VkDevice device,
+                                    VkBufferView local,
+                                    VkBufferView remote,
+                                    VkBuffer buffer,
+                                    VkFormat format,
+                                    VkDeviceSize offset,
+                                    VkDeviceSize range) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    BufferViewState state = {};
+    state.device = device;
+    state.remote_handle = remote;
+    state.buffer = buffer;
+    state.format = format;
+    state.offset = offset;
+    state.range = range;
+    buffer_views_[handle_key(local)] = state;
+}
+
+void ResourceState::remove_buffer_view(VkBufferView view) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    buffer_views_.erase(handle_key(view));
+}
+
+bool ResourceState::has_buffer_view(VkBufferView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return buffer_views_.find(handle_key(view)) != buffer_views_.end();
+}
+
+VkBufferView ResourceState::get_remote_buffer_view(VkBufferView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffer_views_.find(handle_key(view));
+    if (it == buffer_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+VkBuffer ResourceState::get_buffer_from_view(VkBufferView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffer_views_.find(handle_key(view));
+    if (it == buffer_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.buffer;
+}
+
+void ResourceState::add_sampler(VkDevice device, VkSampler local, VkSampler remote) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    SamplerState state = {};
+    state.device = device;
+    state.remote_handle = remote;
+    samplers_[handle_key(local)] = state;
+}
+
+void ResourceState::remove_sampler(VkSampler sampler) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    samplers_.erase(handle_key(sampler));
+}
+
+bool ResourceState::has_sampler(VkSampler sampler) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return samplers_.find(handle_key(sampler)) != samplers_.end();
+}
+
+VkSampler ResourceState::get_remote_sampler(VkSampler sampler) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = samplers_.find(handle_key(sampler));
+    if (it == samplers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
 void ResourceState::add_memory(VkDevice device, VkDeviceMemory local, VkDeviceMemory remote, const VkMemoryAllocateInfo& info) {
     std::lock_guard<std::mutex> lock(mutex_);
     MemoryState state = {};
@@ -322,6 +432,36 @@ void ResourceState::remove_device_resources(VkDevice device) {
             }
             memories_.erase(it);
         }
+    }
+
+    std::vector<uint64_t> image_view_keys;
+    for (const auto& pair : image_views_) {
+        if (pair.second.device == device) {
+            image_view_keys.push_back(pair.first);
+        }
+    }
+    for (uint64_t key : image_view_keys) {
+        image_views_.erase(key);
+    }
+
+    std::vector<uint64_t> buffer_view_keys;
+    for (const auto& pair : buffer_views_) {
+        if (pair.second.device == device) {
+            buffer_view_keys.push_back(pair.first);
+        }
+    }
+    for (uint64_t key : buffer_view_keys) {
+        buffer_views_.erase(key);
+    }
+
+    std::vector<uint64_t> sampler_keys;
+    for (const auto& pair : samplers_) {
+        if (pair.second.device == device) {
+            sampler_keys.push_back(pair.first);
+        }
+    }
+    for (uint64_t key : sampler_keys) {
+        samplers_.erase(key);
     }
 }
 

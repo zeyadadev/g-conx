@@ -12,6 +12,9 @@ ResourceTracker::ResourceTracker()
     : next_buffer_handle_(0x40000000ull),
       next_image_handle_(0x50000000ull),
       next_memory_handle_(0x60000000ull),
+      next_image_view_handle_(0x76000000ull),
+      next_buffer_view_handle_(0x77000000ull),
+      next_sampler_handle_(0x78000000ull),
       next_shader_module_handle_(0x70000000ull),
       next_descriptor_set_layout_handle_(0x71000000ull),
       next_descriptor_pool_handle_(0x72000000ull),
@@ -157,6 +160,159 @@ bool ResourceTracker::get_image_requirements(VkImage image, VkMemoryRequirements
     it->second.requirements = *requirements;
     it->second.requirements_valid = true;
     return true;
+}
+
+VkImageView ResourceTracker::create_image_view(VkDevice device,
+                                               VkDevice real_device,
+                                               const VkImageViewCreateInfo& info,
+                                               VkImage client_image,
+                                               VkImage real_image) {
+    if (real_device == VK_NULL_HANDLE || real_image == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkImageViewCreateInfo real_info = info;
+    real_info.image = real_image;
+    VkImageView real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateImageView(real_device, &real_info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateImageView failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkImageView handle = reinterpret_cast<VkImageView>(next_image_view_handle_++);
+    ImageViewResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    resource.image = client_image;
+    resource.real_image = real_image;
+    image_views_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_image_view(VkImageView view) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = image_views_.find(handle_key(view));
+    if (it == image_views_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyImageView(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    image_views_.erase(it);
+    return true;
+}
+
+VkImageView ResourceTracker::get_real_image_view(VkImageView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = image_views_.find(handle_key(view));
+    if (it == image_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkBufferView ResourceTracker::create_buffer_view(VkDevice device,
+                                                 VkDevice real_device,
+                                                 const VkBufferViewCreateInfo& info,
+                                                 VkBuffer client_buffer,
+                                                 VkBuffer real_buffer) {
+    if (real_device == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkBufferViewCreateInfo real_info = info;
+    real_info.buffer = real_buffer;
+    VkBufferView real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateBufferView(real_device, &real_info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateBufferView failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkBufferView handle = reinterpret_cast<VkBufferView>(next_buffer_view_handle_++);
+    BufferViewResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    resource.buffer = client_buffer;
+    resource.real_buffer = real_buffer;
+    resource.format = info.format;
+    resource.offset = info.offset;
+    resource.range = info.range;
+    buffer_views_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_buffer_view(VkBufferView view) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffer_views_.find(handle_key(view));
+    if (it == buffer_views_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyBufferView(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    buffer_views_.erase(it);
+    return true;
+}
+
+VkBufferView ResourceTracker::get_real_buffer_view(VkBufferView view) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffer_views_.find(handle_key(view));
+    if (it == buffer_views_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+VkSampler ResourceTracker::create_sampler(VkDevice device,
+                                          VkDevice real_device,
+                                          const VkSamplerCreateInfo& info) {
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkSampler real_handle = VK_NULL_HANDLE;
+    VkResult result = vkCreateSampler(real_device, &info, nullptr, &real_handle);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateSampler failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkSampler handle = reinterpret_cast<VkSampler>(next_sampler_handle_++);
+    SamplerResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_handle;
+    samplers_[handle_key(handle)] = resource;
+    return handle;
+}
+
+bool ResourceTracker::destroy_sampler(VkSampler sampler) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = samplers_.find(handle_key(sampler));
+    if (it == samplers_.end()) {
+        return false;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroySampler(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    samplers_.erase(it);
+    return true;
+}
+
+VkSampler ResourceTracker::get_real_sampler(VkSampler sampler) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = samplers_.find(handle_key(sampler));
+    if (it == samplers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
 }
 
 VkDeviceMemory ResourceTracker::allocate_memory(VkDevice device,

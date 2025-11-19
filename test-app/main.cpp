@@ -7,6 +7,7 @@
 #include "phase07/phase07_test.h"
 #include "phase08/phase08_test.h"
 #include "phase09/phase09_test.h"
+#include "phase09_1/phase09_1_test.h"
 #include "logging.h"
 #include <cstring>
 
@@ -37,6 +38,10 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        if (strcmp(argv[2], "9_1") == 0) {
+            return run_phase09_1_test() ? 0 : 1;
+        }
+
         int phase = atoi(argv[2]);
 
         switch (phase) {
@@ -58,6 +63,8 @@ int main(int argc, char** argv) {
             return run_phase08_test() ? 0 : 1;
         case 9:
             return run_phase09_test() ? 0 : 1;
+        case 91:
+            return run_phase09_1_test() ? 0 : 1;
         default:
             TEST_LOG_ERROR() << "Error: Phase " << phase << " not implemented yet";
             return 1;
@@ -79,6 +86,7 @@ int main(int argc, char** argv) {
         if (!run_phase07_test()) return 1;
         if (!run_phase08_test()) return 1;
         if (!run_phase09_test()) return 1;
+        if (!run_phase09_1_test()) return 1;
 
         TEST_LOG_INFO() << "";
         TEST_LOG_INFO() << "=================================================";

@@ -332,6 +332,75 @@ bool server_state_get_image_subresource_layout(ServerState* state,
     return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
 }
 
+VkImageView server_state_create_image_view(ServerState* state,
+                                           VkDevice device,
+                                           const VkImageViewCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkImage real_image = server_state_get_real_image(state, info->image);
+    if (real_device == VK_NULL_HANDLE || real_image == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkImageViewCreateInfo real_info = *info;
+    real_info.image = real_image;
+    return state->resource_tracker.create_image_view(device, real_device, real_info, info->image, real_image);
+}
+
+bool server_state_destroy_image_view(ServerState* state, VkImageView view) {
+    return state->resource_tracker.destroy_image_view(view);
+}
+
+VkImageView server_state_get_real_image_view(const ServerState* state, VkImageView view) {
+    return state->resource_tracker.get_real_image_view(view);
+}
+
+VkBufferView server_state_create_buffer_view(ServerState* state,
+                                             VkDevice device,
+                                             const VkBufferViewCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    VkBuffer real_buffer = server_state_get_real_buffer(state, info->buffer);
+    if (real_device == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    VkBufferViewCreateInfo real_info = *info;
+    real_info.buffer = real_buffer;
+    return state->resource_tracker.create_buffer_view(device, real_device, real_info, info->buffer, real_buffer);
+}
+
+bool server_state_destroy_buffer_view(ServerState* state, VkBufferView view) {
+    return state->resource_tracker.destroy_buffer_view(view);
+}
+
+VkBufferView server_state_get_real_buffer_view(const ServerState* state, VkBufferView view) {
+    return state->resource_tracker.get_real_buffer_view(view);
+}
+
+VkSampler server_state_create_sampler(ServerState* state,
+                                      VkDevice device,
+                                      const VkSamplerCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    return state->resource_tracker.create_sampler(device, real_device, *info);
+}
+
+bool server_state_destroy_sampler(ServerState* state, VkSampler sampler) {
+    return state->resource_tracker.destroy_sampler(sampler);
+}
+
+VkSampler server_state_get_real_sampler(const ServerState* state, VkSampler sampler) {
+    return state->resource_tracker.get_real_sampler(sampler);
+}
+
 VkBuffer server_state_get_real_buffer(const ServerState* state, VkBuffer buffer) {
     return state->resource_tracker.get_real_buffer(buffer);
 }
@@ -1116,6 +1185,34 @@ bool server_state_bridge_get_image_subresource_layout(struct ServerState* state,
     return venus_plus::server_state_get_image_subresource_layout(state, image, subresource, layout);
 }
 
+VkImageView server_state_bridge_create_image_view(struct ServerState* state,
+                                                  VkDevice device,
+                                                  const VkImageViewCreateInfo* info) {
+    return venus_plus::server_state_create_image_view(state, device, info);
+}
+
+bool server_state_bridge_destroy_image_view(struct ServerState* state, VkImageView view) {
+    return venus_plus::server_state_destroy_image_view(state, view);
+}
+
+VkImageView server_state_bridge_get_real_image_view(const struct ServerState* state, VkImageView view) {
+    return venus_plus::server_state_get_real_image_view(state, view);
+}
+
+VkBufferView server_state_bridge_create_buffer_view(struct ServerState* state,
+                                                    VkDevice device,
+                                                    const VkBufferViewCreateInfo* info) {
+    return venus_plus::server_state_create_buffer_view(state, device, info);
+}
+
+bool server_state_bridge_destroy_buffer_view(struct ServerState* state, VkBufferView view) {
+    return venus_plus::server_state_destroy_buffer_view(state, view);
+}
+
+VkBufferView server_state_bridge_get_real_buffer_view(const struct ServerState* state, VkBufferView view) {
+    return venus_plus::server_state_get_real_buffer_view(state, view);
+}
+
 VkCommandPool server_state_bridge_create_command_pool(struct ServerState* state,
                                                       VkDevice device,
                                                       const VkCommandPoolCreateInfo* info) {
@@ -1258,6 +1355,20 @@ VkResult server_state_bridge_wait_for_fences(struct ServerState* state,
                                              VkBool32 waitAll,
                                              uint64_t timeout) {
     return venus_plus::server_state_wait_for_fences(state, fenceCount, pFences, waitAll, timeout);
+}
+
+VkSampler server_state_bridge_create_sampler(struct ServerState* state,
+                                             VkDevice device,
+                                             const VkSamplerCreateInfo* info) {
+    return venus_plus::server_state_create_sampler(state, device, info);
+}
+
+bool server_state_bridge_destroy_sampler(struct ServerState* state, VkSampler sampler) {
+    return venus_plus::server_state_destroy_sampler(state, sampler);
+}
+
+VkSampler server_state_bridge_get_real_sampler(const struct ServerState* state, VkSampler sampler) {
+    return venus_plus::server_state_get_real_sampler(state, sampler);
 }
 
 VkSemaphore server_state_bridge_create_semaphore(struct ServerState* state,

@@ -38,6 +38,26 @@ struct ImageState {
     bool requirements_cached;
 };
 
+struct ImageViewState {
+    VkDevice device;
+    VkImageView remote_handle;
+    VkImage image;
+};
+
+struct BufferViewState {
+    VkDevice device;
+    VkBufferView remote_handle;
+    VkBuffer buffer;
+    VkFormat format;
+    VkDeviceSize offset;
+    VkDeviceSize range;
+};
+
+struct SamplerState {
+    VkDevice device;
+    VkSampler remote_handle;
+};
+
 struct MemoryState {
     VkDevice device;
     VkDeviceMemory remote_handle;
@@ -65,6 +85,29 @@ public:
     bool get_cached_image_requirements(VkImage image, VkMemoryRequirements* out) const;
     bool bind_image(VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
 
+    void add_image_view(VkDevice device, VkImageView local, VkImageView remote, VkImage image);
+    void remove_image_view(VkImageView view);
+    bool has_image_view(VkImageView view) const;
+    VkImageView get_remote_image_view(VkImageView view) const;
+    VkImage get_image_from_view(VkImageView view) const;
+
+    void add_buffer_view(VkDevice device,
+                         VkBufferView local,
+                         VkBufferView remote,
+                         VkBuffer buffer,
+                         VkFormat format,
+                         VkDeviceSize offset,
+                         VkDeviceSize range);
+    void remove_buffer_view(VkBufferView view);
+    bool has_buffer_view(VkBufferView view) const;
+    VkBufferView get_remote_buffer_view(VkBufferView view) const;
+    VkBuffer get_buffer_from_view(VkBufferView view) const;
+
+    void add_sampler(VkDevice device, VkSampler local, VkSampler remote);
+    void remove_sampler(VkSampler sampler);
+    bool has_sampler(VkSampler sampler) const;
+    VkSampler get_remote_sampler(VkSampler sampler) const;
+
     void add_memory(VkDevice device, VkDeviceMemory local, VkDeviceMemory remote, const VkMemoryAllocateInfo& info);
     void remove_memory(VkDeviceMemory memory);
     bool has_memory(VkDeviceMemory memory) const;
@@ -90,6 +133,9 @@ private:
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, BufferState> buffers_;
     std::unordered_map<uint64_t, ImageState> images_;
+    std::unordered_map<uint64_t, ImageViewState> image_views_;
+    std::unordered_map<uint64_t, BufferViewState> buffer_views_;
+    std::unordered_map<uint64_t, SamplerState> samplers_;
     std::unordered_map<uint64_t, MemoryState> memories_;
 };
 
