@@ -110,6 +110,9 @@ VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, c
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer, const VkAllocationCallbacks* pAllocator);
 VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
 VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelineExecutablePropertiesKHR(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo, uint32_t* pExecutableCount, VkPipelineExecutablePropertiesKHR* pProperties);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelineExecutableStatisticsKHR(VkDevice device, const VkPipelineExecutableInfoKHR* pExecutableInfo, uint32_t* pStatisticCount, VkPipelineExecutableStatisticKHR* pStatistics);
+VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelineExecutableInternalRepresentationsKHR(VkDevice device, const VkPipelineExecutableInfoKHR* pExecutableInfo, uint32_t* pInternalRepresentationCount, VkPipelineExecutableInternalRepresentationKHR* pInternalRepresentations);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks* pAllocator);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkGetImageSubresourceLayout(VkDevice device, VkImage image, const VkImageSubresource* pSubresource, VkSubresourceLayout* pLayout);
 VP_PRIVATE VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool);
@@ -168,6 +171,24 @@ VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer comma
                                                            const VkBufferMemoryBarrier* pBufferMemoryBarriers,
                                                            uint32_t imageMemoryBarrierCount,
                                                            const VkImageMemoryBarrier* pImageMemoryBarriers);
+VP_PRIVATE VKAPI_ATTR VkDeviceAddress VKAPI_CALL vkGetBufferDeviceAddress(VkDevice device,
+                                                                          const VkBufferDeviceAddressInfo* pInfo);
+VP_PRIVATE VKAPI_ATTR VkDeviceAddress VKAPI_CALL vkGetBufferDeviceAddressKHR(VkDevice device,
+                                                                             const VkBufferDeviceAddressInfo* pInfo);
+VP_PRIVATE VKAPI_ATTR VkDeviceAddress VKAPI_CALL vkGetBufferDeviceAddressEXT(VkDevice device,
+                                                                             const VkBufferDeviceAddressInfo* pInfo);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements2(VkDevice device,
+                                                                     const VkBufferMemoryRequirementsInfo2* pInfo,
+                                                                     VkMemoryRequirements2* pMemoryRequirements);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements2KHR(VkDevice device,
+                                                                        const VkBufferMemoryRequirementsInfo2* pInfo,
+                                                                        VkMemoryRequirements2* pMemoryRequirements);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkGetImageMemoryRequirements2(VkDevice device,
+                                                                    const VkImageMemoryRequirementsInfo2* pInfo,
+                                                                    VkMemoryRequirements2* pMemoryRequirements);
+VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkGetImageMemoryRequirements2KHR(VkDevice device,
+                                                                       const VkImageMemoryRequirementsInfo2* pInfo,
+                                                                       VkMemoryRequirements2* pMemoryRequirements);
 VP_PRIVATE VKAPI_ATTR void VKAPI_CALL vkCmdResetQueryPool(VkCommandBuffer commandBuffer,
                                                           VkQueryPool queryPool,
                                                           uint32_t firstQuery,

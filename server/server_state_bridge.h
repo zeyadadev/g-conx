@@ -182,6 +182,11 @@ VkResult server_state_bridge_queue_submit(struct ServerState* state,
                                           uint32_t submitCount,
                                           const VkSubmitInfo* pSubmits,
                                           VkFence fence);
+VkResult server_state_bridge_queue_submit2(struct ServerState* state,
+                                           VkQueue queue,
+                                           uint32_t submitCount,
+                                           const VkSubmitInfo2* pSubmits,
+                                           VkFence fence);
 VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue queue);
 VkResult server_state_bridge_device_wait_idle(struct ServerState* state, VkDevice device);
 VkPipelineCache server_state_bridge_create_pipeline_cache(struct ServerState* state,

@@ -1131,6 +1131,104 @@ VkResult server_state_queue_submit(ServerState* state,
     return vkQueueSubmit(real_queue, submitCount, real_submits.data(), real_fence);
 }
 
+VkResult server_state_queue_submit2(ServerState* state,
+                                    VkQueue queue,
+                                    uint32_t submitCount,
+                                    const VkSubmitInfo2* pSubmits,
+                                    VkFence fence) {
+    if (submitCount > 0 && !pSubmits) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (queue != VK_NULL_HANDLE && !state->queue_map.exists(queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo2& submit = pSubmits[i];
+        if ((submit.waitSemaphoreInfoCount > 0 && !submit.pWaitSemaphoreInfos) ||
+            (submit.commandBufferInfoCount > 0 && !submit.pCommandBufferInfos) ||
+            (submit.signalSemaphoreInfoCount > 0 && !submit.pSignalSemaphoreInfos)) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        for (uint32_t j = 0; j < submit.commandBufferInfoCount; ++j) {
+            VkCommandBuffer buffer = submit.pCommandBufferInfos[j].commandBuffer;
+            if (!state->command_buffer_state.buffer_exists(buffer)) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            if (state->command_buffer_state.get_state(buffer) != ServerCommandBufferState::EXECUTABLE) {
+                return VK_ERROR_VALIDATION_FAILED_EXT;
+            }
+        }
+        for (uint32_t j = 0; j < submit.waitSemaphoreInfoCount; ++j) {
+            VkSemaphore semaphore = submit.pWaitSemaphoreInfos[j].semaphore;
+            if (!state->sync_manager.semaphore_exists(semaphore)) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+        for (uint32_t j = 0; j < submit.signalSemaphoreInfoCount; ++j) {
+            VkSemaphore semaphore = submit.pSignalSemaphoreInfos[j].semaphore;
+            if (!state->sync_manager.semaphore_exists(semaphore)) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+    }
+
+    VkQueue real_queue = server_state_get_real_queue(state, queue);
+    if (queue != VK_NULL_HANDLE && real_queue == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkFence real_fence = state->sync_manager.get_real_fence(fence);
+
+    std::vector<VkSubmitInfo2> real_submits(submitCount);
+    std::vector<std::vector<VkSemaphoreSubmitInfo>> wait_infos(submitCount);
+    std::vector<std::vector<VkCommandBufferSubmitInfo>> cmd_infos(submitCount);
+    std::vector<std::vector<VkSemaphoreSubmitInfo>> signal_infos(submitCount);
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo2& submit = pSubmits[i];
+        VkSubmitInfo2& real_submit = real_submits[i];
+        real_submit = submit;
+
+        if (submit.waitSemaphoreInfoCount > 0) {
+            wait_infos[i].resize(submit.waitSemaphoreInfoCount);
+            for (uint32_t j = 0; j < submit.waitSemaphoreInfoCount; ++j) {
+                wait_infos[i][j] = submit.pWaitSemaphoreInfos[j];
+                wait_infos[i][j].semaphore =
+                    state->sync_manager.get_real_semaphore(wait_infos[i][j].semaphore);
+            }
+            real_submit.pWaitSemaphoreInfos = wait_infos[i].data();
+        } else {
+            real_submit.pWaitSemaphoreInfos = NULL;
+        }
+
+        if (submit.commandBufferInfoCount > 0) {
+            cmd_infos[i].resize(submit.commandBufferInfoCount);
+            for (uint32_t j = 0; j < submit.commandBufferInfoCount; ++j) {
+                cmd_infos[i][j] = submit.pCommandBufferInfos[j];
+                cmd_infos[i][j].commandBuffer =
+                    server_state_get_real_command_buffer(state, cmd_infos[i][j].commandBuffer);
+            }
+            real_submit.pCommandBufferInfos = cmd_infos[i].data();
+        } else {
+            real_submit.pCommandBufferInfos = NULL;
+        }
+
+        if (submit.signalSemaphoreInfoCount > 0) {
+            signal_infos[i].resize(submit.signalSemaphoreInfoCount);
+            for (uint32_t j = 0; j < submit.signalSemaphoreInfoCount; ++j) {
+                signal_infos[i][j] = submit.pSignalSemaphoreInfos[j];
+                signal_infos[i][j].semaphore =
+                    state->sync_manager.get_real_semaphore(signal_infos[i][j].semaphore);
+            }
+            real_submit.pSignalSemaphoreInfos = signal_infos[i].data();
+        } else {
+            real_submit.pSignalSemaphoreInfos = NULL;
+        }
+    }
+
+    return vkQueueSubmit2(real_queue, submitCount, real_submits.data(), real_fence);
+}
+
 VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue) {
     if (queue == VK_NULL_HANDLE) {
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1747,6 +1845,14 @@ VkResult server_state_bridge_queue_submit(struct ServerState* state,
                                           const VkSubmitInfo* pSubmits,
                                           VkFence fence) {
     return venus_plus::server_state_queue_submit(state, queue, submitCount, pSubmits, fence);
+}
+
+VkResult server_state_bridge_queue_submit2(struct ServerState* state,
+                                           VkQueue queue,
+                                           uint32_t submitCount,
+                                           const VkSubmitInfo2* pSubmits,
+                                           VkFence fence) {
+    return venus_plus::server_state_queue_submit2(state, queue, submitCount, pSubmits, fence);
 }
 
 VkResult server_state_bridge_queue_wait_idle(struct ServerState* state, VkQueue queue) {

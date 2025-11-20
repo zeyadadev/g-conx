@@ -208,6 +208,7 @@ VkResult server_state_get_event_status(ServerState* state, VkEvent event);
 VkResult server_state_set_event(ServerState* state, VkEvent event);
 VkResult server_state_reset_event(ServerState* state, VkEvent event);
 VkResult server_state_queue_submit(ServerState* state, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
+VkResult server_state_queue_submit2(ServerState* state, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence);
 VkResult server_state_queue_wait_idle(ServerState* state, VkQueue queue);
 VkResult server_state_device_wait_idle(ServerState* state, VkDevice device);
 VkQueryPool server_state_create_query_pool(ServerState* state,

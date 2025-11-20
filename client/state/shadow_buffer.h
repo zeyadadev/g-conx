@@ -1,9 +1,13 @@
 #ifndef VENUS_PLUS_SHADOW_BUFFER_H
 #define VENUS_PLUS_SHADOW_BUFFER_H
 
+#include <atomic>
+#include <memory>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 namespace venus_plus {
@@ -14,7 +18,30 @@ struct ShadowBufferMapping {
     VkDeviceSize offset = 0;
     VkDeviceSize size = 0;
     void* data = nullptr;
+    size_t alloc_size = 0;
     bool host_coherent = false;
+    struct HostCoherentTracking* tracking = nullptr;
+};
+
+struct HostCoherentTracking {
+    void* base = nullptr;
+    size_t size = 0;
+    size_t alloc_size = 0;
+    size_t page_size = 0;
+    size_t page_count = 0;
+    std::unique_ptr<std::atomic<uint8_t>[]> dirty;
+    std::unique_ptr<std::atomic<uint8_t>[]> writable;
+    void* fault_node = nullptr;
+};
+
+struct ShadowCoherentRange {
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceSize size = 0;
+    void* data = nullptr;
+    struct HostCoherentTracking* tracking = nullptr;
+    size_t first_page = 0;
+    size_t page_count = 0;
 };
 
 class ShadowBufferManager {
@@ -33,6 +60,11 @@ public:
     bool get_mapping(VkDeviceMemory memory, ShadowBufferMapping* out_mapping) const;
     bool is_mapped(VkDeviceMemory memory) const;
     void remove_device(VkDevice device);
+    void collect_dirty_coherent_ranges(VkDevice device, std::vector<ShadowCoherentRange>* out_ranges) const;
+    void prepare_coherent_range_flush(const ShadowCoherentRange& range) const;
+    void finalize_coherent_range_flush(const ShadowCoherentRange& range) const;
+    void reset_host_coherent_mapping(VkDeviceMemory memory);
+    void free_mapping_resources(ShadowBufferMapping* mapping) const;
 
 private:
     template <typename T>

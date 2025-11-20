@@ -11,6 +11,8 @@
         "cstdlib": "cpp",
         "limits": "cpp",
         "optional": "cpp",
-        "sstream": "cpp"
+        "sstream": "cpp",
+        "iterator": "cpp",
+        "iomanip": "cpp"
     }
 }
