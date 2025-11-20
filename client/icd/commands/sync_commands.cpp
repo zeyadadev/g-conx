@@ -1,0 +1,822 @@
+// Sync Command Implementations
+// Auto-generated from icd_entrypoints.cpp refactoring
+
+#include "icd/icd_entrypoints.h"
+#include "icd/commands/commands_common.h"
+
+extern "C" {
+
+// Vulkan function implementations
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateEvent(
+    VkDevice device,
+    const VkEventCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkEvent* pEvent) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateEvent called\n";
+
+    if (!pCreateInfo || !pEvent) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkEvent remote_event = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateEvent(&g_ring,
+                                            icd_device->remote_handle,
+                                            pCreateInfo,
+                                            pAllocator,
+                                            &remote_event);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateEvent failed: " << result << "\n";
+        return result;
+    }
+
+    VkEvent local_event = g_handle_allocator.allocate<VkEvent>();
+    g_sync_state.add_event(device, local_event, remote_event, false);
+    *pEvent = local_event;
+    ICD_LOG_INFO() << "[Client ICD] Event created (local=" << local_event << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyEvent(
+    VkDevice device,
+    VkEvent event,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyEvent called\n";
+
+    if (event == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkEvent remote_event = g_sync_state.get_remote_event(event);
+    g_sync_state.remove_event(event);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyEvent\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyEvent\n";
+        return;
+    }
+
+    if (remote_event == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Event not tracked in vkDestroyEvent\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyEvent(&g_ring, icd_device->remote_handle, remote_event, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetEventStatus(VkDevice device, VkEvent event) {
+    ICD_LOG_INFO() << "[Client ICD] vkGetEventStatus called\n";
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetEventStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkEvent remote_event = g_sync_state.get_remote_event(event);
+    if (remote_event == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Event not tracked in vkGetEventStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkGetEventStatus(&g_ring, icd_device->remote_handle, remote_event);
+    if (result == VK_EVENT_SET) {
+        g_sync_state.set_event_signaled(event, true);
+    } else if (result == VK_EVENT_RESET) {
+        g_sync_state.set_event_signaled(event, false);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkSetEvent(VkDevice device, VkEvent event) {
+    ICD_LOG_INFO() << "[Client ICD] vkSetEvent called\n";
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkSetEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkEvent remote_event = g_sync_state.get_remote_event(event);
+    if (remote_event == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Event not tracked in vkSetEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkSetEvent(&g_ring, icd_device->remote_handle, remote_event);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_event_signaled(event, true);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkResetEvent(VkDevice device, VkEvent event) {
+    ICD_LOG_INFO() << "[Client ICD] vkResetEvent called\n";
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkResetEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkEvent remote_event = g_sync_state.get_remote_event(event);
+    if (remote_event == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Event not tracked in vkResetEvent\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkResetEvent(&g_ring, icd_device->remote_handle, remote_event);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_event_signaled(event, false);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(
+    VkDevice device,
+    const VkFenceCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkFence* pFence) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateFence called\n";
+
+    if (!pCreateInfo || !pFence) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateFence\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateFence\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkFence remote_fence = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateFence(&g_ring, icd_device->remote_handle, pCreateInfo, pAllocator, &remote_fence);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateFence failed: " << result << "\n";
+        return result;
+    }
+
+    VkFence local_fence = g_handle_allocator.allocate<VkFence>();
+    g_sync_state.add_fence(device, local_fence, remote_fence, (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) != 0);
+    *pFence = local_fence;
+    ICD_LOG_INFO() << "[Client ICD] Fence created (local=" << *pFence << ", remote=" << remote_fence << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyFence(
+    VkDevice device,
+    VkFence fence,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyFence called\n";
+    if (fence == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkFence remote = g_sync_state.get_remote_fence(fence);
+    g_sync_state.remove_fence(fence);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroyFence\n";
+        return;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyFence\n";
+        return;
+    }
+    if (remote == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote fence missing in vkDestroyFence\n";
+        return;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroyFence(&g_ring, icd_device->remote_handle, remote, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence) {
+    ICD_LOG_INFO() << "[Client ICD] vkGetFenceStatus called\n";
+    if (!g_sync_state.has_fence(fence)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown fence in vkGetFenceStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetFenceStatus\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkFence remote = g_sync_state.get_remote_fence(fence);
+    if (remote == VK_NULL_HANDLE) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkGetFenceStatus(&g_ring, icd_device->remote_handle, remote);
+    if (result == VK_SUCCESS) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(
+    VkDevice device,
+    uint32_t fenceCount,
+    const VkFence* pFences) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkResetFences called\n";
+
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkResetFences\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkFence> remote_fences(fenceCount);
+    for (uint32_t i = 0; i < fenceCount; ++i) {
+        VkFence remote = g_sync_state.get_remote_fence(pFences[i]);
+        if (remote == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] vkResetFences: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_fences[i] = remote;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkResetFences(&g_ring,
+                                            icd_device->remote_handle,
+                                            fenceCount,
+                                            remote_fences.data());
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < fenceCount; ++i) {
+            g_sync_state.set_fence_signaled(pFences[i], false);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
+    VkDevice device,
+    uint32_t fenceCount,
+    const VkFence* pFences,
+    VkBool32 waitAll,
+    uint64_t timeout) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkWaitForFences called\n";
+
+    if (!fenceCount || !pFences) {
+        return VK_SUCCESS;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkWaitForFences\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkFence> remote_fences(fenceCount);
+    for (uint32_t i = 0; i < fenceCount; ++i) {
+        VkFence remote = g_sync_state.get_remote_fence(pFences[i]);
+        if (remote == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] vkWaitForFences: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        remote_fences[i] = remote;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkWaitForFences(&g_ring,
+                                              icd_device->remote_handle,
+                                              fenceCount,
+                                              remote_fences.data(),
+                                              waitAll,
+                                              timeout);
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < fenceCount; ++i) {
+            g_sync_state.set_fence_signaled(pFences[i], true);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateSemaphore(
+    VkDevice device,
+    const VkSemaphoreCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkSemaphore* pSemaphore) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateSemaphore called\n";
+
+    if (!pCreateInfo || !pSemaphore) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateSemaphore\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkSemaphore remote_semaphore = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateSemaphore(&g_ring,
+                                                icd_device->remote_handle,
+                                                pCreateInfo,
+                                                pAllocator,
+                                                &remote_semaphore);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateSemaphore failed: " << result << "\n";
+        return result;
+    }
+
+    const VkSemaphoreTypeCreateInfo* type_info = find_semaphore_type_info(pCreateInfo);
+    VkSemaphoreType type = type_info ? type_info->semaphoreType : VK_SEMAPHORE_TYPE_BINARY;
+    uint64_t initial_value = type_info ? type_info->initialValue : 0;
+
+    VkSemaphore local_semaphore = g_handle_allocator.allocate<VkSemaphore>();
+    g_sync_state.add_semaphore(device,
+                               local_semaphore,
+                               remote_semaphore,
+                               type,
+                               false,
+                               initial_value);
+    *pSemaphore = local_semaphore;
+    ICD_LOG_INFO() << "[Client ICD] Semaphore created (local=" << *pSemaphore
+              << ", remote=" << remote_semaphore
+              << ", type=" << (type == VK_SEMAPHORE_TYPE_TIMELINE ? "timeline" : "binary") << ")\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroySemaphore(
+    VkDevice device,
+    VkSemaphore semaphore,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroySemaphore called\n";
+    if (semaphore == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkSemaphore remote = g_sync_state.get_remote_semaphore(semaphore);
+    g_sync_state.remove_semaphore(semaphore);
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkDestroySemaphore\n";
+        return;
+    }
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroySemaphore\n";
+        return;
+    }
+    if (remote == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote semaphore missing in vkDestroySemaphore\n";
+        return;
+    }
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkDestroySemaphore(&g_ring, icd_device->remote_handle, remote, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
+    VkQueue queue,
+    uint32_t submitCount,
+    const VkSubmitInfo* pSubmits,
+    VkFence fence) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit called (submitCount=" << submitCount << ")\n";
+
+    if (submitCount > 0 && !pSubmits) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdQueue* icd_queue = icd_queue_from_handle(queue);
+    VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
+    VkResult flush_result = flush_host_coherent_mappings(queue_device);
+    if (flush_result != VK_SUCCESS) {
+        return flush_result;
+    }
+
+    VkFence remote_fence = VK_NULL_HANDLE;
+    if (fence != VK_NULL_HANDLE) {
+        remote_fence = g_sync_state.get_remote_fence(fence);
+        if (remote_fence == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    struct SubmitStorage {
+        std::vector<VkSemaphore> wait_local;
+        std::vector<VkSemaphore> signal_local;
+        std::vector<VkSemaphore> wait_remote;
+        std::vector<VkPipelineStageFlags> wait_stages;
+        std::vector<VkCommandBuffer> remote_cbs;
+        std::vector<VkSemaphore> signal_remote;
+        std::vector<uint64_t> wait_values;
+        std::vector<uint64_t> signal_values;
+        VkTimelineSemaphoreSubmitInfo timeline_info{};
+        bool has_timeline = false;
+    };
+
+    std::vector<VkSubmitInfo> remote_submits;
+    std::vector<SubmitStorage> storage;
+    if (submitCount > 0) {
+        remote_submits.resize(submitCount);
+        storage.resize(submitCount);
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo& src = pSubmits[i];
+        VkSubmitInfo& dst = remote_submits[i];
+        SubmitStorage& slot = storage[i];
+        dst = src;
+
+        if (src.waitSemaphoreCount > 0) {
+            if (!src.pWaitSemaphores || !src.pWaitDstStageMask) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: invalid wait semaphore arrays\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.wait_local.assign(src.pWaitSemaphores, src.pWaitSemaphores + src.waitSemaphoreCount);
+            slot.wait_remote.resize(src.waitSemaphoreCount);
+            slot.wait_stages.assign(src.pWaitDstStageMask, src.pWaitDstStageMask + src.waitSemaphoreCount);
+            for (uint32_t j = 0; j < src.waitSemaphoreCount; ++j) {
+                VkSemaphore wait_sem = src.pWaitSemaphores[j];
+                if (!g_sync_state.has_semaphore(wait_sem)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: wait semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.wait_remote[j] = g_sync_state.get_remote_semaphore(wait_sem);
+                if (slot.wait_remote[j] == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+            }
+            dst.pWaitSemaphores = slot.wait_remote.data();
+            dst.pWaitDstStageMask = slot.wait_stages.data();
+        } else {
+            dst.pWaitSemaphores = nullptr;
+            dst.pWaitDstStageMask = nullptr;
+        }
+
+        if (src.commandBufferCount > 0) {
+            if (!src.pCommandBuffers) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: command buffers missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.remote_cbs.resize(src.commandBufferCount);
+            for (uint32_t j = 0; j < src.commandBufferCount; ++j) {
+                VkCommandBuffer local_cb = src.pCommandBuffers[j];
+                if (!g_command_buffer_state.has_command_buffer(local_cb)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: command buffer not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (g_command_buffer_state.get_buffer_state(local_cb) != CommandBufferLifecycleState::EXECUTABLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: command buffer not executable\n";
+                    return VK_ERROR_VALIDATION_FAILED_EXT;
+                }
+                VkCommandBuffer remote_cb = get_remote_command_buffer_handle(local_cb);
+                if (remote_cb == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.remote_cbs[j] = remote_cb;
+            }
+            dst.pCommandBuffers = slot.remote_cbs.data();
+        } else {
+            dst.pCommandBuffers = nullptr;
+        }
+
+        if (src.signalSemaphoreCount > 0) {
+            if (!src.pSignalSemaphores) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: signal semaphores missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.signal_local.assign(src.pSignalSemaphores, src.pSignalSemaphores + src.signalSemaphoreCount);
+            slot.signal_remote.resize(src.signalSemaphoreCount);
+            for (uint32_t j = 0; j < src.signalSemaphoreCount; ++j) {
+                VkSemaphore signal_sem = src.pSignalSemaphores[j];
+                if (!g_sync_state.has_semaphore(signal_sem)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit: signal semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.signal_remote[j] = g_sync_state.get_remote_semaphore(signal_sem);
+                if (slot.signal_remote[j] == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+            }
+            dst.pSignalSemaphores = slot.signal_remote.data();
+        } else {
+            dst.pSignalSemaphores = nullptr;
+        }
+
+        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(src.pNext);
+        if (timeline) {
+            slot.timeline_info = *timeline;
+            if (timeline->waitSemaphoreValueCount) {
+                slot.wait_values.assign(timeline->pWaitSemaphoreValues,
+                                        timeline->pWaitSemaphoreValues + timeline->waitSemaphoreValueCount);
+                slot.timeline_info.pWaitSemaphoreValues = slot.wait_values.data();
+            }
+            if (timeline->signalSemaphoreValueCount) {
+                slot.signal_values.assign(timeline->pSignalSemaphoreValues,
+                                          timeline->pSignalSemaphoreValues + timeline->signalSemaphoreValueCount);
+                slot.timeline_info.pSignalSemaphoreValues = slot.signal_values.data();
+            }
+            dst.pNext = &slot.timeline_info;
+            slot.has_timeline = true;
+        } else {
+            dst.pNext = nullptr;
+            slot.has_timeline = false;
+        }
+    }
+
+    const VkSubmitInfo* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
+    VkResult result = vn_call_vkQueueSubmit(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit failed: " << result << "\n";
+        return result;
+    }
+
+    if (fence != VK_NULL_HANDLE) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const SubmitStorage& slot = storage[i];
+        for (VkSemaphore wait_sem : slot.wait_local) {
+            if (g_sync_state.get_semaphore_type(wait_sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(wait_sem, false);
+            }
+        }
+        if (slot.has_timeline && !slot.wait_values.empty()) {
+            for (size_t j = 0; j < slot.wait_local.size() && j < slot.wait_values.size(); ++j) {
+                if (g_sync_state.get_semaphore_type(slot.wait_local[j]) == VK_SEMAPHORE_TYPE_TIMELINE) {
+                    g_sync_state.set_timeline_value(slot.wait_local[j], slot.wait_values[j]);
+                }
+            }
+        }
+        for (size_t j = 0; j < slot.signal_local.size(); ++j) {
+            VkSemaphore signal_sem = slot.signal_local[j];
+            if (g_sync_state.get_semaphore_type(signal_sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(signal_sem, true);
+            } else if (slot.has_timeline && j < slot.signal_values.size()) {
+                g_sync_state.set_timeline_value(signal_sem, slot.signal_values[j]);
+            }
+        }
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit completed\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
+    VkQueue queue,
+    uint32_t submitCount,
+    const VkSubmitInfo2* pSubmits,
+    VkFence fence) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit2 called (submitCount=" << submitCount << ")\n";
+
+    if (submitCount > 0 && !pSubmits) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdQueue* icd_queue = icd_queue_from_handle(queue);
+    VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
+    VkResult flush_result = flush_host_coherent_mappings(queue_device);
+    if (flush_result != VK_SUCCESS) {
+        return flush_result;
+    }
+
+    VkFence remote_fence = VK_NULL_HANDLE;
+    if (fence != VK_NULL_HANDLE) {
+        remote_fence = g_sync_state.get_remote_fence(fence);
+        if (remote_fence == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    struct Submit2Storage {
+        std::vector<VkSemaphoreSubmitInfo> wait_infos;
+        std::vector<VkCommandBufferSubmitInfo> command_infos;
+        std::vector<VkSemaphoreSubmitInfo> signal_infos;
+        std::vector<VkSemaphore> wait_local;
+        std::vector<VkSemaphore> signal_local;
+    };
+
+    std::vector<VkSubmitInfo2> remote_submits(submitCount);
+    std::vector<Submit2Storage> storage(submitCount);
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const VkSubmitInfo2& src = pSubmits[i];
+        VkSubmitInfo2& dst = remote_submits[i];
+        Submit2Storage& slot = storage[i];
+        dst = src;
+
+        if (src.waitSemaphoreInfoCount > 0) {
+            if (!src.pWaitSemaphoreInfos) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: wait semaphore infos missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.wait_infos.assign(src.pWaitSemaphoreInfos,
+                                   src.pWaitSemaphoreInfos + src.waitSemaphoreInfoCount);
+            slot.wait_local.reserve(slot.wait_infos.size());
+            for (auto& info : slot.wait_infos) {
+                if (!g_sync_state.has_semaphore(info.semaphore)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: wait semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.wait_local.push_back(info.semaphore);
+                VkSemaphore remote_sem = g_sync_state.get_remote_semaphore(info.semaphore);
+                if (remote_sem == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                info.semaphore = remote_sem;
+            }
+            dst.pWaitSemaphoreInfos = slot.wait_infos.data();
+        } else {
+            dst.pWaitSemaphoreInfos = nullptr;
+        }
+
+        if (src.commandBufferInfoCount > 0) {
+            if (!src.pCommandBufferInfos) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: command buffer infos missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.command_infos.assign(src.pCommandBufferInfos,
+                                      src.pCommandBufferInfos + src.commandBufferInfoCount);
+            for (auto& info : slot.command_infos) {
+                VkCommandBuffer local_cb = info.commandBuffer;
+                if (!g_command_buffer_state.has_command_buffer(local_cb)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: command buffer not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (g_command_buffer_state.get_buffer_state(local_cb) != CommandBufferLifecycleState::EXECUTABLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: command buffer not executable\n";
+                    return VK_ERROR_VALIDATION_FAILED_EXT;
+                }
+                VkCommandBuffer remote_cb = get_remote_command_buffer_handle(local_cb);
+                if (remote_cb == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                info.commandBuffer = remote_cb;
+            }
+            dst.pCommandBufferInfos = slot.command_infos.data();
+        } else {
+            dst.pCommandBufferInfos = nullptr;
+        }
+
+        if (src.signalSemaphoreInfoCount > 0) {
+            if (!src.pSignalSemaphoreInfos) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: signal semaphore infos missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.signal_infos.assign(src.pSignalSemaphoreInfos,
+                                     src.pSignalSemaphoreInfos + src.signalSemaphoreInfoCount);
+            slot.signal_local.reserve(slot.signal_infos.size());
+            for (auto& info : slot.signal_infos) {
+                if (!g_sync_state.has_semaphore(info.semaphore)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2: signal semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.signal_local.push_back(info.semaphore);
+                VkSemaphore remote_sem = g_sync_state.get_remote_semaphore(info.semaphore);
+                if (remote_sem == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                info.semaphore = remote_sem;
+            }
+            dst.pSignalSemaphoreInfos = slot.signal_infos.data();
+        } else {
+            dst.pSignalSemaphoreInfos = nullptr;
+        }
+    }
+
+    const VkSubmitInfo2* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
+    VkResult result = vn_call_vkQueueSubmit2(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2 failed: " << result << "\n";
+        return result;
+    }
+
+    if (fence != VK_NULL_HANDLE) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+
+    for (uint32_t i = 0; i < submitCount; ++i) {
+        const Submit2Storage& slot = storage[i];
+        for (size_t j = 0; j < slot.wait_local.size(); ++j) {
+            VkSemaphore sem = slot.wait_local[j];
+            VkSemaphoreType type = g_sync_state.get_semaphore_type(sem);
+            if (type == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(sem, false);
+            } else if (type == VK_SEMAPHORE_TYPE_TIMELINE && j < slot.wait_infos.size()) {
+                g_sync_state.set_timeline_value(sem, slot.wait_infos[j].value);
+            }
+        }
+        for (size_t j = 0; j < slot.signal_local.size(); ++j) {
+            VkSemaphore sem = slot.signal_local[j];
+            VkSemaphoreType type = g_sync_state.get_semaphore_type(sem);
+            if (type == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(sem, true);
+            } else if (type == VK_SEMAPHORE_TYPE_TIMELINE && j < slot.signal_infos.size()) {
+                g_sync_state.set_timeline_value(sem, slot.signal_infos[j].value);
+            }
+        }
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit2 completed\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2KHR(
+    VkQueue queue,
+    uint32_t submitCount,
+    const VkSubmitInfo2* pSubmits,
+    VkFence fence) {
+    return vkQueueSubmit2(queue, submitCount, pSubmits, fence);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
+    ICD_LOG_INFO() << "[Client ICD] vkQueueWaitIdle called\n";
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult result = vn_call_vkQueueWaitIdle(&g_ring, remote_queue);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkQueueWaitIdle failed: " << result << "\n";
+    }
+    return result;
+}
+
+} // extern "C"

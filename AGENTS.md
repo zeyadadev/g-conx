@@ -4,9 +4,15 @@ Venus Plus pairs a network-ready Vulkan ICD (`client/`) with a GPU-backed server
 
 ## Project Structure & Module Organization
 - `common/` holds shared protocol helpers, networking, and utilities; keep wire-format changes here so both sides stay in sync.
-- `client/` implements the ICD entrypoints plus per-phase logic under `commands/` and `state/`; `server/` mirrors that layout with `decoder/`, `executor/`, and `state/`.
+- `client/` implements the ICD with a modular command structure:
+  - `icd/` contains the loader interface (`icd_entrypoints.cpp` - only 1,076 lines with ICD negotiation functions)
+  - `icd/commands/` has 11 category-specific files (instance, device, memory, resource, command_buffer, pipeline, descriptor, sync, query, wsi, physical_device) - each implements related Vulkan commands
+  - `icd/commands/commands_common.h` provides shared helpers, handle translation utilities, and state access
+  - `state/` manages client-side resource tracking and handle allocation
+- `server/` mirrors that layout with `decoder/`, `executor/`, and `state/`.
 - `test-app/` provides end-to-end Vulkan scenarios (`phase01/` …) that exercise new features; update the relevant phase whenever client and server coordination changes.
-- `docs/` captures phase planning, architecture, and troubleshooting. Refresh or link to these docs when the directory layout or protocol surface shifts.
+- `docs/` captures phase planning, architecture, troubleshooting, and refactoring guidelines (`REFACTORING_PLAN.md`).
+- `scripts/` contains automation tools like `refactor_entrypoints.py` (documents the client ICD refactoring process).
 
 ## Build, Test, and Development Commands
 - Configure and build with `cmake -S . -B build && cmake --build build` (or append `--target venus-server` / `venus_icd` while iterating).
@@ -15,7 +21,21 @@ Venus Plus pairs a network-ready Vulkan ICD (`client/`) with a GPU-backed server
 - Unit tests live under each module; trigger them with `ctest --test-dir build/client/tests`, `build/server/tests`, and `build/common/tests`.
 
 ## Coding Style & Naming Conventions
-Use C++17, four-space indentation, and brace-on-same-line (see `client/icd/icd_entrypoints.cpp`). File names stay snake_case, classes use `PascalCase`, and namespaces remain `venus_plus`. Headers rely on `#ifndef VENUS_PLUS_*` guards; prefer RAII helpers over raw pointers, and document cross-process behavior with short comments when not obvious.
+Use C++17, four-space indentation, and brace-on-same-line. File names stay snake_case, classes use `PascalCase`, and namespaces remain `venus_plus`. Headers rely on `#ifndef VENUS_PLUS_*` guards; prefer RAII helpers over raw pointers, and document cross-process behavior with short comments when not obvious.
+
+**Client Command Organization**: When adding new Vulkan commands, place them in the appropriate category file in `client/icd/commands/`:
+- Instance/device lifecycle → `instance_commands.cpp`, `device_commands.cpp`
+- Physical device queries → `physical_device_commands.cpp`
+- Memory operations → `memory_commands.cpp`
+- Resource creation (buffers/images/views) → `resource_commands.cpp`
+- Command recording (`vkCmd*`) → `command_buffer_commands.cpp`
+- Pipeline/shaders → `pipeline_commands.cpp`
+- Descriptor sets → `descriptor_commands.cpp`
+- Synchronization (fences/semaphores) → `sync_commands.cpp`
+- Query pools → `query_commands.cpp`
+- WSI/swapchains → `wsi_commands.cpp`
+
+Shared helpers go in `commands_common.h` (inline functions for small utilities, forward declarations for larger implementations).
 
 ## Testing Guidelines
 Every feature needs a matching gtest (`TEST(Fixture, Behavior)`) in the owning module plus an integration or phase test if it spans client/server boundaries. Keep wire protocol changes covered by round-trip tests in `common/tests/` and refresh `test-app` phases so end-to-end runs still pass. Failures should reproduce with `ctest --output-on-failure` and a single `--phase` invocation before review.

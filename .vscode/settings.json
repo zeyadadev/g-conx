@@ -13,6 +13,10 @@
         "optional": "cpp",
         "sstream": "cpp",
         "iterator": "cpp",
-        "iomanip": "cpp"
+        "iomanip": "cpp",
+        "csignal": "cpp",
+        "fstream": "cpp",
+        "memory": "cpp",
+        "cstdarg": "cpp"
     }
 }

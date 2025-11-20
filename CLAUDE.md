@@ -95,10 +95,27 @@ venus-plus/
 │   └── utils/           # Logging, handle mapping utilities
 │
 ├── client/              # Vulkan ICD implementation
-│   ├── icd/             # Core ICD: vkGetInstanceProcAddr, dispatch tables
-│   ├── commands/        # Vulkan command implementations by category:
-│   │                    # instance.cpp, device.cpp, queue.cpp, resources.cpp, etc.
+│   ├── icd/             # Core ICD: loader interface and dispatch
+│   │   ├── icd_entrypoints.cpp       # ICD loader interface (1,076 lines)
+│   │   ├── icd_entrypoints.h         # Public API declarations
+│   │   ├── icd_instance.h            # Instance handle structures
+│   │   ├── icd_device.h              # Device/Queue handle structures
+│   │   └── commands/                 # Category-specific implementations:
+│   │       ├── commands_common.h     # Shared helpers and utilities (544 lines)
+│   │       ├── commands_common.cpp   # Global state definitions
+│   │       ├── instance_commands.cpp         # Instance lifecycle (884 lines)
+│   │       ├── physical_device_commands.cpp  # Physical device queries (612 lines)
+│   │       ├── device_commands.cpp           # Device/queue management (213 lines)
+│   │       ├── memory_commands.cpp           # Memory operations (492 lines)
+│   │       ├── resource_commands.cpp         # Buffers/images/views (877 lines)
+│   │       ├── command_buffer_commands.cpp   # All vkCmd* functions (2,580 lines)
+│   │       ├── pipeline_commands.cpp         # Pipelines/shaders (594 lines)
+│   │       ├── descriptor_commands.cpp       # Descriptor sets (508 lines)
+│   │       ├── sync_commands.cpp             # Fences/semaphores/submit (822 lines)
+│   │       ├── query_commands.cpp            # Query pools (186 lines)
+│   │       └── wsi_commands.cpp              # Surfaces/swapchains (609 lines)
 │   ├── state/           # Client-side state: handle allocator, instance/device state
+│   ├── wsi/             # Platform WSI implementations
 │   └── tests/           # Unit tests for encoding, handle allocation
 │
 ├── server/              # Server implementation
@@ -112,7 +129,12 @@ venus-plus/
 │   ├── utils/           # Test helpers, shader loaders
 │   └── shaders/         # GLSL shaders for graphics phases
 │
+├── scripts/             # Automation and development tools
+│   ├── refactor_entrypoints.py  # ICD refactoring automation (22KB)
+│   └── README.md                # Script documentation
+│
 └── docs/                # Comprehensive documentation
+    └── REFACTORING_PLAN.md      # Client ICD refactoring documentation
 ```
 
 ### Venus Protocol Integration
@@ -234,13 +256,41 @@ Each phase has detailed documentation in `docs/PHASE_XX.md`:
 
 ## Implementation Guidelines
 
+### Client Command Organization (Post-Refactoring)
+
+The client ICD has been refactored from a monolithic 9,979-line file into **11 category-specific files** for better maintainability:
+
+**Where to add new Vulkan commands:**
+- Instance lifecycle → `client/icd/commands/instance_commands.cpp`
+- Physical device queries → `client/icd/commands/physical_device_commands.cpp`
+- Device/queue management → `client/icd/commands/device_commands.cpp`
+- Memory operations → `client/icd/commands/memory_commands.cpp`
+- Buffers/images/views → `client/icd/commands/resource_commands.cpp`
+- Command recording (vkCmd*) → `client/icd/commands/command_buffer_commands.cpp`
+- Pipelines/shaders → `client/icd/commands/pipeline_commands.cpp`
+- Descriptor sets → `client/icd/commands/descriptor_commands.cpp`
+- Synchronization → `client/icd/commands/sync_commands.cpp`
+- Query pools → `client/icd/commands/query_commands.cpp`
+- WSI/swapchains → `client/icd/commands/wsi_commands.cpp`
+
+**Shared utilities go in:**
+- `client/icd/commands/commands_common.h` - inline helpers, handle translation, state access
+- `client/icd/commands/commands_common.cpp` - global state definitions
+
+**Benefits:**
+- ✅ Faster incremental builds (only recompile changed category)
+- ✅ Easier navigation (jump directly to relevant category)
+- ✅ Clearer code organization matching Vulkan command categories
+- ✅ Better for code review (focused, smaller diffs)
+
 ### When Implementing Client Commands
 
-1. **Allocate client handles** (for create functions like vkCreateBuffer)
-2. **Encode command** using VenusEncoder with all parameters
-3. **Send over network** using NetworkClient
-4. **Receive reply** and decode VkResult
-5. **Return result** to application
+1. **Choose the correct category file** (see organization above)
+2. **Allocate client handles** (for create functions like vkCreateBuffer)
+3. **Encode command** using VenusEncoder with all parameters
+4. **Send over network** using NetworkClient
+5. **Receive reply** and decode VkResult
+6. **Return result** to application
 
 Example pattern:
 ```cpp
@@ -361,11 +411,27 @@ cp /path/to/mesa/src/virtio/venus-protocol/*.h common/venus-protocol/
 
 ### Adding a New Vulkan Command
 
-1. **Add client implementation** in `client/commands/<category>.cpp`
+1. **Add client implementation** in appropriate `client/icd/commands/<category>_commands.cpp`:
+   - Choose based on command type (see Client Command Organization above)
+   - Use helpers from `commands_common.h` for handle translation
+   - Follow existing patterns in the category file
 2. **Add server handler** in `server/executor/<category>.cpp`
 3. **Wire up in command dispatcher** (`server/decoder/dispatcher.cpp`)
 4. **Add unit tests** for encoding/decoding
 5. **Add phase test** that uses the command
+
+### Code Maintenance and Refactoring
+
+**Refactoring Large Files:**
+If any implementation file grows too large (>5,000 lines), consider refactoring:
+- See `docs/REFACTORING_PLAN.md` for the client ICD refactoring case study
+- Use `scripts/refactor_entrypoints.py` as reference for automation approach
+- The client refactoring reduced one 10K-line file to 11 focused files
+
+**Script Purpose:**
+- `scripts/refactor_entrypoints.py` - Documents the automated approach used for client ICD refactoring
+- Can be used as a template for similar refactoring tasks
+- Not needed for day-to-day development
 
 ### Updating Venus Protocol
 
@@ -506,10 +572,15 @@ All documentation is in `docs/`:
 - `DEVELOPMENT_ROADMAP.md` - Phase-by-phase plan with milestones
 - `TESTING_STRATEGY.md` - Multi-layered testing approach
 - `BUILD_AND_RUN.md` - Build instructions and troubleshooting
+- `REFACTORING_PLAN.md` - Client ICD refactoring case study and guidelines
 - `PHASE_01.md` through `PHASE_10.md` - Detailed phase specifications
 - `INDEX.md` - Documentation index
 
 Always refer to phase-specific docs when implementing features for that phase.
+
+**Scripts and Automation:**
+- `scripts/refactor_entrypoints.py` - Client ICD refactoring automation tool
+- `scripts/README.md` - Script usage and documentation
 
 ## Code Style
 

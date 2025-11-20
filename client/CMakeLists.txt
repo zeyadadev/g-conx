@@ -1,5 +1,22 @@
+# ICD command implementations (refactored from icd_entrypoints.cpp)
+set(ICD_COMMAND_SOURCES
+    icd/commands/instance_commands.cpp
+    icd/commands/physical_device_commands.cpp
+    icd/commands/device_commands.cpp
+    icd/commands/memory_commands.cpp
+    icd/commands/resource_commands.cpp
+    icd/commands/command_buffer_commands.cpp
+    icd/commands/pipeline_commands.cpp
+    icd/commands/descriptor_commands.cpp
+    icd/commands/sync_commands.cpp
+    icd/commands/query_commands.cpp
+    icd/commands/wsi_commands.cpp
+    icd/commands/commands_common.cpp
+)
+
 add_library(venus_icd SHARED
     icd/icd_entrypoints.cpp
+    ${ICD_COMMAND_SOURCES}
     state/handle_allocator.cpp
     state/instance_state.cpp
     state/device_state.cpp
