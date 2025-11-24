@@ -57,11 +57,33 @@ extern bool g_connected;
 
 inline bool ensure_connected() {
     if (!g_connected) {
-        if (!g_client.connect("127.0.0.1", 5556)) {
+        // Read server address from environment variables or use defaults
+        const char* host = std::getenv("VENUS_SERVER_HOST");
+        const char* port_str = std::getenv("VENUS_SERVER_PORT");
+
+        std::string server_host = host ? host : "127.0.0.1";
+        int server_port = port_str ? std::atoi(port_str) : 5556;
+
+        // Validate port range
+        if (server_port <= 0 || server_port > 65535) {
+            ICD_LOG_ERROR() << "Invalid VENUS_SERVER_PORT: " << server_port
+                           << " (must be 1-65535), using default 5556\n";
+            server_port = 5556;
+        }
+
+        ICD_LOG_INFO() << "Connecting to Venus server at "
+                       << server_host << ":" << server_port << "\n";
+
+        if (!g_client.connect(server_host.c_str(), server_port)) {
+            ICD_LOG_ERROR() << "Failed to connect to server at "
+                           << server_host << ":" << server_port << "\n";
             return false;
         }
+
         g_ring.client = &g_client;
         g_connected = true;
+
+        ICD_LOG_INFO() << "Successfully connected to Venus server\n";
     }
     return true;
 }
