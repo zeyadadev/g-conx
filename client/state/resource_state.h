@@ -77,6 +77,7 @@ struct MemoryState {
     uint32_t memory_type_index;
     std::vector<VkBuffer> bound_buffers;
     std::vector<VkImage> bound_images;
+    bool invalidate_on_wait = false;
 };
 
 class ResourceState {
@@ -142,6 +143,7 @@ public:
     VkDeviceSize get_memory_size(VkDeviceMemory memory) const;
     VkDevice get_memory_device(VkDeviceMemory memory) const;
     uint32_t get_memory_type_index(VkDeviceMemory memory) const;
+    bool should_invalidate_on_wait(VkDeviceMemory memory) const;
 
     bool buffer_is_bound(VkBuffer buffer) const;
     bool image_is_bound(VkImage image) const;

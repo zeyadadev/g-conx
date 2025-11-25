@@ -877,6 +877,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitSemaphores(
         for (uint32_t i = 0; i < pWaitInfo->semaphoreCount; ++i) {
             g_sync_state.set_timeline_value(pWaitInfo->pSemaphores[i], pWaitInfo->pValues[i]);
         }
+        VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+        if (invalidate_result != VK_SUCCESS) {
+            return invalidate_result;
+        }
     }
     return result;
 }

@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <vector>
+#include "utils/logging.h"
 
 namespace venus_plus {
 
@@ -200,6 +202,7 @@ bool ShadowBufferManager::create_mapping(VkDevice device,
                                          VkDeviceSize offset,
                                          VkDeviceSize size,
                                          bool host_coherent,
+                                         bool invalidate_on_wait,
                                          void** out_ptr) {
     if (!out_ptr) {
         return false;
@@ -215,6 +218,7 @@ bool ShadowBufferManager::create_mapping(VkDevice device,
     mapping.offset = offset;
     mapping.size = size;
     mapping.host_coherent = host_coherent;
+    mapping.invalidate_on_wait = invalidate_on_wait;
 
     bool use_fault_tracking = host_coherent && size > 0;
     if (use_fault_tracking) {
@@ -230,7 +234,10 @@ bool ShadowBufferManager::create_mapping(VkDevice device,
         if (alloc_size == 0) {
             alloc_size = page_size;
         }
-        void* ptr = mmap(nullptr, alloc_size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        // Map with write access so the initial shadow copy can be populated.
+        // reset_host_coherent_mapping() will flip the pages back to read-only
+        // once vkMapMemory finishes seeding the buffer.
+        void* ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (ptr == MAP_FAILED) {
             return false;
         }
@@ -343,7 +350,7 @@ void ShadowBufferManager::collect_dirty_coherent_ranges(VkDevice device,
             range.offset = mapping.offset + byte_offset;
             range.size = byte_length;
             range.data = static_cast<uint8_t*>(mapping.data) + byte_offset;
-        range.tracking = mapping.tracking;
+            range.tracking = mapping.tracking;
             range.first_page = start;
             range.page_count = std::max<size_t>(1, (byte_length + page_size - 1) / page_size);
             out_ranges->push_back(range);
@@ -357,6 +364,80 @@ void ShadowBufferManager::prepare_coherent_range_flush(const ShadowCoherentRange
 
 void ShadowBufferManager::finalize_coherent_range_flush(const ShadowCoherentRange& range) const {
     clear_dirty_bits(range.tracking, range.first_page, range.page_count);
+}
+
+void ShadowBufferManager::collect_host_coherent_ranges(VkDevice device,
+                                                       std::vector<ShadowCoherentRange>* out_ranges) const {
+    if (!out_ranges) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    out_ranges->clear();
+    for (const auto& entry : mappings_) {
+        const ShadowBufferMapping& mapping = entry.second;
+        if (!mapping.host_coherent || !mapping.data || mapping.size == 0 || mapping.device != device) {
+            continue;
+        }
+        if (!mapping.invalidate_on_wait) {
+            continue;
+        }
+        ShadowCoherentRange range = {};
+        range.memory = mapping.memory;
+        range.offset = mapping.offset;
+        range.size = mapping.size;
+        range.data = mapping.data;
+        range.tracking = mapping.tracking;
+        range.first_page = 0;
+        range.page_count = mapping.tracking ? mapping.tracking->page_count : 0;
+        out_ranges->push_back(range);
+    }
+}
+
+bool ShadowBufferManager::range_has_dirty_pages(const ShadowCoherentRange& range) const {
+    HostCoherentTracking* tracking = range.tracking;
+    if (!tracking) {
+        return false;
+    }
+    const size_t end_page = std::min(range.first_page + range.page_count, tracking->page_count);
+    for (size_t i = range.first_page; i < end_page; ++i) {
+        if (tracking->dirty[i].load(std::memory_order_relaxed) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ShadowBufferManager::prepare_coherent_range_invalidate(const ShadowCoherentRange& range) const {
+    HostCoherentTracking* tracking = range.tracking;
+    if (!tracking || range.page_count == 0) {
+        return;
+    }
+    const size_t first_page = std::min(range.first_page, tracking->page_count);
+    const size_t page_count = std::min(range.page_count, tracking->page_count - first_page);
+    if (page_count == 0) {
+        return;
+    }
+    const size_t page_size = tracking->page_size;
+    void* addr = static_cast<uint8_t*>(tracking->base) + first_page * page_size;
+    mprotect(addr, page_count * page_size, PROT_READ | PROT_WRITE);
+}
+
+void ShadowBufferManager::finalize_coherent_range_invalidate(const ShadowCoherentRange& range) const {
+    HostCoherentTracking* tracking = range.tracking;
+    if (!tracking || range.page_count == 0) {
+        return;
+    }
+    const size_t first_page = std::min(range.first_page, tracking->page_count);
+    const size_t page_count = std::min(range.page_count, tracking->page_count - first_page);
+    if (page_count == 0) {
+        return;
+    }
+    const size_t page_size = tracking->page_size;
+    void* addr = static_cast<uint8_t*>(tracking->base) + first_page * page_size;
+    mprotect(addr, page_count * page_size, PROT_READ);
+    for (size_t i = first_page; i < first_page + page_count && i < tracking->page_count; ++i) {
+        tracking->writable[i].store(0, std::memory_order_relaxed);
+    }
 }
 
 void ShadowBufferManager::reset_host_coherent_mapping(VkDeviceMemory memory) {

@@ -204,7 +204,12 @@ VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
     }
     IcdDevice* icd_device = icd_device_from_handle(device);
     VkResult result = vn_call_vkDeviceWaitIdle(&g_ring, icd_device->remote_handle);
-    if (result != VK_SUCCESS) {
+    if (result == VK_SUCCESS) {
+        VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+        if (invalidate_result != VK_SUCCESS) {
+            return invalidate_result;
+        }
+    } else {
         ICD_LOG_ERROR() << "[Client ICD] vkDeviceWaitIdle failed: " << result << "\n";
     }
     return result;

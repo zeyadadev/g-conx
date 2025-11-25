@@ -20,6 +20,7 @@ struct ShadowBufferMapping {
     void* data = nullptr;
     size_t alloc_size = 0;
     bool host_coherent = false;
+    bool invalidate_on_wait = false;
     struct HostCoherentTracking* tracking = nullptr;
 };
 
@@ -54,6 +55,7 @@ public:
                         VkDeviceSize offset,
                         VkDeviceSize size,
                         bool host_coherent,
+                        bool invalidate_on_wait,
                         void** out_ptr);
 
     bool remove_mapping(VkDeviceMemory memory, ShadowBufferMapping* out_mapping);
@@ -61,9 +63,13 @@ public:
     bool is_mapped(VkDeviceMemory memory) const;
     void remove_device(VkDevice device);
     void collect_dirty_coherent_ranges(VkDevice device, std::vector<ShadowCoherentRange>* out_ranges) const;
+    void collect_host_coherent_ranges(VkDevice device, std::vector<ShadowCoherentRange>* out_ranges) const;
     void prepare_coherent_range_flush(const ShadowCoherentRange& range) const;
     void finalize_coherent_range_flush(const ShadowCoherentRange& range) const;
     void reset_host_coherent_mapping(VkDeviceMemory memory);
+    bool range_has_dirty_pages(const ShadowCoherentRange& range) const;
+    void prepare_coherent_range_invalidate(const ShadowCoherentRange& range) const;
+    void finalize_coherent_range_invalidate(const ShadowCoherentRange& range) const;
     void free_mapping_resources(ShadowBufferMapping* mapping) const;
 
 private:

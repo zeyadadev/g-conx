@@ -253,6 +253,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence) 
     VkResult result = vn_call_vkGetFenceStatus(&g_ring, icd_device->remote_handle, remote);
     if (result == VK_SUCCESS) {
         g_sync_state.set_fence_signaled(fence, true);
+        VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+        if (invalidate_result != VK_SUCCESS) {
+            return invalidate_result;
+        }
     }
     return result;
 }
@@ -340,6 +344,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
     if (result == VK_SUCCESS) {
         for (uint32_t i = 0; i < fenceCount; ++i) {
             g_sync_state.set_fence_signaled(pFences[i], true);
+        }
+        VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+        if (invalidate_result != VK_SUCCESS) {
+            return invalidate_result;
         }
     }
     return result;
@@ -812,8 +820,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
     if (!ensure_queue_tracked(queue, &remote_queue)) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    IcdQueue* icd_queue = icd_queue_from_handle(queue);
+    VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
     VkResult result = vn_call_vkQueueWaitIdle(&g_ring, remote_queue);
-    if (result != VK_SUCCESS) {
+    if (result == VK_SUCCESS) {
+        VkResult invalidate_result = invalidate_host_coherent_mappings(queue_device);
+        if (invalidate_result != VK_SUCCESS) {
+            return invalidate_result;
+        }
+    } else {
         ICD_LOG_ERROR() << "[Client ICD] vkQueueWaitIdle failed: " << result << "\n";
     }
     return result;

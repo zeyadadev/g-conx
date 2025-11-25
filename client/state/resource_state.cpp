@@ -6,6 +6,10 @@ namespace venus_plus {
 
 ResourceState g_resource_state;
 
+namespace {
+constexpr VkDeviceSize kAutoInvalidateOnWaitThreshold = 16 * 1024 * 1024; // 16 MiB
+}
+
 void ResourceState::add_buffer(VkDevice device, VkBuffer local, VkBuffer remote, const VkBufferCreateInfo& info) {
     std::lock_guard<std::mutex> lock(mutex_);
     BufferState state = {};
@@ -83,6 +87,9 @@ bool ResourceState::bind_buffer(VkBuffer buffer, VkDeviceMemory memory, VkDevice
     auto& vec = mit->second.bound_buffers;
     if (std::find(vec.begin(), vec.end(), buffer) == vec.end()) {
         vec.push_back(buffer);
+    }
+    if (bit->second.size <= kAutoInvalidateOnWaitThreshold) {
+        mit->second.invalidate_on_wait = true;
     }
     return true;
 }
@@ -427,6 +434,15 @@ uint32_t ResourceState::get_memory_type_index(VkDeviceMemory memory) const {
         return UINT32_MAX;
     }
     return it->second.memory_type_index;
+}
+
+bool ResourceState::should_invalidate_on_wait(VkDeviceMemory memory) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return false;
+    }
+    return it->second.invalidate_on_wait;
 }
 
 bool ResourceState::buffer_is_bound(VkBuffer buffer) const {

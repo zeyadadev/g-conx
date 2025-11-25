@@ -400,6 +400,43 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties2KHR(
     vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
 }
 
+namespace {
+
+void normalize_memory_properties(VkPhysicalDeviceMemoryProperties* props) {
+    if (!props) {
+        return;
+    }
+    bool has_coherent_cached = false;
+    uint32_t first_coherent = UINT32_MAX;
+
+    for (uint32_t i = 0; i < props->memoryTypeCount; ++i) {
+        VkMemoryPropertyFlags* flags = &props->memoryTypes[i].propertyFlags;
+        if ((*flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+            continue;
+        }
+        bool coherent = (*flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+        bool cached = (*flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0;
+        if (coherent) {
+            if (first_coherent == UINT32_MAX) {
+                first_coherent = i;
+            }
+            if (cached) {
+                has_coherent_cached = true;
+            }
+        } else if (cached) {
+            *flags &= ~(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+        }
+    }
+
+    if (!has_coherent_cached && first_coherent != UINT32_MAX) {
+        props->memoryTypes[first_coherent].propertyFlags |=
+            VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+    }
+}
+
+} // namespace
+
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
     VkPhysicalDevice physicalDevice,
     VkPhysicalDeviceMemoryProperties* pMemoryProperties) {
@@ -429,6 +466,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
     }
 
     vn_call_vkGetPhysicalDeviceMemoryProperties(&g_ring, remote_device, pMemoryProperties);
+    normalize_memory_properties(pMemoryProperties);
     ICD_LOG_INFO() << "[Client ICD] Returned memory properties from server: "
               << pMemoryProperties->memoryTypeCount << " types, "
               << pMemoryProperties->memoryHeapCount << " heaps\n";
@@ -458,6 +496,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties2(
     }
 
     vn_call_vkGetPhysicalDeviceMemoryProperties2(&g_ring, remote_device, pMemoryProperties);
+    normalize_memory_properties(&pMemoryProperties->memoryProperties);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties2KHR(

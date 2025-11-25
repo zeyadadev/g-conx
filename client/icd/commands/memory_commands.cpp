@@ -3,8 +3,7 @@
 
 #include "icd/icd_entrypoints.h"
 #include "icd/commands/commands_common.h"
-
-// Helper functions (must be outside extern "C" to match header declarations)
+#include <atomic>
 
 VkResult send_transfer_memory_data(VkDeviceMemory memory,
                                    VkDeviceSize offset,
@@ -185,17 +184,40 @@ VKAPI_ATTR void VKAPI_CALL vkFreeMemory(
     }
 
     ShadowBufferMapping mapping = {};
-    if (g_shadow_buffer_manager.remove_mapping(memory, &mapping)) {
-        g_shadow_buffer_manager.free_mapping_resources(&mapping);
-        ICD_LOG_ERROR() << "[Client ICD] Warning: Memory freed while still mapped, dropping local shadow buffer\n";
+    bool had_shadow_mapping = g_shadow_buffer_manager.remove_mapping(memory, &mapping);
+    if (had_shadow_mapping) {
+        ICD_LOG_ERROR() << "[Client ICD] Warning: Memory freed while still mapped, flushing shadow buffer before release\n";
     }
 
     VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
 
     if (!ensure_connected()) {
         ICD_LOG_ERROR() << "[Client ICD] Not connected to server during vkFreeMemory\n";
+        if (had_shadow_mapping) {
+            g_shadow_buffer_manager.free_mapping_resources(&mapping);
+        }
         g_resource_state.remove_memory(memory);
         return;
+    }
+
+    if (had_shadow_mapping) {
+        if (mapping.device != device) {
+            ICD_LOG_ERROR() << "[Client ICD] vkFreeMemory: device mismatch for mapped memory\n";
+        }
+
+        if (mapping.size > 0 && mapping.data) {
+            VkResult flush_result =
+                send_transfer_memory_data(memory, mapping.offset, mapping.size, mapping.data);
+            if (flush_result != VK_SUCCESS) {
+                ICD_LOG_ERROR() << "[Client ICD] Failed to flush mapped memory before free: "
+                                << flush_result << "\n";
+            } else {
+                ICD_LOG_INFO() << "[Client ICD] Flushed " << mapping.size
+                               << " bytes before vkFreeMemory\n";
+            }
+        }
+
+        g_shadow_buffer_manager.free_mapping_resources(&mapping);
     }
 
     if (!g_device_state.has_device(device)) {
@@ -295,9 +317,31 @@ VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(
     }
 
     bool host_coherent = (property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+    if (!host_coherent) {
+        static std::atomic<bool> warned_non_coherent{false};
+        if (!warned_non_coherent.exchange(true)) {
+            ICD_LOG_ERROR() << "[Client ICD] Device memory type "
+                            << type_index
+                            << " lacks HOST_COHERENT; applications must flush/invalidate mapped ranges for visibility\n";
+        }
+    }
+
+    constexpr VkDeviceSize kInvalidateWaitThreshold = 16 * 1024 * 1024; // 16 MiB
+    bool invalidate_on_wait = g_resource_state.should_invalidate_on_wait(memory);
+    // If the mapped slice is small, allow automatic invalidate-on-wait even
+    // when the backing allocation is large (e.g., a shared arena).
+    if (size != VK_WHOLE_SIZE && size <= kInvalidateWaitThreshold) {
+        invalidate_on_wait = true;
+    }
 
     void* shadow_ptr = nullptr;
-    if (!g_shadow_buffer_manager.create_mapping(device, memory, offset, size, host_coherent, &shadow_ptr)) {
+    if (!g_shadow_buffer_manager.create_mapping(device,
+                                                memory,
+                                                offset,
+                                                size,
+                                                host_coherent,
+                                                invalidate_on_wait,
+                                                &shadow_ptr)) {
         ICD_LOG_ERROR() << "[Client ICD] Failed to allocate shadow buffer for mapping\n";
         return VK_ERROR_MEMORY_MAP_FAILED;
     }

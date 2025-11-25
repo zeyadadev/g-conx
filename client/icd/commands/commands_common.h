@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <atomic>
 #include <new>
 #include <vector>
 #include <string>
@@ -573,6 +574,40 @@ inline VkResult flush_host_coherent_mappings(VkDevice device) {
             return result;
         }
         g_shadow_buffer_manager.finalize_coherent_range_flush(range);
+    }
+    return VK_SUCCESS;
+}
+
+inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
+    if (device == VK_NULL_HANDLE) {
+        return VK_SUCCESS;
+    }
+    static constexpr VkDeviceSize kMaxInvalidateBytes = 16 * 1024 * 1024; // cap to avoid huge copies
+    static std::atomic<bool> warned_skip{false};
+    std::vector<ShadowCoherentRange> ranges;
+    g_shadow_buffer_manager.collect_host_coherent_ranges(device, &ranges);
+    for (const auto& range : ranges) {
+        if (!range.data || range.size == 0) {
+            continue;
+        }
+        if (range.size > kMaxInvalidateBytes) {
+            if (!warned_skip.exchange(true)) {
+                ICD_LOG_WARN() << "[Client ICD] Skipping host-coherent invalidate for large mapped range ("
+                               << range.size << " bytes); data visibility relies on explicit vkInvalidateMappedMemoryRanges\n";
+            }
+            continue;
+        }
+        if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
+            continue;
+        }
+        g_shadow_buffer_manager.prepare_coherent_range_invalidate(range);
+        VkResult result = read_memory_data(range.memory, range.offset, range.size, range.data);
+        g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        if (result != VK_SUCCESS) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to sync host-coherent memory from server: "
+                            << result << "\n";
+            return result;
+        }
     }
     return VK_SUCCESS;
 }
