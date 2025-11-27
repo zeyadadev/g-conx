@@ -18,6 +18,9 @@ public:
     VkResult handle_transfer_command(const void* data, size_t size);
     VkResult handle_transfer_batch_command(const void* data, size_t size);
     VkResult handle_read_command(const void* data, size_t size, std::vector<uint8_t>* out_payload);
+    VkResult handle_read_batch_command(const void* data,
+                                       size_t size,
+                                       std::vector<uint8_t>* out_payload);
 
 private:
     VkResult write_memory(const TransferMemoryDataHeader& header, const uint8_t* payload, size_t payload_size);

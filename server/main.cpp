@@ -58,6 +58,15 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
             }
             return true;
         }
+        if (command == VENUS_PLUS_CMD_READ_MEMORY_BATCH) {
+            std::vector<uint8_t> payload;
+            VkResult result = g_memory_transfer.handle_read_batch_command(data, size, &payload);
+            if (!NetworkServer::send_to_client(client_fd, payload.data(), payload.size())) {
+                SERVER_LOG_ERROR() << "Failed to send read batch reply";
+                return false;
+            }
+            return true;
+        }
         if (command == VENUS_PLUS_CMD_CREATE_SWAPCHAIN) {
             if (size < sizeof(VenusSwapchainCreateRequest)) {
                 return false;

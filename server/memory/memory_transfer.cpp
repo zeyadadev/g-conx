@@ -107,6 +107,73 @@ VkResult MemoryTransferHandler::handle_read_command(const void* data,
     return read_memory(request, out_payload);
 }
 
+VkResult MemoryTransferHandler::handle_read_batch_command(const void* data,
+                                                          size_t size,
+                                                          std::vector<uint8_t>* out_payload) {
+    if (!state_ || !out_payload || !data || size < sizeof(ReadMemoryBatchHeader)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    ReadMemoryBatchHeader header = {};
+    std::memcpy(&header, data, sizeof(header));
+    if (header.command != VENUS_PLUS_CMD_READ_MEMORY_BATCH) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const size_t range_bytes = static_cast<size_t>(header.range_count) * sizeof(ReadMemoryRange);
+    const size_t min_size = sizeof(ReadMemoryBatchHeader) + range_bytes;
+    if (size < min_size) {
+        MEMORY_LOG_ERROR() << "Read batch payload too small";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const uint8_t* range_ptr =
+        static_cast<const uint8_t*>(data) + sizeof(ReadMemoryBatchHeader);
+    std::vector<ReadMemoryRange> ranges(header.range_count);
+    std::memcpy(ranges.data(), range_ptr, range_bytes);
+
+    size_t total_size = 0;
+    for (const auto& range : ranges) {
+        if (range.size > std::numeric_limits<size_t>::max()) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        total_size += static_cast<size_t>(range.size);
+    }
+
+    ReadMemoryBatchReplyHeader reply_header = {};
+    reply_header.result = VK_SUCCESS;
+    reply_header.range_count = header.range_count;
+    out_payload->assign(reinterpret_cast<uint8_t*>(&reply_header),
+                        reinterpret_cast<uint8_t*>(&reply_header) + sizeof(reply_header));
+    out_payload->resize(sizeof(reply_header) + total_size);
+
+    size_t offset = sizeof(reply_header);
+    for (const auto& range : ranges) {
+        ReadMemoryDataRequest req = {};
+        req.command = VENUS_PLUS_CMD_READ_MEMORY_DATA;
+        req.memory_handle = range.memory_handle;
+        req.offset = range.offset;
+        req.size = range.size;
+
+        std::vector<uint8_t> tmp;
+        VkResult result = read_memory(req, &tmp);
+        if (result != VK_SUCCESS) {
+            reply_header.result = result;
+            std::memcpy(out_payload->data(), &reply_header, sizeof(reply_header));
+            out_payload->resize(sizeof(reply_header));
+            return result;
+        }
+        if (tmp.size() != static_cast<size_t>(range.size)) {
+            reply_header.result = VK_ERROR_MEMORY_MAP_FAILED;
+            std::memcpy(out_payload->data(), &reply_header, sizeof(reply_header));
+            out_payload->resize(sizeof(reply_header));
+            return reply_header.result;
+        }
+        std::memcpy(out_payload->data() + offset, tmp.data(), tmp.size());
+        offset += tmp.size();
+    }
+
+    std::memcpy(out_payload->data(), &reply_header, sizeof(reply_header));
+    return VK_SUCCESS;
+}
+
 VkResult MemoryTransferHandler::write_memory(const TransferMemoryDataHeader& header,
                                              const uint8_t* payload,
                                              size_t payload_size) {

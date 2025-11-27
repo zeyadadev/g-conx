@@ -654,6 +654,10 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     static std::atomic<bool> warned_skip{false};
     std::vector<ShadowCoherentRange> ranges;
     g_shadow_buffer_manager.collect_host_coherent_ranges(device, &ranges);
+    std::vector<ShadowCoherentRange> eligible;
+    eligible.reserve(ranges.size());
+    size_t total_bytes = 0;
+
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
             continue;
@@ -668,14 +672,102 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
             continue;
         }
-        g_shadow_buffer_manager.prepare_coherent_range_invalidate(range);
-        VkResult result = read_memory_data(range.memory, range.offset, range.size, range.data);
-        g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        if (result != VK_SUCCESS) {
-            ICD_LOG_ERROR() << "[Client ICD] Failed to sync host-coherent memory from server: "
-                            << result << "\n";
-            return result;
+        if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
+        total_bytes += static_cast<size_t>(range.size);
+        eligible.push_back(range);
     }
+
+    if (eligible.empty()) {
+        return VK_SUCCESS;
+    }
+
+    if (eligible.size() > std::numeric_limits<uint32_t>::max()) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    const size_t header_bytes = sizeof(ReadMemoryBatchHeader) +
+                                eligible.size() * sizeof(ReadMemoryRange);
+    const size_t payload_size = header_bytes;
+    if (!check_payload_size(payload_size)) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    std::vector<uint8_t> request(payload_size);
+    auto* header = reinterpret_cast<ReadMemoryBatchHeader*>(request.data());
+    header->command = VENUS_PLUS_CMD_READ_MEMORY_BATCH;
+    header->range_count = static_cast<uint32_t>(eligible.size());
+    auto* range_out = reinterpret_cast<ReadMemoryRange*>(request.data() + sizeof(ReadMemoryBatchHeader));
+    for (size_t i = 0; i < eligible.size(); ++i) {
+        const auto& range = eligible[i];
+        VkDeviceMemory remote_mem = g_resource_state.get_remote_memory(range.memory);
+        if (remote_mem == VK_NULL_HANDLE) {
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+        range_out[i].memory_handle = reinterpret_cast<uint64_t>(remote_mem);
+        range_out[i].offset = range.offset;
+        range_out[i].size = range.size;
+        g_shadow_buffer_manager.prepare_coherent_range_invalidate(range);
+    }
+
+    if (!g_client.send(request.data(), request.size())) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send read batch request";
+        for (const auto& range : eligible) {
+            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply) || reply.size() < sizeof(ReadMemoryBatchReplyHeader)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive read batch reply";
+        for (const auto& range : eligible) {
+            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    ReadMemoryBatchReplyHeader reply_header = {};
+    std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
+    if (reply_header.result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] Read batch failed: " << reply_header.result << "\n";
+        for (const auto& range : eligible) {
+            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        }
+        return reply_header.result;
+    }
+
+    if (reply_header.range_count != header->range_count) {
+        ICD_LOG_ERROR() << "[Client ICD] Read batch range count mismatch";
+        for (const auto& range : eligible) {
+            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    size_t expected_payload = 0;
+    for (const auto& range : eligible) {
+        expected_payload += static_cast<size_t>(range.size);
+    }
+    if (reply.size() != sizeof(ReadMemoryBatchReplyHeader) + expected_payload) {
+        ICD_LOG_ERROR() << "[Client ICD] Read batch payload size mismatch";
+        for (const auto& range : eligible) {
+            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    const uint8_t* data_ptr = reply.data() + sizeof(ReadMemoryBatchReplyHeader);
+    size_t consumed = 0;
+    for (const auto& range : eligible) {
+        if (range.size == 0) {
+            continue;
+        }
+        std::memcpy(range.data, data_ptr + consumed, static_cast<size_t>(range.size));
+        consumed += static_cast<size_t>(range.size);
+        g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+    }
+
     return VK_SUCCESS;
 }

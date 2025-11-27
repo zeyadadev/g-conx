@@ -40,6 +40,25 @@ struct ReadMemoryDataResponse {
     // Followed by |size| bytes of payload if result == VK_SUCCESS.
 };
 
+struct ReadMemoryBatchHeader {
+    uint32_t command;     // VenusPlusCommandType
+    uint32_t range_count; // number of ranges
+    uint32_t reserved0;
+    uint32_t reserved1;
+};
+
+struct ReadMemoryRange {
+    uint64_t memory_handle; // Client-side VkDeviceMemory (server uses remote)
+    uint64_t offset;
+    uint64_t size;
+};
+
+struct ReadMemoryBatchReplyHeader {
+    VkResult result;
+    uint32_t range_count;
+    uint32_t reserved0;
+};
+
 } // namespace venus_plus
 
 #endif // VENUS_PLUS_MEMORY_TRANSFER_PROTOCOL_H
