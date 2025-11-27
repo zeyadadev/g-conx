@@ -7,6 +7,10 @@
 
 using namespace venus_plus;
 
+namespace {
+constexpr size_t kMaxPendingBytes = 256 * 1024; // prevent unbounded buffering
+}
+
 vn_cs_encoder* vn_ring_submit_command_init(struct vn_ring* ring,
                                            struct vn_ring_submit_command* submit,
                                            void* cmd_data,
@@ -37,6 +41,9 @@ void vn_ring_submit_command(struct vn_ring* ring, struct vn_ring_submit_command*
 
     const uint8_t* bytes = static_cast<const uint8_t*>(submit->cmd_data);
     ring->pending_buffer.insert(ring->pending_buffer.end(), bytes, bytes + payload_size);
+    if (ring->pending_buffer.size() >= kMaxPendingBytes) {
+        vn_ring_flush_pending(ring);
+    }
 }
 
 void vn_ring_flush_pending(struct vn_ring* ring) {
