@@ -24,6 +24,7 @@ struct vn_ring_submit_command {
 
 struct vn_ring {
     venus_plus::NetworkClient* client;
+    std::vector<uint8_t> pending_buffer;
 };
 
 vn_cs_encoder* vn_ring_submit_command_init(struct vn_ring* ring,
@@ -33,6 +34,7 @@ vn_cs_encoder* vn_ring_submit_command_init(struct vn_ring* ring,
                                            size_t reply_size);
 
 void vn_ring_submit_command(struct vn_ring* ring, struct vn_ring_submit_command* submit);
+void vn_ring_flush_pending(struct vn_ring* ring);
 vn_cs_decoder* vn_ring_get_command_reply(struct vn_ring* ring, struct vn_ring_submit_command* submit);
 void vn_ring_free_command_reply(struct vn_ring* ring, struct vn_ring_submit_command* submit);
 

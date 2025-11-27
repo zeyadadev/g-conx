@@ -35,9 +35,23 @@ void vn_ring_submit_command(struct vn_ring* ring, struct vn_ring_submit_command*
         return;
     }
 
-    if (!ring->client->send(submit->cmd_data, payload_size)) {
-        CLIENT_LOG_ERROR() << "Failed to send Venus command";
+    const uint8_t* bytes = static_cast<const uint8_t*>(submit->cmd_data);
+    ring->pending_buffer.insert(ring->pending_buffer.end(), bytes, bytes + payload_size);
+}
+
+void vn_ring_flush_pending(struct vn_ring* ring) {
+    if (!ring || !ring->client)
+        return;
+
+    if (ring->pending_buffer.empty())
+        return;
+
+    if (!ring->client->send(ring->pending_buffer.data(), ring->pending_buffer.size())) {
+        CLIENT_LOG_ERROR() << "Failed to send pending Venus commands";
+        return;
     }
+
+    ring->pending_buffer.clear();
 }
 
 vn_cs_decoder* vn_ring_get_command_reply(struct vn_ring* ring, struct vn_ring_submit_command* submit) {
@@ -46,6 +60,17 @@ vn_cs_decoder* vn_ring_get_command_reply(struct vn_ring* ring, struct vn_ring_su
 
     if (!submit->reply_size)
         return nullptr;
+
+    if (ring->pending_buffer.empty()) {
+        CLIENT_LOG_ERROR() << "No pending Venus commands to flush for reply";
+        return nullptr;
+    }
+
+    vn_ring_flush_pending(ring);
+    if (!ring->pending_buffer.empty()) {
+        CLIENT_LOG_ERROR() << "Pending buffer not cleared after flush";
+        return nullptr;
+    }
 
     std::vector<uint8_t> reply;
     if (!ring->client->receive(reply)) {

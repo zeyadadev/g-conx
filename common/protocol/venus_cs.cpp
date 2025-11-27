@@ -166,6 +166,13 @@ bool vn_cs_decoder_get_fatal(const struct vn_cs_decoder* dec) {
     return dec ? dec->fatal : true;
 }
 
+size_t vn_cs_decoder_bytes_remaining(const struct vn_cs_decoder* dec) {
+    if (!dec || dec->fatal || dec->offset > dec->size) {
+        return 0;
+    }
+    return dec->size - dec->offset;
+}
+
 void vn_cs_decoder_reset_temp_storage(struct vn_cs_decoder* dec) {
     if (!dec) return;
     dec->temp_buffers.clear();

@@ -162,6 +162,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 
     if (g_connected) {
         vn_async_vkDestroyInstance(&g_ring, icd_instance->remote_handle, pAllocator);
+        vn_ring_flush_pending(&g_ring); // flush any batched commands before shutdown
     }
 
     if (g_instance_state.has_instance(loader_handle)) {

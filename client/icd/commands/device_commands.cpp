@@ -117,6 +117,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 
     // Call server to destroy device
     vn_async_vkDestroyDevice(&g_ring, icd_device->remote_handle, pAllocator);
+    vn_ring_flush_pending(&g_ring); // ensure batched async commands are delivered before teardown
 
     // Drop resource tracking for this device
     g_resource_state.remove_device_resources(device);

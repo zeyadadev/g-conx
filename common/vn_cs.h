@@ -70,6 +70,7 @@ void vn_cs_decoder_set_fatal(struct vn_cs_decoder* dec);
 void vn_cs_decoder_read(struct vn_cs_decoder* dec, size_t size, void* value, size_t value_size);
 void vn_cs_decoder_peek(struct vn_cs_decoder* dec, size_t size, void* value, size_t value_size);
 bool vn_cs_decoder_get_fatal(const struct vn_cs_decoder* dec);
+size_t vn_cs_decoder_bytes_remaining(const struct vn_cs_decoder* dec);
 void* vn_cs_decoder_alloc_temp(struct vn_cs_decoder* dec, size_t size);
 void* vn_cs_decoder_alloc_temp_array(struct vn_cs_decoder* dec, size_t size, size_t count);
 vn_object_id vn_cs_handle_load_id(const void** handle, VkObjectType type);

@@ -3904,7 +3904,10 @@ bool venus_renderer_handle(struct VenusRenderer* renderer,
     vn_cs_decoder_init(renderer->decoder, data, size);
     vn_cs_encoder_init_dynamic(renderer->encoder);
 
-    vn_dispatch_command(&renderer->ctx);
+    while (vn_cs_decoder_bytes_remaining(renderer->decoder) > 0 &&
+           !vn_cs_decoder_get_fatal(renderer->decoder)) {
+        vn_dispatch_command(&renderer->ctx);
+    }
 
     if (vn_cs_decoder_get_fatal(renderer->decoder)) {
         vn_cs_decoder_reset_temp_storage(renderer->decoder);
