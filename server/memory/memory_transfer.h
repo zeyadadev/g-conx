@@ -16,6 +16,7 @@ public:
     explicit MemoryTransferHandler(ServerState* state);
 
     VkResult handle_transfer_command(const void* data, size_t size);
+    VkResult handle_transfer_batch_command(const void* data, size_t size);
     VkResult handle_read_command(const void* data, size_t size, std::vector<uint8_t>* out_payload);
 
 private:

@@ -34,6 +34,14 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
             }
             return true;
         }
+        if (command == VENUS_PLUS_CMD_TRANSFER_MEMORY_BATCH) {
+            VkResult result = g_memory_transfer.handle_transfer_batch_command(data, size);
+            if (!NetworkServer::send_to_client(client_fd, &result, sizeof(result))) {
+                SERVER_LOG_ERROR() << "Failed to send transfer batch ack";
+                return false;
+            }
+            return true;
+        }
         if (command == VENUS_PLUS_CMD_READ_MEMORY_DATA) {
             std::vector<uint8_t> payload;
             VkResult result = g_memory_transfer.handle_read_command(data, size, &payload);

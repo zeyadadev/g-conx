@@ -526,6 +526,12 @@ bool ResourceTracker::free_memory(VkDeviceMemory memory) {
         }
     }
 
+    if (it->second.mapped_ptr) {
+        vkUnmapMemory(real_device, real_handle);
+        it->second.mapped_ptr = nullptr;
+        it->second.mapped_size = 0;
+    }
+
     if (real_handle != VK_NULL_HANDLE) {
         vkFreeMemory(real_device, real_handle, nullptr);
     }
@@ -730,6 +736,38 @@ bool ResourceTracker::get_memory_info(VkDeviceMemory memory,
         *type_index = it->second.type_index;
     }
     return true;
+}
+
+VkResult ResourceTracker::get_memory_mapping(VkDeviceMemory memory,
+                                             void** mapped_ptr,
+                                             VkDeviceSize* size) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    MemoryResource& mem = it->second;
+    if (!mem.mapped_ptr) {
+        VkResult map_result = vkMapMemory(mem.real_device,
+                                          mem.real_handle,
+                                          0,
+                                          mem.size,
+                                          0,
+                                          &mem.mapped_ptr);
+        if (map_result != VK_SUCCESS) {
+            mem.mapped_ptr = nullptr;
+            mem.mapped_size = 0;
+            return map_result;
+        }
+        mem.mapped_size = mem.size;
+    }
+    if (mapped_ptr) {
+        *mapped_ptr = mem.mapped_ptr;
+    }
+    if (size) {
+        *size = mem.mapped_size;
+    }
+    return VK_SUCCESS;
 }
 
 bool ResourceTracker::ranges_overlap(VkDeviceSize offset_a, VkDeviceSize size_a, VkDeviceSize offset_b, VkDeviceSize size_b) {

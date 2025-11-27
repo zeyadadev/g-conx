@@ -86,6 +86,7 @@ public:
 
     bool buffer_exists(VkBuffer buffer) const;
     bool image_exists(VkImage image) const;
+    VkResult get_memory_mapping(VkDeviceMemory memory, void** mapped_ptr, VkDeviceSize* size);
 
     VkShaderModule create_shader_module(VkDevice device,
                                         VkDevice real_device,
@@ -250,6 +251,8 @@ private:
         VkDeviceMemory real_handle;
         VkDeviceSize size;
         uint32_t type_index;
+        void* mapped_ptr = nullptr;
+        VkDeviceSize mapped_size = 0;
         std::vector<BufferBinding> buffer_bindings;
         std::vector<ImageBinding> image_bindings;
     };

@@ -15,6 +15,19 @@ struct TransferMemoryDataHeader {
     uint64_t size;          // Number of bytes that follow
 };
 
+struct TransferMemoryBatchHeader {
+    uint32_t command;       // VenusPlusCommandType
+    uint32_t range_count;   // Number of ranges in this batch
+    uint32_t reserved0;
+    uint32_t reserved1;
+};
+
+struct TransferMemoryRange {
+    uint64_t memory_handle; // Client-side VkDeviceMemory
+    uint64_t offset;        // Offset within memory allocation
+    uint64_t size;          // Number of bytes for this range
+};
+
 struct ReadMemoryDataRequest {
     uint32_t command;       // VenusPlusCommandType
     uint64_t memory_handle; // Client-side VkDeviceMemory

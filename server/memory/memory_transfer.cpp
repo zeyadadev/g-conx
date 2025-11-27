@@ -38,6 +38,59 @@ VkResult MemoryTransferHandler::handle_transfer_command(const void* data, size_t
     return write_memory(header, payload, payload_size);
 }
 
+VkResult MemoryTransferHandler::handle_transfer_batch_command(const void* data, size_t size) {
+    if (!state_ || !data || size < sizeof(TransferMemoryBatchHeader)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    TransferMemoryBatchHeader header = {};
+    std::memcpy(&header, data, sizeof(header));
+    if (header.command != VENUS_PLUS_CMD_TRANSFER_MEMORY_BATCH) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const size_t range_bytes = static_cast<size_t>(header.range_count) * sizeof(TransferMemoryRange);
+    const size_t min_size = sizeof(TransferMemoryBatchHeader) + range_bytes;
+    if (size < min_size) {
+        MEMORY_LOG_ERROR() << "Transfer batch payload too small";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    const uint8_t* range_bytes_ptr =
+        static_cast<const uint8_t*>(data) + sizeof(TransferMemoryBatchHeader);
+    const uint8_t* payload = static_cast<const uint8_t*>(data) + min_size;
+    size_t payload_size = size - min_size;
+
+    size_t consumed = 0;
+    for (uint32_t i = 0; i < header.range_count; ++i) {
+        const auto* src = range_bytes_ptr + static_cast<size_t>(i) * sizeof(TransferMemoryRange);
+        TransferMemoryRange range = {};
+        std::memcpy(&range, src, sizeof(TransferMemoryRange));
+        if (range.size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+            MEMORY_LOG_ERROR() << "Transfer batch range too large";
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        if (consumed + static_cast<size_t>(range.size) > payload_size) {
+            MEMORY_LOG_ERROR() << "Transfer batch payload truncated";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        TransferMemoryDataHeader single = {};
+        single.command = VENUS_PLUS_CMD_TRANSFER_MEMORY_DATA;
+        single.memory_handle = range.memory_handle;
+        single.offset = range.offset;
+        single.size = range.size;
+        VkResult result = write_memory(
+            single,
+            payload + consumed,
+            static_cast<size_t>(range.size));
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+        consumed += static_cast<size_t>(range.size);
+    }
+
+    return VK_SUCCESS;
+}
+
 VkResult MemoryTransferHandler::handle_read_command(const void* data,
                                                     size_t size,
                                                     std::vector<uint8_t>* out_payload) {
@@ -81,19 +134,24 @@ VkResult MemoryTransferHandler::write_memory(const TransferMemoryDataHeader& hea
         return VK_SUCCESS;
     }
 
-    void* mapped = nullptr;
-    VkResult result = vkMapMemory(real_device,
-                                  real_memory,
-                                  header.offset,
-                                  header.size,
-                                  0,
-                                  &mapped);
-    if (result != VK_SUCCESS) {
-        MEMORY_LOG_ERROR() << "vkMapMemory failed for transfer: " << result;
-        return result;
+    void* mapped_base = nullptr;
+    VkDeviceSize mapped_size = 0;
+    VkResult map_result = state_->resource_tracker.get_memory_mapping(
+        reinterpret_cast<VkDeviceMemory>(header.memory_handle),
+        &mapped_base,
+        &mapped_size);
+    if (map_result != VK_SUCCESS || !mapped_base) {
+        MEMORY_LOG_ERROR() << "Failed to map memory for transfer: " << map_result;
+        return map_result;
     }
 
-    std::memcpy(mapped, payload, payload_size);
+    if (header.offset + header.size > mapped_size) {
+        MEMORY_LOG_ERROR() << "Transfer range exceeds mapped size";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    uint8_t* dst = static_cast<uint8_t*>(mapped_base) + header.offset;
+    std::memcpy(dst, payload, payload_size);
 
     VkMappedMemoryRange range = {};
     range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
@@ -101,8 +159,6 @@ VkResult MemoryTransferHandler::write_memory(const TransferMemoryDataHeader& hea
     range.offset = header.offset;
     range.size = header.size;
     vkFlushMappedMemoryRanges(real_device, 1, &range);
-
-    vkUnmapMemory(real_device, real_memory);
     return VK_SUCCESS;
 }
 
@@ -140,17 +196,16 @@ VkResult MemoryTransferHandler::read_memory(const ReadMemoryDataRequest& request
 
     out_payload->resize(static_cast<size_t>(request.size));
 
-    void* mapped = nullptr;
-    VkResult result = vkMapMemory(real_device,
-                                  real_memory,
-                                  request.offset,
-                                  request.size,
-                                  0,
-                                  &mapped);
-    if (result != VK_SUCCESS) {
-        MEMORY_LOG_ERROR() << "vkMapMemory failed for read: " << result;
+    void* mapped_base = nullptr;
+    VkDeviceSize mapped_size = 0;
+    VkResult map_result = state_->resource_tracker.get_memory_mapping(
+        reinterpret_cast<VkDeviceMemory>(request.memory_handle),
+        &mapped_base,
+        &mapped_size);
+    if (map_result != VK_SUCCESS || !mapped_base) {
+        MEMORY_LOG_ERROR() << "Failed to map memory for read: " << map_result;
         out_payload->clear();
-        return result;
+        return map_result;
     }
 
     VkMappedMemoryRange range = {};
@@ -160,9 +215,14 @@ VkResult MemoryTransferHandler::read_memory(const ReadMemoryDataRequest& request
     range.size = request.size;
     vkInvalidateMappedMemoryRanges(real_device, 1, &range);
 
-    std::memcpy(out_payload->data(), mapped, out_payload->size());
+    if (request.offset + request.size > mapped_size) {
+        MEMORY_LOG_ERROR() << "Read range exceeds mapped size";
+        out_payload->clear();
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
 
-    vkUnmapMemory(real_device, real_memory);
+    const uint8_t* src = static_cast<const uint8_t*>(mapped_base) + request.offset;
+    std::memcpy(out_payload->data(), src, out_payload->size());
     return VK_SUCCESS;
 }
 

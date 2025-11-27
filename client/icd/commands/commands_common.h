@@ -561,21 +561,89 @@ inline VkResult flush_host_coherent_mappings(VkDevice device) {
     }
     std::vector<ShadowCoherentRange> ranges;
     g_shadow_buffer_manager.collect_dirty_coherent_ranges(device, &ranges);
+    if (ranges.empty()) {
+        return VK_SUCCESS;
+    }
+
+    size_t total_bytes = 0;
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
             continue;
         }
-        g_shadow_buffer_manager.prepare_coherent_range_flush(range);
-        VkResult result =
-            send_transfer_memory_data(range.memory, range.offset, range.size, range.data);
-        if (result != VK_SUCCESS) {
-            ICD_LOG_ERROR() << "[Client ICD] Failed to sync host-coherent memory during submit: "
-                            << result << "\n";
-            return result;
+        if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
+            ICD_LOG_ERROR() << "[Client ICD] Flush range too large";
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
+        total_bytes += static_cast<size_t>(range.size);
+    }
+
+    if (ranges.size() > std::numeric_limits<uint32_t>::max()) {
+        ICD_LOG_ERROR() << "[Client ICD] Too many ranges to flush";
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    const size_t header_bytes = sizeof(TransferMemoryBatchHeader) +
+                                ranges.size() * sizeof(TransferMemoryRange);
+    const size_t payload_size = header_bytes + total_bytes;
+    if (total_bytes == 0) {
+        return VK_SUCCESS;
+    }
+    if (!check_payload_size(payload_size)) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    std::vector<uint8_t> payload(payload_size);
+    auto* header = reinterpret_cast<TransferMemoryBatchHeader*>(payload.data());
+    header->command = VENUS_PLUS_CMD_TRANSFER_MEMORY_BATCH;
+    header->range_count = static_cast<uint32_t>(ranges.size());
+    auto* range_out = reinterpret_cast<TransferMemoryRange*>(payload.data() + sizeof(TransferMemoryBatchHeader));
+    uint8_t* data_out = reinterpret_cast<uint8_t*>(range_out + ranges.size());
+
+    size_t copied = 0;
+    for (size_t i = 0; i < ranges.size(); ++i) {
+        const auto& range = ranges[i];
+        VkDeviceMemory remote_mem = g_resource_state.get_remote_memory(range.memory);
+        if (remote_mem == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Missing remote memory handle for flush";
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        }
+        range_out[i].memory_handle = reinterpret_cast<uint64_t>(remote_mem);
+        range_out[i].offset = range.offset;
+        range_out[i].size = range.size;
+        if (!range.data || range.size == 0) {
+            continue;
+        }
+        g_shadow_buffer_manager.prepare_coherent_range_flush(range);
+        std::memcpy(data_out + copied, range.data, static_cast<size_t>(range.size));
+        copied += static_cast<size_t>(range.size);
+    }
+
+    if (!g_client.send(payload.data(), payload.size())) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send batch memory transfer";
+        for (const auto& range : ranges) {
+            g_shadow_buffer_manager.finalize_coherent_range_flush(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply) || reply.size() < sizeof(VkResult)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive batch transfer reply";
+        for (const auto& range : ranges) {
+            g_shadow_buffer_manager.finalize_coherent_range_flush(range);
+        }
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    VkResult result = VK_ERROR_DEVICE_LOST;
+    std::memcpy(&result, reply.data(), sizeof(VkResult));
+    for (const auto& range : ranges) {
         g_shadow_buffer_manager.finalize_coherent_range_flush(range);
     }
-    return VK_SUCCESS;
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] Batch memory transfer failed: " << result << "\n";
+    }
+    return result;
 }
 
 inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
