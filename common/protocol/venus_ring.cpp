@@ -7,6 +7,9 @@
 
 using namespace venus_plus;
 
+// These functions must have C linkage to match the header declarations
+extern "C" {
+
 vn_cs_encoder* vn_ring_submit_command_init(struct vn_ring* ring,
                                            struct vn_ring_submit_command* submit,
                                            void* cmd_data,
@@ -93,3 +96,5 @@ void vn_ring_free_command_reply(struct vn_ring* ring, struct vn_ring_submit_comm
     submit->reply_buffer.clear();
     vn_cs_decoder_reset_temp_storage(&submit->decoder);
 }
+
+} // extern "C"

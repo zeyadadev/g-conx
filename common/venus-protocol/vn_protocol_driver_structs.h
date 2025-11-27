@@ -324,7 +324,7 @@ static inline void
 vn_encode_VkSemaphoreTypeCreateInfo(struct vn_cs_encoder *enc, const VkSemaphoreTypeCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkSemaphoreTypeCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkSemaphoreTypeCreateInfo_self(enc, val);
 }
@@ -377,7 +377,7 @@ static inline void
 vn_encode_VkBufferUsageFlags2CreateInfo(struct vn_cs_encoder *enc, const VkBufferUsageFlags2CreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkBufferUsageFlags2CreateInfo_pnext(enc, val->pNext);
     vn_encode_VkBufferUsageFlags2CreateInfo_self(enc, val);
 }
@@ -442,7 +442,7 @@ static inline void
 vn_encode_VkImageFormatListCreateInfo(struct vn_cs_encoder *enc, const VkImageFormatListCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkImageFormatListCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkImageFormatListCreateInfo_self(enc, val);
 }
@@ -495,7 +495,7 @@ static inline void
 vn_encode_VkImageStencilUsageCreateInfo(struct vn_cs_encoder *enc, const VkImageStencilUsageCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkImageStencilUsageCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkImageStencilUsageCreateInfo_self(enc, val);
 }
@@ -623,7 +623,7 @@ static inline void
 vn_encode_VkSamplerYcbcrConversionInfo(struct vn_cs_encoder *enc, const VkSamplerYcbcrConversionInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO; &_vn_temp; }));
     vn_encode_VkSamplerYcbcrConversionInfo_pnext(enc, val->pNext);
     vn_encode_VkSamplerYcbcrConversionInfo_self(enc, val);
 }
@@ -690,7 +690,7 @@ static inline void
 vn_encode_VkShaderModuleCreateInfo(struct vn_cs_encoder *enc, const VkShaderModuleCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkShaderModuleCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkShaderModuleCreateInfo_self(enc, val);
 }
@@ -912,7 +912,7 @@ static inline void
 vn_encode_VkDepthBiasRepresentationInfoEXT(struct vn_cs_encoder *enc, const VkDepthBiasRepresentationInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT; &_vn_temp; }));
     vn_encode_VkDepthBiasRepresentationInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkDepthBiasRepresentationInfoEXT_self(enc, val);
 }
@@ -1001,7 +1001,7 @@ static inline void
 vn_encode_VkSampleLocationsInfoEXT(struct vn_cs_encoder *enc, const VkSampleLocationsInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT; &_vn_temp; }));
     vn_encode_VkSampleLocationsInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkSampleLocationsInfoEXT_self(enc, val);
 }
@@ -1066,7 +1066,7 @@ static inline void
 vn_encode_VkRenderingAttachmentLocationInfo(struct vn_cs_encoder *enc, const VkRenderingAttachmentLocationInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO; &_vn_temp; }));
     vn_encode_VkRenderingAttachmentLocationInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderingAttachmentLocationInfo_self(enc, val);
 }
@@ -1141,7 +1141,7 @@ static inline void
 vn_encode_VkRenderingInputAttachmentIndexInfo(struct vn_cs_encoder *enc, const VkRenderingInputAttachmentIndexInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO; &_vn_temp; }));
     vn_encode_VkRenderingInputAttachmentIndexInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderingInputAttachmentIndexInfo_self(enc, val);
 }
@@ -1246,7 +1246,7 @@ static inline void
 vn_encode_VkPipelineLayoutCreateInfo(struct vn_cs_encoder *enc, const VkPipelineLayoutCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineLayoutCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineLayoutCreateInfo_self(enc, val);
 }
@@ -1392,7 +1392,7 @@ static inline void
 vn_encode_VkMutableDescriptorTypeCreateInfoEXT(struct vn_cs_encoder *enc, const VkMutableDescriptorTypeCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkMutableDescriptorTypeCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkMutableDescriptorTypeCreateInfoEXT_self(enc, val);
 }
@@ -1497,7 +1497,7 @@ static inline void
 vn_encode_VkWriteDescriptorSetInlineUniformBlock(struct vn_cs_encoder *enc, const VkWriteDescriptorSetInlineUniformBlock *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK; &_vn_temp; }));
     vn_encode_VkWriteDescriptorSetInlineUniformBlock_pnext(enc, val->pNext);
     vn_encode_VkWriteDescriptorSetInlineUniformBlock_self(enc, val);
 }
@@ -1564,7 +1564,7 @@ static inline void
 vn_encode_VkWriteDescriptorSetAccelerationStructureKHR(struct vn_cs_encoder *enc, const VkWriteDescriptorSetAccelerationStructureKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR; &_vn_temp; }));
     vn_encode_VkWriteDescriptorSetAccelerationStructureKHR_pnext(enc, val->pNext);
     vn_encode_VkWriteDescriptorSetAccelerationStructureKHR_self(enc, val);
 }
@@ -1720,7 +1720,7 @@ static inline void
 vn_encode_VkWriteDescriptorSet(struct vn_cs_encoder *enc, const VkWriteDescriptorSet *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; &_vn_temp; }));
     vn_encode_VkWriteDescriptorSet_pnext(enc, val->pNext);
     vn_encode_VkWriteDescriptorSet_self(enc, val);
 }
@@ -1798,7 +1798,7 @@ static inline void
 vn_encode_VkBindMemoryStatus(struct vn_cs_encoder *enc, const VkBindMemoryStatus *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS; &_vn_temp; }));
     vn_encode_VkBindMemoryStatus_pnext(enc, val->pNext);
     vn_encode_VkBindMemoryStatus_self(enc, val);
 }
@@ -1910,7 +1910,7 @@ static inline void
 vn_encode_VkMemoryDedicatedRequirements_partial(struct vn_cs_encoder *enc, const VkMemoryDedicatedRequirements *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS; &_vn_temp; }));
     vn_encode_VkMemoryDedicatedRequirements_pnext_partial(enc, val->pNext);
     vn_encode_VkMemoryDedicatedRequirements_self_partial(enc, val);
 }
@@ -2089,7 +2089,7 @@ static inline void
 vn_encode_VkMemoryRequirements2_partial(struct vn_cs_encoder *enc, const VkMemoryRequirements2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2; &_vn_temp; }));
     vn_encode_VkMemoryRequirements2_pnext_partial(enc, val->pNext);
     vn_encode_VkMemoryRequirements2_self_partial(enc, val);
 }
@@ -2144,7 +2144,7 @@ static inline void
 vn_encode_VkMultisampledRenderToSingleSampledInfoEXT(struct vn_cs_encoder *enc, const VkMultisampledRenderToSingleSampledInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT; &_vn_temp; }));
     vn_encode_VkMultisampledRenderToSingleSampledInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkMultisampledRenderToSingleSampledInfoEXT_self(enc, val);
 }
@@ -2203,7 +2203,7 @@ static inline void
 vn_encode_VkMemoryBarrier2(struct vn_cs_encoder *enc, const VkMemoryBarrier2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_BARRIER_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2; &_vn_temp; }));
     vn_encode_VkMemoryBarrier2_pnext(enc, val->pNext);
     vn_encode_VkMemoryBarrier2_self(enc, val);
 }
@@ -2260,7 +2260,7 @@ static inline void
 vn_encode_VkCopyAccelerationStructureInfoKHR(struct vn_cs_encoder *enc, const VkCopyAccelerationStructureInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkCopyAccelerationStructureInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkCopyAccelerationStructureInfoKHR_self(enc, val);
 }
@@ -2359,7 +2359,7 @@ static inline void
 vn_encode_VkCopyAccelerationStructureToMemoryInfoKHR(struct vn_cs_encoder *enc, const VkCopyAccelerationStructureToMemoryInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_TO_MEMORY_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_TO_MEMORY_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_TO_MEMORY_INFO_KHR; &_vn_temp; }));
     vn_encode_VkCopyAccelerationStructureToMemoryInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkCopyAccelerationStructureToMemoryInfoKHR_self(enc, val);
 }
@@ -2458,7 +2458,7 @@ static inline void
 vn_encode_VkCopyMemoryToAccelerationStructureInfoKHR(struct vn_cs_encoder *enc, const VkCopyMemoryToAccelerationStructureInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_MEMORY_TO_ACCELERATION_STRUCTURE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_MEMORY_TO_ACCELERATION_STRUCTURE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_ACCELERATION_STRUCTURE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkCopyMemoryToAccelerationStructureInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkCopyMemoryToAccelerationStructureInfoKHR_self(enc, val);
 }
@@ -2523,7 +2523,7 @@ static inline void
 vn_encode_VkAccelerationStructureGeometryTrianglesDataKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureGeometryTrianglesDataKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureGeometryTrianglesDataKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureGeometryTrianglesDataKHR_self(enc, val);
 }
@@ -2578,7 +2578,7 @@ static inline void
 vn_encode_VkAccelerationStructureGeometryAabbsDataKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureGeometryAabbsDataKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureGeometryAabbsDataKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureGeometryAabbsDataKHR_self(enc, val);
 }
@@ -2633,7 +2633,7 @@ static inline void
 vn_encode_VkAccelerationStructureGeometryInstancesDataKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureGeometryInstancesDataKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureGeometryInstancesDataKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureGeometryInstancesDataKHR_self(enc, val);
 }
@@ -2733,7 +2733,7 @@ static inline void
 vn_encode_VkAccelerationStructureGeometryKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureGeometryKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureGeometryKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureGeometryKHR_self(enc, val);
 }
@@ -2832,7 +2832,7 @@ static inline void
 vn_encode_VkAccelerationStructureBuildGeometryInfoKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureBuildGeometryInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureBuildGeometryInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureBuildGeometryInfoKHR_self(enc, val);
 }
@@ -2915,7 +2915,7 @@ static inline void
 vn_encode_VkImageCopy2(struct vn_cs_encoder *enc, const VkImageCopy2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_COPY_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_COPY_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_COPY_2; &_vn_temp; }));
     vn_encode_VkImageCopy2_pnext(enc, val->pNext);
     vn_encode_VkImageCopy2_self(enc, val);
 }

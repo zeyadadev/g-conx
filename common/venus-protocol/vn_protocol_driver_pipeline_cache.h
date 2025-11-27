@@ -73,7 +73,7 @@ static inline void
 vn_encode_VkPipelineCacheCreateInfo(struct vn_cs_encoder *enc, const VkPipelineCacheCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineCacheCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineCacheCreateInfo_self(enc, val);
 }

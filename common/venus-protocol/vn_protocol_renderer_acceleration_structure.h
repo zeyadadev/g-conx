@@ -236,7 +236,7 @@ static inline void
 vn_encode_VkAccelerationStructureBuildSizesInfoKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureBuildSizesInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureBuildSizesInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureBuildSizesInfoKHR_self(enc, val);
 }

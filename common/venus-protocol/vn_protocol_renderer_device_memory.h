@@ -641,7 +641,7 @@ static inline void
 vn_encode_VkMemoryResourceAllocationSizePropertiesMESA(struct vn_cs_encoder *enc, const VkMemoryResourceAllocationSizePropertiesMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA; &_vn_temp; }));
     vn_encode_VkMemoryResourceAllocationSizePropertiesMESA_pnext(enc, val->pNext);
     vn_encode_VkMemoryResourceAllocationSizePropertiesMESA_self(enc, val);
 }
@@ -711,7 +711,7 @@ static inline void
 vn_encode_VkMemoryResourcePropertiesMESA(struct vn_cs_encoder *enc, const VkMemoryResourcePropertiesMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA; &_vn_temp; }));
     vn_encode_VkMemoryResourcePropertiesMESA_pnext(enc, val->pNext);
     vn_encode_VkMemoryResourcePropertiesMESA_self(enc, val);
 }

@@ -113,7 +113,7 @@ vn_decode_VkStructureType(struct vn_cs_decoder *dec, VkStructureType *val)
 static inline size_t
 vn_sizeof_size_t(const size_t *val)
 {
-    return vn_sizeof_uint64_t(&(uint64_t){ *val });
+    return vn_sizeof_uint64_t(({ uint64_t _vn_temp = *val; &_vn_temp; }));
 }
 
 static inline void

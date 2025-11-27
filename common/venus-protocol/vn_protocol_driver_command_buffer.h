@@ -70,7 +70,7 @@ static inline void
 vn_encode_VkCommandBufferAllocateInfo(struct vn_cs_encoder *enc, const VkCommandBufferAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkCommandBufferAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferAllocateInfo_self(enc, val);
 }
@@ -123,7 +123,7 @@ static inline void
 vn_encode_VkCommandBufferInheritanceConditionalRenderingInfoEXT(struct vn_cs_encoder *enc, const VkCommandBufferInheritanceConditionalRenderingInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_CONDITIONAL_RENDERING_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_CONDITIONAL_RENDERING_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_CONDITIONAL_RENDERING_INFO_EXT; &_vn_temp; }));
     vn_encode_VkCommandBufferInheritanceConditionalRenderingInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferInheritanceConditionalRenderingInfoEXT_self(enc, val);
 }
@@ -198,7 +198,7 @@ static inline void
 vn_encode_VkCommandBufferInheritanceRenderingInfo(struct vn_cs_encoder *enc, const VkCommandBufferInheritanceRenderingInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO; &_vn_temp; }));
     vn_encode_VkCommandBufferInheritanceRenderingInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferInheritanceRenderingInfo_self(enc, val);
 }
@@ -346,7 +346,7 @@ static inline void
 vn_encode_VkCommandBufferInheritanceInfo(struct vn_cs_encoder *enc, const VkCommandBufferInheritanceInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO; &_vn_temp; }));
     vn_encode_VkCommandBufferInheritanceInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferInheritanceInfo_self(enc, val);
 }
@@ -399,7 +399,7 @@ static inline void
 vn_encode_VkDeviceGroupCommandBufferBeginInfo(struct vn_cs_encoder *enc, const VkDeviceGroupCommandBufferBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_COMMAND_BUFFER_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_GROUP_COMMAND_BUFFER_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_GROUP_COMMAND_BUFFER_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkDeviceGroupCommandBufferBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceGroupCommandBufferBeginInfo_self(enc, val);
 }
@@ -490,7 +490,7 @@ static inline void
 vn_encode_VkCommandBufferBeginInfo(struct vn_cs_encoder *enc, const VkCommandBufferBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkCommandBufferBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferBeginInfo_self(enc, val);
 }
@@ -804,7 +804,7 @@ static inline void
 vn_encode_VkMemoryBarrier(struct vn_cs_encoder *enc, const VkMemoryBarrier *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_BARRIER);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_BARRIER });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_BARRIER; &_vn_temp; }));
     vn_encode_VkMemoryBarrier_pnext(enc, val->pNext);
     vn_encode_VkMemoryBarrier_self(enc, val);
 }
@@ -857,7 +857,7 @@ static inline void
 vn_encode_VkExternalMemoryAcquireUnmodifiedEXT(struct vn_cs_encoder *enc, const VkExternalMemoryAcquireUnmodifiedEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT; &_vn_temp; }));
     vn_encode_VkExternalMemoryAcquireUnmodifiedEXT_pnext(enc, val->pNext);
     vn_encode_VkExternalMemoryAcquireUnmodifiedEXT_self(enc, val);
 }
@@ -959,7 +959,7 @@ static inline void
 vn_encode_VkBufferMemoryBarrier(struct vn_cs_encoder *enc, const VkBufferMemoryBarrier *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER; &_vn_temp; }));
     vn_encode_VkBufferMemoryBarrier_pnext(enc, val->pNext);
     vn_encode_VkBufferMemoryBarrier_self(enc, val);
 }
@@ -1079,7 +1079,7 @@ static inline void
 vn_encode_VkImageMemoryBarrier(struct vn_cs_encoder *enc, const VkImageMemoryBarrier *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER; &_vn_temp; }));
     vn_encode_VkImageMemoryBarrier_pnext(enc, val->pNext);
     vn_encode_VkImageMemoryBarrier_self(enc, val);
 }
@@ -1136,7 +1136,7 @@ static inline void
 vn_encode_VkConditionalRenderingBeginInfoEXT(struct vn_cs_encoder *enc, const VkConditionalRenderingBeginInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT; &_vn_temp; }));
     vn_encode_VkConditionalRenderingBeginInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkConditionalRenderingBeginInfoEXT_self(enc, val);
 }
@@ -1205,7 +1205,7 @@ static inline void
 vn_encode_VkDeviceGroupRenderPassBeginInfo(struct vn_cs_encoder *enc, const VkDeviceGroupRenderPassBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_RENDER_PASS_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_GROUP_RENDER_PASS_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_GROUP_RENDER_PASS_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkDeviceGroupRenderPassBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceGroupRenderPassBeginInfo_self(enc, val);
 }
@@ -1324,7 +1324,7 @@ static inline void
 vn_encode_VkRenderPassSampleLocationsBeginInfoEXT(struct vn_cs_encoder *enc, const VkRenderPassSampleLocationsBeginInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDER_PASS_SAMPLE_LOCATIONS_BEGIN_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDER_PASS_SAMPLE_LOCATIONS_BEGIN_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDER_PASS_SAMPLE_LOCATIONS_BEGIN_INFO_EXT; &_vn_temp; }));
     vn_encode_VkRenderPassSampleLocationsBeginInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkRenderPassSampleLocationsBeginInfoEXT_self(enc, val);
 }
@@ -1391,7 +1391,7 @@ static inline void
 vn_encode_VkRenderPassAttachmentBeginInfo(struct vn_cs_encoder *enc, const VkRenderPassAttachmentBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkRenderPassAttachmentBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderPassAttachmentBeginInfo_self(enc, val);
 }
@@ -1525,7 +1525,7 @@ static inline void
 vn_encode_VkRenderPassBeginInfo(struct vn_cs_encoder *enc, const VkRenderPassBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkRenderPassBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderPassBeginInfo_self(enc, val);
 }
@@ -1578,7 +1578,7 @@ static inline void
 vn_encode_VkSubpassBeginInfo(struct vn_cs_encoder *enc, const VkSubpassBeginInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO; &_vn_temp; }));
     vn_encode_VkSubpassBeginInfo_pnext(enc, val->pNext);
     vn_encode_VkSubpassBeginInfo_self(enc, val);
 }
@@ -1629,7 +1629,7 @@ static inline void
 vn_encode_VkSubpassEndInfo(struct vn_cs_encoder *enc, const VkSubpassEndInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBPASS_END_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBPASS_END_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBPASS_END_INFO; &_vn_temp; }));
     vn_encode_VkSubpassEndInfo_pnext(enc, val->pNext);
     vn_encode_VkSubpassEndInfo_self(enc, val);
 }
@@ -1756,7 +1756,7 @@ static inline void
 vn_encode_VkBufferCopy2(struct vn_cs_encoder *enc, const VkBufferCopy2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BUFFER_COPY_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BUFFER_COPY_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BUFFER_COPY_2; &_vn_temp; }));
     vn_encode_VkBufferCopy2_pnext(enc, val->pNext);
     vn_encode_VkBufferCopy2_self(enc, val);
 }
@@ -1827,7 +1827,7 @@ static inline void
 vn_encode_VkCopyBufferInfo2(struct vn_cs_encoder *enc, const VkCopyBufferInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2; &_vn_temp; }));
     vn_encode_VkCopyBufferInfo2_pnext(enc, val->pNext);
     vn_encode_VkCopyBufferInfo2_self(enc, val);
 }
@@ -1902,7 +1902,7 @@ static inline void
 vn_encode_VkCopyImageInfo2(struct vn_cs_encoder *enc, const VkCopyImageInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2; &_vn_temp; }));
     vn_encode_VkCopyImageInfo2_pnext(enc, val->pNext);
     vn_encode_VkCopyImageInfo2_self(enc, val);
 }
@@ -1969,7 +1969,7 @@ static inline void
 vn_encode_VkImageBlit2(struct vn_cs_encoder *enc, const VkImageBlit2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_BLIT_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_BLIT_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_BLIT_2; &_vn_temp; }));
     vn_encode_VkImageBlit2_pnext(enc, val->pNext);
     vn_encode_VkImageBlit2_self(enc, val);
 }
@@ -2046,7 +2046,7 @@ static inline void
 vn_encode_VkBlitImageInfo2(struct vn_cs_encoder *enc, const VkBlitImageInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2; &_vn_temp; }));
     vn_encode_VkBlitImageInfo2_pnext(enc, val->pNext);
     vn_encode_VkBlitImageInfo2_self(enc, val);
 }
@@ -2109,7 +2109,7 @@ static inline void
 vn_encode_VkBufferImageCopy2(struct vn_cs_encoder *enc, const VkBufferImageCopy2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2; &_vn_temp; }));
     vn_encode_VkBufferImageCopy2_pnext(enc, val->pNext);
     vn_encode_VkBufferImageCopy2_self(enc, val);
 }
@@ -2182,7 +2182,7 @@ static inline void
 vn_encode_VkCopyBufferToImageInfo2(struct vn_cs_encoder *enc, const VkCopyBufferToImageInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2; &_vn_temp; }));
     vn_encode_VkCopyBufferToImageInfo2_pnext(enc, val->pNext);
     vn_encode_VkCopyBufferToImageInfo2_self(enc, val);
 }
@@ -2255,7 +2255,7 @@ static inline void
 vn_encode_VkCopyImageToBufferInfo2(struct vn_cs_encoder *enc, const VkCopyImageToBufferInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2; &_vn_temp; }));
     vn_encode_VkCopyImageToBufferInfo2_pnext(enc, val->pNext);
     vn_encode_VkCopyImageToBufferInfo2_self(enc, val);
 }
@@ -2316,7 +2316,7 @@ static inline void
 vn_encode_VkImageResolve2(struct vn_cs_encoder *enc, const VkImageResolve2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2; &_vn_temp; }));
     vn_encode_VkImageResolve2_pnext(enc, val->pNext);
     vn_encode_VkImageResolve2_self(enc, val);
 }
@@ -2391,7 +2391,7 @@ static inline void
 vn_encode_VkResolveImageInfo2(struct vn_cs_encoder *enc, const VkResolveImageInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2; &_vn_temp; }));
     vn_encode_VkResolveImageInfo2_pnext(enc, val->pNext);
     vn_encode_VkResolveImageInfo2_self(enc, val);
 }
@@ -2450,7 +2450,7 @@ static inline void
 vn_encode_VkVertexInputBindingDescription2EXT(struct vn_cs_encoder *enc, const VkVertexInputBindingDescription2EXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT; &_vn_temp; }));
     vn_encode_VkVertexInputBindingDescription2EXT_pnext(enc, val->pNext);
     vn_encode_VkVertexInputBindingDescription2EXT_self(enc, val);
 }
@@ -2509,7 +2509,7 @@ static inline void
 vn_encode_VkVertexInputAttributeDescription2EXT(struct vn_cs_encoder *enc, const VkVertexInputAttributeDescription2EXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT; &_vn_temp; }));
     vn_encode_VkVertexInputAttributeDescription2EXT_pnext(enc, val->pNext);
     vn_encode_VkVertexInputAttributeDescription2EXT_self(enc, val);
 }
@@ -2615,7 +2615,7 @@ static inline void
 vn_encode_VkBufferMemoryBarrier2(struct vn_cs_encoder *enc, const VkBufferMemoryBarrier2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2; &_vn_temp; }));
     vn_encode_VkBufferMemoryBarrier2_pnext(enc, val->pNext);
     vn_encode_VkBufferMemoryBarrier2_self(enc, val);
 }
@@ -2739,7 +2739,7 @@ static inline void
 vn_encode_VkImageMemoryBarrier2(struct vn_cs_encoder *enc, const VkImageMemoryBarrier2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2; &_vn_temp; }));
     vn_encode_VkImageMemoryBarrier2_pnext(enc, val->pNext);
     vn_encode_VkImageMemoryBarrier2_self(enc, val);
 }
@@ -2840,7 +2840,7 @@ static inline void
 vn_encode_VkDependencyInfo(struct vn_cs_encoder *enc, const VkDependencyInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEPENDENCY_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEPENDENCY_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEPENDENCY_INFO; &_vn_temp; }));
     vn_encode_VkDependencyInfo_pnext(enc, val->pNext);
     vn_encode_VkDependencyInfo_self(enc, val);
 }
@@ -2907,7 +2907,7 @@ static inline void
 vn_encode_VkRenderingAttachmentInfo(struct vn_cs_encoder *enc, const VkRenderingAttachmentInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO; &_vn_temp; }));
     vn_encode_VkRenderingAttachmentInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderingAttachmentInfo_self(enc, val);
 }
@@ -2964,7 +2964,7 @@ static inline void
 vn_encode_VkRenderingFragmentShadingRateAttachmentInfoKHR(struct vn_cs_encoder *enc, const VkRenderingFragmentShadingRateAttachmentInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR; &_vn_temp; }));
     vn_encode_VkRenderingFragmentShadingRateAttachmentInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkRenderingFragmentShadingRateAttachmentInfoKHR_self(enc, val);
 }
@@ -3114,7 +3114,7 @@ static inline void
 vn_encode_VkRenderingInfo(struct vn_cs_encoder *enc, const VkRenderingInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RENDERING_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RENDERING_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RENDERING_INFO; &_vn_temp; }));
     vn_encode_VkRenderingInfo_pnext(enc, val->pNext);
     vn_encode_VkRenderingInfo_self(enc, val);
 }
@@ -3208,7 +3208,7 @@ static inline void
 vn_encode_VkDepthBiasInfoEXT(struct vn_cs_encoder *enc, const VkDepthBiasInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT; &_vn_temp; }));
     vn_encode_VkDepthBiasInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkDepthBiasInfoEXT_self(enc, val);
 }
@@ -3328,7 +3328,7 @@ static inline void
 vn_encode_VkBindDescriptorSetsInfo(struct vn_cs_encoder *enc, const VkBindDescriptorSetsInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO; &_vn_temp; }));
     vn_encode_VkBindDescriptorSetsInfo_pnext(enc, val->pNext);
     vn_encode_VkBindDescriptorSetsInfo_self(enc, val);
 }
@@ -3432,7 +3432,7 @@ static inline void
 vn_encode_VkPushConstantsInfo(struct vn_cs_encoder *enc, const VkPushConstantsInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO; &_vn_temp; }));
     vn_encode_VkPushConstantsInfo_pnext(enc, val->pNext);
     vn_encode_VkPushConstantsInfo_self(enc, val);
 }
@@ -3538,7 +3538,7 @@ static inline void
 vn_encode_VkPushDescriptorSetInfo(struct vn_cs_encoder *enc, const VkPushDescriptorSetInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO; &_vn_temp; }));
     vn_encode_VkPushDescriptorSetInfo_pnext(enc, val->pNext);
     vn_encode_VkPushDescriptorSetInfo_self(enc, val);
 }

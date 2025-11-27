@@ -90,7 +90,7 @@ static inline void
 vn_encode_VkCopyImageToImageInfo(struct vn_cs_encoder *enc, const VkCopyImageToImageInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO; &_vn_temp; }));
     vn_encode_VkCopyImageToImageInfo_pnext(enc, val->pNext);
     vn_encode_VkCopyImageToImageInfo_self(enc, val);
 }
@@ -149,7 +149,7 @@ static inline void
 vn_encode_VkHostImageLayoutTransitionInfo(struct vn_cs_encoder *enc, const VkHostImageLayoutTransitionInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO; &_vn_temp; }));
     vn_encode_VkHostImageLayoutTransitionInfo_pnext(enc, val->pNext);
     vn_encode_VkHostImageLayoutTransitionInfo_self(enc, val);
 }
@@ -216,7 +216,7 @@ static inline void
 vn_encode_VkCopyImageToMemoryInfoMESA(struct vn_cs_encoder *enc, const VkCopyImageToMemoryInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_MESA; &_vn_temp; }));
     vn_encode_VkCopyImageToMemoryInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkCopyImageToMemoryInfoMESA_self(enc, val);
 }
@@ -291,7 +291,7 @@ static inline void
 vn_encode_VkMemoryToImageCopyMESA(struct vn_cs_encoder *enc, const VkMemoryToImageCopyMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_MESA; &_vn_temp; }));
     vn_encode_VkMemoryToImageCopyMESA_pnext(enc, val->pNext);
     vn_encode_VkMemoryToImageCopyMESA_self(enc, val);
 }
@@ -364,7 +364,7 @@ static inline void
 vn_encode_VkCopyMemoryToImageInfoMESA(struct vn_cs_encoder *enc, const VkCopyMemoryToImageInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_MESA; &_vn_temp; }));
     vn_encode_VkCopyMemoryToImageInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkCopyMemoryToImageInfoMESA_self(enc, val);
 }

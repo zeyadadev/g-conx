@@ -97,7 +97,7 @@ static inline void
 vn_encode_VkRingMonitorInfoMESA(struct vn_cs_encoder *enc, const VkRingMonitorInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RING_MONITOR_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RING_MONITOR_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RING_MONITOR_INFO_MESA; &_vn_temp; }));
     vn_encode_VkRingMonitorInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkRingMonitorInfoMESA_self(enc, val);
 }
@@ -150,7 +150,7 @@ static inline void
 vn_encode_VkRingPriorityInfoMESA(struct vn_cs_encoder *enc, const VkRingPriorityInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RING_PRIORITY_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RING_PRIORITY_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RING_PRIORITY_INFO_MESA; &_vn_temp; }));
     vn_encode_VkRingPriorityInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkRingPriorityInfoMESA_self(enc, val);
 }
@@ -270,7 +270,7 @@ static inline void
 vn_encode_VkRingCreateInfoMESA(struct vn_cs_encoder *enc, const VkRingCreateInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RING_CREATE_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RING_CREATE_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RING_CREATE_INFO_MESA; &_vn_temp; }));
     vn_encode_VkRingCreateInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkRingCreateInfoMESA_self(enc, val);
 }

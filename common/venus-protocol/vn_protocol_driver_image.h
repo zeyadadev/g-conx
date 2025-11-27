@@ -105,7 +105,7 @@ static inline void
 vn_encode_VkExternalMemoryImageCreateInfo(struct vn_cs_encoder *enc, const VkExternalMemoryImageCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkExternalMemoryImageCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkExternalMemoryImageCreateInfo_self(enc, val);
 }
@@ -170,7 +170,7 @@ static inline void
 vn_encode_VkImageDrmFormatModifierListCreateInfoEXT(struct vn_cs_encoder *enc, const VkImageDrmFormatModifierListCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkImageDrmFormatModifierListCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkImageDrmFormatModifierListCreateInfoEXT_self(enc, val);
 }
@@ -295,7 +295,7 @@ static inline void
 vn_encode_VkImageDrmFormatModifierExplicitCreateInfoEXT(struct vn_cs_encoder *enc, const VkImageDrmFormatModifierExplicitCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkImageDrmFormatModifierExplicitCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkImageDrmFormatModifierExplicitCreateInfoEXT_self(enc, val);
 }
@@ -471,7 +471,7 @@ static inline void
 vn_encode_VkImageCreateInfo(struct vn_cs_encoder *enc, const VkImageCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkImageCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkImageCreateInfo_self(enc, val);
 }
@@ -552,7 +552,7 @@ static inline void
 vn_encode_VkBindImageMemoryDeviceGroupInfo(struct vn_cs_encoder *enc, const VkBindImageMemoryDeviceGroupInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_DEVICE_GROUP_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_DEVICE_GROUP_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_DEVICE_GROUP_INFO; &_vn_temp; }));
     vn_encode_VkBindImageMemoryDeviceGroupInfo_pnext(enc, val->pNext);
     vn_encode_VkBindImageMemoryDeviceGroupInfo_self(enc, val);
 }
@@ -605,7 +605,7 @@ static inline void
 vn_encode_VkBindImagePlaneMemoryInfo(struct vn_cs_encoder *enc, const VkBindImagePlaneMemoryInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO; &_vn_temp; }));
     vn_encode_VkBindImagePlaneMemoryInfo_pnext(enc, val->pNext);
     vn_encode_VkBindImagePlaneMemoryInfo_self(enc, val);
 }
@@ -723,7 +723,7 @@ static inline void
 vn_encode_VkBindImageMemoryInfo(struct vn_cs_encoder *enc, const VkBindImageMemoryInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO; &_vn_temp; }));
     vn_encode_VkBindImageMemoryInfo_pnext(enc, val->pNext);
     vn_encode_VkBindImageMemoryInfo_self(enc, val);
 }
@@ -776,7 +776,7 @@ static inline void
 vn_encode_VkImagePlaneMemoryRequirementsInfo(struct vn_cs_encoder *enc, const VkImagePlaneMemoryRequirementsInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO; &_vn_temp; }));
     vn_encode_VkImagePlaneMemoryRequirementsInfo_pnext(enc, val->pNext);
     vn_encode_VkImagePlaneMemoryRequirementsInfo_self(enc, val);
 }
@@ -862,7 +862,7 @@ static inline void
 vn_encode_VkImageMemoryRequirementsInfo2(struct vn_cs_encoder *enc, const VkImageMemoryRequirementsInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2; &_vn_temp; }));
     vn_encode_VkImageMemoryRequirementsInfo2_pnext(enc, val->pNext);
     vn_encode_VkImageMemoryRequirementsInfo2_self(enc, val);
 }
@@ -915,7 +915,7 @@ static inline void
 vn_encode_VkImageSparseMemoryRequirementsInfo2(struct vn_cs_encoder *enc, const VkImageSparseMemoryRequirementsInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_SPARSE_MEMORY_REQUIREMENTS_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_SPARSE_MEMORY_REQUIREMENTS_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_SPARSE_MEMORY_REQUIREMENTS_INFO_2; &_vn_temp; }));
     vn_encode_VkImageSparseMemoryRequirementsInfo2_pnext(enc, val->pNext);
     vn_encode_VkImageSparseMemoryRequirementsInfo2_self(enc, val);
 }
@@ -1023,7 +1023,7 @@ static inline void
 vn_encode_VkSparseImageMemoryRequirements2_partial(struct vn_cs_encoder *enc, const VkSparseImageMemoryRequirements2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2; &_vn_temp; }));
     vn_encode_VkSparseImageMemoryRequirements2_pnext_partial(enc, val->pNext);
     vn_encode_VkSparseImageMemoryRequirements2_self_partial(enc, val);
 }
@@ -1081,7 +1081,7 @@ static inline void
 vn_encode_VkDeviceImageMemoryRequirements(struct vn_cs_encoder *enc, const VkDeviceImageMemoryRequirements *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS; &_vn_temp; }));
     vn_encode_VkDeviceImageMemoryRequirements_pnext(enc, val->pNext);
     vn_encode_VkDeviceImageMemoryRequirements_self(enc, val);
 }
@@ -1189,7 +1189,7 @@ static inline void
 vn_encode_VkImageDrmFormatModifierPropertiesEXT_partial(struct vn_cs_encoder *enc, const VkImageDrmFormatModifierPropertiesEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT; &_vn_temp; }));
     vn_encode_VkImageDrmFormatModifierPropertiesEXT_pnext_partial(enc, val->pNext);
     vn_encode_VkImageDrmFormatModifierPropertiesEXT_self_partial(enc, val);
 }
@@ -1242,7 +1242,7 @@ static inline void
 vn_encode_VkImageSubresource2(struct vn_cs_encoder *enc, const VkImageSubresource2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2; &_vn_temp; }));
     vn_encode_VkImageSubresource2_pnext(enc, val->pNext);
     vn_encode_VkImageSubresource2_self(enc, val);
 }
@@ -1350,7 +1350,7 @@ static inline void
 vn_encode_VkSubresourceHostMemcpySize_partial(struct vn_cs_encoder *enc, const VkSubresourceHostMemcpySize *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE; &_vn_temp; }));
     vn_encode_VkSubresourceHostMemcpySize_pnext_partial(enc, val->pNext);
     vn_encode_VkSubresourceHostMemcpySize_self_partial(enc, val);
 }
@@ -1535,7 +1535,7 @@ static inline void
 vn_encode_VkSubresourceLayout2_partial(struct vn_cs_encoder *enc, const VkSubresourceLayout2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2; &_vn_temp; }));
     vn_encode_VkSubresourceLayout2_pnext_partial(enc, val->pNext);
     vn_encode_VkSubresourceLayout2_self_partial(enc, val);
 }
@@ -1596,7 +1596,7 @@ static inline void
 vn_encode_VkDeviceImageSubresourceInfo(struct vn_cs_encoder *enc, const VkDeviceImageSubresourceInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO; &_vn_temp; }));
     vn_encode_VkDeviceImageSubresourceInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceImageSubresourceInfo_self(enc, val);
 }

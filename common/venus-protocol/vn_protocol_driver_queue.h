@@ -99,7 +99,7 @@ static inline void
 vn_encode_VkDeviceGroupSubmitInfo(struct vn_cs_encoder *enc, const VkDeviceGroupSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkDeviceGroupSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceGroupSubmitInfo_self(enc, val);
 }
@@ -152,7 +152,7 @@ static inline void
 vn_encode_VkProtectedSubmitInfo(struct vn_cs_encoder *enc, const VkProtectedSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkProtectedSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkProtectedSubmitInfo_self(enc, val);
 }
@@ -231,7 +231,7 @@ static inline void
 vn_encode_VkTimelineSemaphoreSubmitInfo(struct vn_cs_encoder *enc, const VkTimelineSemaphoreSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkTimelineSemaphoreSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkTimelineSemaphoreSubmitInfo_self(enc, val);
 }
@@ -401,7 +401,7 @@ static inline void
 vn_encode_VkSubmitInfo(struct vn_cs_encoder *enc, const VkSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkSubmitInfo_self(enc, val);
 }
@@ -602,7 +602,7 @@ static inline void
 vn_encode_VkDeviceGroupBindSparseInfo(struct vn_cs_encoder *enc, const VkDeviceGroupBindSparseInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_GROUP_BIND_SPARSE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_GROUP_BIND_SPARSE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_GROUP_BIND_SPARSE_INFO; &_vn_temp; }));
     vn_encode_VkDeviceGroupBindSparseInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceGroupBindSparseInfo_self(enc, val);
 }
@@ -778,7 +778,7 @@ static inline void
 vn_encode_VkBindSparseInfo(struct vn_cs_encoder *enc, const VkBindSparseInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_BIND_SPARSE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_BIND_SPARSE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO; &_vn_temp; }));
     vn_encode_VkBindSparseInfo_pnext(enc, val->pNext);
     vn_encode_VkBindSparseInfo_self(enc, val);
 }
@@ -837,7 +837,7 @@ static inline void
 vn_encode_VkSemaphoreSubmitInfo(struct vn_cs_encoder *enc, const VkSemaphoreSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkSemaphoreSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkSemaphoreSubmitInfo_self(enc, val);
 }
@@ -892,7 +892,7 @@ static inline void
 vn_encode_VkCommandBufferSubmitInfo(struct vn_cs_encoder *enc, const VkCommandBufferSubmitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO; &_vn_temp; }));
     vn_encode_VkCommandBufferSubmitInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandBufferSubmitInfo_self(enc, val);
 }
@@ -993,7 +993,7 @@ static inline void
 vn_encode_VkSubmitInfo2(struct vn_cs_encoder *enc, const VkSubmitInfo2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBMIT_INFO_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBMIT_INFO_2; &_vn_temp; }));
     vn_encode_VkSubmitInfo2_pnext(enc, val->pNext);
     vn_encode_VkSubmitInfo2_self(enc, val);
 }

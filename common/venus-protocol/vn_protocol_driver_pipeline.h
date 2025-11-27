@@ -123,7 +123,7 @@ static inline void
 vn_encode_VkPipelineShaderStageRequiredSubgroupSizeCreateInfo(struct vn_cs_encoder *enc, const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineShaderStageRequiredSubgroupSizeCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineShaderStageRequiredSubgroupSizeCreateInfo_self(enc, val);
 }
@@ -182,7 +182,7 @@ static inline void
 vn_encode_VkPipelineRobustnessCreateInfo(struct vn_cs_encoder *enc, const VkPipelineRobustnessCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineRobustnessCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineRobustnessCreateInfo_self(enc, val);
 }
@@ -323,7 +323,7 @@ static inline void
 vn_encode_VkPipelineShaderStageCreateInfo(struct vn_cs_encoder *enc, const VkPipelineShaderStageCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineShaderStageCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineShaderStageCreateInfo_self(enc, val);
 }
@@ -450,7 +450,7 @@ static inline void
 vn_encode_VkPipelineVertexInputDivisorStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineVertexInputDivisorStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineVertexInputDivisorStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineVertexInputDivisorStateCreateInfo_self(enc, val);
 }
@@ -572,7 +572,7 @@ static inline void
 vn_encode_VkPipelineVertexInputStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineVertexInputStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineVertexInputStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineVertexInputStateCreateInfo_self(enc, val);
 }
@@ -629,7 +629,7 @@ static inline void
 vn_encode_VkPipelineInputAssemblyStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineInputAssemblyStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineInputAssemblyStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineInputAssemblyStateCreateInfo_self(enc, val);
 }
@@ -682,7 +682,7 @@ static inline void
 vn_encode_VkPipelineTessellationDomainOriginStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineTessellationDomainOriginStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineTessellationDomainOriginStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineTessellationDomainOriginStateCreateInfo_self(enc, val);
 }
@@ -770,7 +770,7 @@ static inline void
 vn_encode_VkPipelineTessellationStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineTessellationStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineTessellationStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineTessellationStateCreateInfo_self(enc, val);
 }
@@ -823,7 +823,7 @@ static inline void
 vn_encode_VkPipelineViewportDepthClipControlCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineViewportDepthClipControlCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineViewportDepthClipControlCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineViewportDepthClipControlCreateInfoEXT_self(enc, val);
 }
@@ -881,7 +881,7 @@ static inline void
 vn_encode_VkPipelineViewportDepthClampControlCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineViewportDepthClampControlCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLAMP_CONTROL_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLAMP_CONTROL_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLAMP_CONTROL_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineViewportDepthClampControlCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineViewportDepthClampControlCreateInfoEXT_self(enc, val);
 }
@@ -1019,7 +1019,7 @@ static inline void
 vn_encode_VkPipelineViewportStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineViewportStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineViewportStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineViewportStateCreateInfo_self(enc, val);
 }
@@ -1076,7 +1076,7 @@ static inline void
 vn_encode_VkPipelineRasterizationConservativeStateCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineRasterizationConservativeStateCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationConservativeStateCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationConservativeStateCreateInfoEXT_self(enc, val);
 }
@@ -1131,7 +1131,7 @@ static inline void
 vn_encode_VkPipelineRasterizationStateStreamCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineRasterizationStateStreamCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationStateStreamCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationStateStreamCreateInfoEXT_self(enc, val);
 }
@@ -1186,7 +1186,7 @@ static inline void
 vn_encode_VkPipelineRasterizationDepthClipStateCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineRasterizationDepthClipStateCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationDepthClipStateCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationDepthClipStateCreateInfoEXT_self(enc, val);
 }
@@ -1245,7 +1245,7 @@ static inline void
 vn_encode_VkPipelineRasterizationLineStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineRasterizationLineStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationLineStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationLineStateCreateInfo_self(enc, val);
 }
@@ -1298,7 +1298,7 @@ static inline void
 vn_encode_VkPipelineRasterizationProvokingVertexStateCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineRasterizationProvokingVertexStateCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationProvokingVertexStateCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationProvokingVertexStateCreateInfoEXT_self(enc, val);
 }
@@ -1488,7 +1488,7 @@ static inline void
 vn_encode_VkPipelineRasterizationStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineRasterizationStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineRasterizationStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineRasterizationStateCreateInfo_self(enc, val);
 }
@@ -1543,7 +1543,7 @@ static inline void
 vn_encode_VkPipelineSampleLocationsStateCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineSampleLocationsStateCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineSampleLocationsStateCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineSampleLocationsStateCreateInfoEXT_self(enc, val);
 }
@@ -1655,7 +1655,7 @@ static inline void
 vn_encode_VkPipelineMultisampleStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineMultisampleStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineMultisampleStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineMultisampleStateCreateInfo_self(enc, val);
 }
@@ -1754,7 +1754,7 @@ static inline void
 vn_encode_VkPipelineDepthStencilStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineDepthStencilStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineDepthStencilStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineDepthStencilStateCreateInfo_self(enc, val);
 }
@@ -1841,7 +1841,7 @@ static inline void
 vn_encode_VkPipelineColorBlendAdvancedStateCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineColorBlendAdvancedStateCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineColorBlendAdvancedStateCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineColorBlendAdvancedStateCreateInfoEXT_self(enc, val);
 }
@@ -1906,7 +1906,7 @@ static inline void
 vn_encode_VkPipelineColorWriteCreateInfoEXT(struct vn_cs_encoder *enc, const VkPipelineColorWriteCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkPipelineColorWriteCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkPipelineColorWriteCreateInfoEXT_self(enc, val);
 }
@@ -2036,7 +2036,7 @@ static inline void
 vn_encode_VkPipelineColorBlendStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineColorBlendStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineColorBlendStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineColorBlendStateCreateInfo_self(enc, val);
 }
@@ -2103,7 +2103,7 @@ static inline void
 vn_encode_VkPipelineDynamicStateCreateInfo(struct vn_cs_encoder *enc, const VkPipelineDynamicStateCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineDynamicStateCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineDynamicStateCreateInfo_self(enc, val);
 }
@@ -2156,7 +2156,7 @@ static inline void
 vn_encode_VkPipelineCreateFlags2CreateInfo(struct vn_cs_encoder *enc, const VkPipelineCreateFlags2CreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineCreateFlags2CreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineCreateFlags2CreateInfo_self(enc, val);
 }
@@ -2223,7 +2223,7 @@ static inline void
 vn_encode_VkPipelineLibraryCreateInfoKHR(struct vn_cs_encoder *enc, const VkPipelineLibraryCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkPipelineLibraryCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkPipelineLibraryCreateInfoKHR_self(enc, val);
 }
@@ -2313,7 +2313,7 @@ static inline void
 vn_encode_VkPipelineCreationFeedbackCreateInfo(struct vn_cs_encoder *enc, const VkPipelineCreationFeedbackCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineCreationFeedbackCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineCreationFeedbackCreateInfo_self(enc, val);
 }
@@ -2370,7 +2370,7 @@ static inline void
 vn_encode_VkPipelineFragmentShadingRateStateCreateInfoKHR(struct vn_cs_encoder *enc, const VkPipelineFragmentShadingRateStateCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkPipelineFragmentShadingRateStateCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkPipelineFragmentShadingRateStateCreateInfoKHR_self(enc, val);
 }
@@ -2441,7 +2441,7 @@ static inline void
 vn_encode_VkPipelineRenderingCreateInfo(struct vn_cs_encoder *enc, const VkPipelineRenderingCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPipelineRenderingCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPipelineRenderingCreateInfo_self(enc, val);
 }
@@ -2494,7 +2494,7 @@ static inline void
 vn_encode_VkGraphicsPipelineLibraryCreateInfoEXT(struct vn_cs_encoder *enc, const VkGraphicsPipelineLibraryCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkGraphicsPipelineLibraryCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkGraphicsPipelineLibraryCreateInfoEXT_self(enc, val);
 }
@@ -2783,7 +2783,7 @@ static inline void
 vn_encode_VkGraphicsPipelineCreateInfo(struct vn_cs_encoder *enc, const VkGraphicsPipelineCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkGraphicsPipelineCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkGraphicsPipelineCreateInfo_self(enc, val);
 }
@@ -2913,7 +2913,7 @@ static inline void
 vn_encode_VkComputePipelineCreateInfo(struct vn_cs_encoder *enc, const VkComputePipelineCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkComputePipelineCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkComputePipelineCreateInfo_self(enc, val);
 }
@@ -2979,7 +2979,7 @@ static inline void
 vn_encode_VkRayTracingShaderGroupCreateInfoKHR(struct vn_cs_encoder *enc, const VkRayTracingShaderGroupCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkRayTracingShaderGroupCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkRayTracingShaderGroupCreateInfoKHR_self(enc, val);
 }
@@ -3034,7 +3034,7 @@ static inline void
 vn_encode_VkRayTracingPipelineInterfaceCreateInfoKHR(struct vn_cs_encoder *enc, const VkRayTracingPipelineInterfaceCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkRayTracingPipelineInterfaceCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkRayTracingPipelineInterfaceCreateInfoKHR_self(enc, val);
 }
@@ -3211,7 +3211,7 @@ static inline void
 vn_encode_VkRayTracingPipelineCreateInfoKHR(struct vn_cs_encoder *enc, const VkRayTracingPipelineCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkRayTracingPipelineCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkRayTracingPipelineCreateInfoKHR_self(enc, val);
 }

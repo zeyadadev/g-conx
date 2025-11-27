@@ -97,7 +97,7 @@ static inline void
 vn_encode_VkApplicationInfo(struct vn_cs_encoder *enc, const VkApplicationInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_APPLICATION_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_APPLICATION_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_APPLICATION_INFO; &_vn_temp; }));
     vn_encode_VkApplicationInfo_pnext(enc, val->pNext);
     vn_encode_VkApplicationInfo_self(enc, val);
 }
@@ -199,7 +199,7 @@ static inline void
 vn_encode_VkInstanceCreateInfo(struct vn_cs_encoder *enc, const VkInstanceCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkInstanceCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkInstanceCreateInfo_self(enc, val);
 }

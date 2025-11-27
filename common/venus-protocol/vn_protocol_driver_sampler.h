@@ -59,7 +59,7 @@ static inline void
 vn_encode_VkSamplerReductionModeCreateInfo(struct vn_cs_encoder *enc, const VkSamplerReductionModeCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkSamplerReductionModeCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkSamplerReductionModeCreateInfo_self(enc, val);
 }
@@ -114,7 +114,7 @@ static inline void
 vn_encode_VkSamplerCustomBorderColorCreateInfoEXT(struct vn_cs_encoder *enc, const VkSamplerCustomBorderColorCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkSamplerCustomBorderColorCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkSamplerCustomBorderColorCreateInfoEXT_self(enc, val);
 }
@@ -169,7 +169,7 @@ static inline void
 vn_encode_VkSamplerBorderColorComponentMappingCreateInfoEXT(struct vn_cs_encoder *enc, const VkSamplerBorderColorComponentMappingCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkSamplerBorderColorComponentMappingCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkSamplerBorderColorComponentMappingCreateInfoEXT_self(enc, val);
 }
@@ -329,7 +329,7 @@ static inline void
 vn_encode_VkSamplerCreateInfo(struct vn_cs_encoder *enc, const VkSamplerCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkSamplerCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkSamplerCreateInfo_self(enc, val);
 }

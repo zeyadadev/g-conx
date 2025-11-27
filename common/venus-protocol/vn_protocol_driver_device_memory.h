@@ -69,7 +69,7 @@ static inline void
 vn_encode_VkExportMemoryAllocateInfo(struct vn_cs_encoder *enc, const VkExportMemoryAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkExportMemoryAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkExportMemoryAllocateInfo_self(enc, val);
 }
@@ -124,7 +124,7 @@ static inline void
 vn_encode_VkMemoryAllocateFlagsInfo(struct vn_cs_encoder *enc, const VkMemoryAllocateFlagsInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO; &_vn_temp; }));
     vn_encode_VkMemoryAllocateFlagsInfo_pnext(enc, val->pNext);
     vn_encode_VkMemoryAllocateFlagsInfo_self(enc, val);
 }
@@ -179,7 +179,7 @@ static inline void
 vn_encode_VkMemoryDedicatedAllocateInfo(struct vn_cs_encoder *enc, const VkMemoryDedicatedAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkMemoryDedicatedAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkMemoryDedicatedAllocateInfo_self(enc, val);
 }
@@ -232,7 +232,7 @@ static inline void
 vn_encode_VkMemoryOpaqueCaptureAddressAllocateInfo(struct vn_cs_encoder *enc, const VkMemoryOpaqueCaptureAddressAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkMemoryOpaqueCaptureAddressAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkMemoryOpaqueCaptureAddressAllocateInfo_self(enc, val);
 }
@@ -285,7 +285,7 @@ static inline void
 vn_encode_VkImportMemoryResourceInfoMESA(struct vn_cs_encoder *enc, const VkImportMemoryResourceInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA; &_vn_temp; }));
     vn_encode_VkImportMemoryResourceInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkImportMemoryResourceInfoMESA_self(enc, val);
 }
@@ -423,7 +423,7 @@ static inline void
 vn_encode_VkMemoryAllocateInfo(struct vn_cs_encoder *enc, const VkMemoryAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkMemoryAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkMemoryAllocateInfo_self(enc, val);
 }
@@ -480,7 +480,7 @@ static inline void
 vn_encode_VkMappedMemoryRange(struct vn_cs_encoder *enc, const VkMappedMemoryRange *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE; &_vn_temp; }));
     vn_encode_VkMappedMemoryRange_pnext(enc, val->pNext);
     vn_encode_VkMappedMemoryRange_self(enc, val);
 }
@@ -533,7 +533,7 @@ static inline void
 vn_encode_VkDeviceMemoryOpaqueCaptureAddressInfo(struct vn_cs_encoder *enc, const VkDeviceMemoryOpaqueCaptureAddressInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO; &_vn_temp; }));
     vn_encode_VkDeviceMemoryOpaqueCaptureAddressInfo_pnext(enc, val->pNext);
     vn_encode_VkDeviceMemoryOpaqueCaptureAddressInfo_self(enc, val);
 }
@@ -588,7 +588,7 @@ static inline void
 vn_encode_VkMemoryUnmapInfo(struct vn_cs_encoder *enc, const VkMemoryUnmapInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO; &_vn_temp; }));
     vn_encode_VkMemoryUnmapInfo_pnext(enc, val->pNext);
     vn_encode_VkMemoryUnmapInfo_self(enc, val);
 }
@@ -696,7 +696,7 @@ static inline void
 vn_encode_VkMemoryResourceAllocationSizePropertiesMESA_partial(struct vn_cs_encoder *enc, const VkMemoryResourceAllocationSizePropertiesMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA; &_vn_temp; }));
     vn_encode_VkMemoryResourceAllocationSizePropertiesMESA_pnext_partial(enc, val->pNext);
     vn_encode_VkMemoryResourceAllocationSizePropertiesMESA_self_partial(enc, val);
 }
@@ -875,7 +875,7 @@ static inline void
 vn_encode_VkMemoryResourcePropertiesMESA_partial(struct vn_cs_encoder *enc, const VkMemoryResourcePropertiesMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA; &_vn_temp; }));
     vn_encode_VkMemoryResourcePropertiesMESA_pnext_partial(enc, val->pNext);
     vn_encode_VkMemoryResourcePropertiesMESA_self_partial(enc, val);
 }

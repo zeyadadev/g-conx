@@ -81,7 +81,7 @@ static inline void
 vn_encode_VkFramebufferAttachmentImageInfo(struct vn_cs_encoder *enc, const VkFramebufferAttachmentImageInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO; &_vn_temp; }));
     vn_encode_VkFramebufferAttachmentImageInfo_pnext(enc, val->pNext);
     vn_encode_VkFramebufferAttachmentImageInfo_self(enc, val);
 }
@@ -148,7 +148,7 @@ static inline void
 vn_encode_VkFramebufferAttachmentsCreateInfo(struct vn_cs_encoder *enc, const VkFramebufferAttachmentsCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkFramebufferAttachmentsCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkFramebufferAttachmentsCreateInfo_self(enc, val);
 }
@@ -258,7 +258,7 @@ static inline void
 vn_encode_VkFramebufferCreateInfo(struct vn_cs_encoder *enc, const VkFramebufferCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkFramebufferCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkFramebufferCreateInfo_self(enc, val);
 }
