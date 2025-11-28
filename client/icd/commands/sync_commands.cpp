@@ -3,6 +3,38 @@
 
 #include "icd/icd_entrypoints.h"
 #include "icd/commands/commands_common.h"
+#include <atomic>
+#include <chrono>
+
+namespace {
+
+struct TimingState {
+    std::atomic<uint64_t> calls{0};
+    std::atomic<uint64_t> total_us{0};
+    std::atomic<uint64_t> max_us{0};
+};
+
+inline void record_sync_timing(TimingState& state, uint64_t elapsed_us, const char* tag) {
+    const uint64_t count = state.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    state.total_us.fetch_add(elapsed_us, std::memory_order_relaxed);
+    uint64_t prev_max = state.max_us.load(std::memory_order_relaxed);
+    while (elapsed_us > prev_max &&
+           !state.max_us.compare_exchange_weak(prev_max, elapsed_us, std::memory_order_relaxed)) {
+    }
+    if (memory_trace_enabled() && (count % 100 == 0)) {
+        const uint64_t total = state.total_us.load(std::memory_order_relaxed);
+        const uint64_t max_seen = state.max_us.load(std::memory_order_relaxed);
+        const double avg_us = count ? static_cast<double>(total) / static_cast<double>(count) : 0.0;
+        VP_LOG_STREAM_INFO(MEMORY) << "[Sync] " << tag << " summary: calls=" << count
+                                   << " avg_us=" << avg_us
+                                   << " max_us=" << max_seen;
+    }
+}
+
+TimingState g_submit_timing;
+TimingState g_wait_timing;
+
+} // namespace
 
 extern "C" {
 
@@ -250,13 +282,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence) 
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     IcdDevice* icd_device = icd_device_from_handle(device);
+    const auto wait_start = std::chrono::steady_clock::now();
     VkResult result = vn_call_vkGetFenceStatus(&g_ring, icd_device->remote_handle, remote);
+    const auto wait_end = std::chrono::steady_clock::now();
     if (result == VK_SUCCESS) {
         g_sync_state.set_fence_signaled(fence, true);
         VkResult invalidate_result = invalidate_host_coherent_mappings(device);
         if (invalidate_result != VK_SUCCESS) {
             return invalidate_result;
         }
+        const uint64_t elapsed_us =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(wait_end - wait_start).count());
+        record_sync_timing(g_wait_timing, elapsed_us, "vkGetFenceStatus");
     }
     return result;
 }
@@ -335,12 +372,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
     }
 
     IcdDevice* icd_device = icd_device_from_handle(device);
+    const auto wait_start = std::chrono::steady_clock::now();
     VkResult result = vn_call_vkWaitForFences(&g_ring,
                                               icd_device->remote_handle,
                                               fenceCount,
                                               remote_fences.data(),
                                               waitAll,
                                               timeout);
+    const auto wait_end = std::chrono::steady_clock::now();
+    const uint64_t elapsed_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(wait_end - wait_start).count());
     if (result == VK_SUCCESS) {
         for (uint32_t i = 0; i < fenceCount; ++i) {
             g_sync_state.set_fence_signaled(pFences[i], true);
@@ -349,6 +390,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
         if (invalidate_result != VK_SUCCESS) {
             return invalidate_result;
         }
+        record_sync_timing(g_wait_timing, elapsed_us, "vkWaitForFences");
     }
     return result;
 }
@@ -594,7 +636,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
     }
 
     const VkSubmitInfo* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
+    const auto submit_start = std::chrono::steady_clock::now();
     VkResult result = vn_call_vkQueueSubmit(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    const auto submit_end = std::chrono::steady_clock::now();
+    const uint64_t submit_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(submit_end - submit_start).count());
     if (result != VK_SUCCESS) {
         ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit failed: " << result << "\n";
         return result;
@@ -628,6 +674,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
     }
 
     ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit completed\n";
+    record_sync_timing(g_submit_timing, submit_us, "vkQueueSubmit");
     return VK_SUCCESS;
 }
 
@@ -765,7 +812,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
     }
 
     const VkSubmitInfo2* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
+    const auto submit_start = std::chrono::steady_clock::now();
     VkResult result = vn_call_vkQueueSubmit2(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    const auto submit_end = std::chrono::steady_clock::now();
+    const uint64_t submit_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(submit_end - submit_start).count());
     if (result != VK_SUCCESS) {
         ICD_LOG_ERROR() << "[Client ICD] vkQueueSubmit2 failed: " << result << "\n";
         return result;
@@ -798,6 +849,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
     }
 
     ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit2 completed\n";
+    record_sync_timing(g_submit_timing, submit_us, "vkQueueSubmit2");
     return VK_SUCCESS;
 }
 

@@ -17,6 +17,7 @@
         "csignal": "cpp",
         "fstream": "cpp",
         "memory": "cpp",
-        "cstdarg": "cpp"
+        "cstdarg": "cpp",
+        "chrono": "cpp"
     }
 }
