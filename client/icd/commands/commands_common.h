@@ -38,6 +38,7 @@
 #include <string>
 #include <unordered_set>
 #include <mutex>
+#include <chrono>
 #include "wsi/linux_surface.h"
 #include <xcb/xcb.h>
 #include <X11/Xlib.h>
@@ -89,6 +90,34 @@ inline VkDeviceSize invalidate_max_bytes() {
         return static_cast<VkDeviceSize>(parsed);
     }();
     return max_bytes;
+}
+
+inline const std::unordered_set<uint64_t>& invalidate_handle_whitelist() {
+    static const std::unordered_set<uint64_t> whitelist = []() {
+        std::unordered_set<uint64_t> set;
+        const char* env = std::getenv("VENUS_INVALIDATE_HANDLES");
+        if (!env || env[0] == '\0') {
+            return set;
+        }
+        std::string input(env);
+        size_t start = 0;
+        while (start < input.size()) {
+            size_t comma = input.find(',', start);
+            std::string token = input.substr(start, comma == std::string::npos ? input.size() - start : comma - start);
+            if (!token.empty()) {
+                uint64_t value = std::strtoull(token.c_str(), nullptr, 0);
+                if (value != 0) {
+                    set.insert(value);
+                }
+            }
+            if (comma == std::string::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+        return set;
+    }();
+    return whitelist;
 }
 
 // Global connection state (defined in commands_common.cpp)
@@ -704,10 +733,16 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     size_t total_bytes = 0;
     size_t skipped_dirty = 0;
     size_t skipped_large = 0;
+    size_t skipped_handle_filter = 0;
     size_t largest_range = 0;
     const bool trace_mem = memory_trace_enabled();
     static std::mutex seen_mutex;
     static std::unordered_set<uint64_t> seen_handles;
+    const auto& handle_whitelist = invalidate_handle_whitelist();
+    static std::atomic<uint64_t> timing_calls{0};
+    static std::atomic<uint64_t> timing_total_us{0};
+    static std::atomic<uint64_t> timing_total_bytes{0};
+    static std::atomic<uint64_t> timing_max_us{0};
 
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
@@ -723,6 +758,11 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         }
         if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
             ++skipped_dirty;
+            continue;
+        }
+        const uint64_t handle_key_val = reinterpret_cast<uint64_t>(range.memory);
+        if (!handle_whitelist.empty() && handle_whitelist.count(handle_key_val) == 0) {
+            ++skipped_handle_filter;
             continue;
         }
         if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
@@ -753,6 +793,7 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
                                    << " largest=" << largest_range
                                    << " skipped_dirty=" << skipped_dirty
                                    << " skipped_large=" << skipped_large
+                                   << " skipped_handle=" << skipped_handle_filter
                                    << " cap=" << kMaxInvalidateBytes;
     }
 
@@ -788,6 +829,7 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         g_shadow_buffer_manager.prepare_coherent_range_invalidate(range);
     }
 
+    const auto send_start = std::chrono::steady_clock::now();
     if (!g_client.send(request.data(), request.size())) {
         ICD_LOG_ERROR() << "[Client ICD] Failed to send read batch request";
         for (const auto& range : eligible) {
@@ -844,6 +886,28 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         std::memcpy(range.data, data_ptr + consumed, static_cast<size_t>(range.size));
         consumed += static_cast<size_t>(range.size);
         g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+    }
+
+    const auto send_end = std::chrono::steady_clock::now();
+    const uint64_t elapsed_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(send_end - send_start).count());
+    const uint64_t calls = timing_calls.fetch_add(1) + 1;
+    timing_total_us.fetch_add(elapsed_us);
+    timing_total_bytes.fetch_add(static_cast<uint64_t>(total_bytes));
+    uint64_t prev_max = timing_max_us.load(std::memory_order_relaxed);
+    while (elapsed_us > prev_max &&
+           !timing_max_us.compare_exchange_weak(prev_max, elapsed_us, std::memory_order_relaxed)) {
+    }
+    if (trace_mem && (calls % 100 == 0)) {
+        const uint64_t total_us = timing_total_us.load(std::memory_order_relaxed);
+        const uint64_t total_b = timing_total_bytes.load(std::memory_order_relaxed);
+        const uint64_t max_us = timing_max_us.load(std::memory_order_relaxed);
+        const double avg_us = calls ? static_cast<double>(total_us) / static_cast<double>(calls) : 0.0;
+        const double avg_b = calls ? static_cast<double>(total_b) / static_cast<double>(calls) : 0.0;
+        VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate summary: calls=" << calls
+                                   << " avg_us=" << avg_us
+                                   << " avg_bytes=" << avg_b
+                                   << " max_us=" << max_us;
     }
 
     return VK_SUCCESS;

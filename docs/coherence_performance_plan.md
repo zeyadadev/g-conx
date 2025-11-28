@@ -20,4 +20,5 @@
 ## Coherence knobs (remote perf)
 - `VENUS_INVALIDATE_ON_WAIT=0` disables automatic invalidate-on-wait entirely (use when you want to prove corruption vs performance).
 - `VENUS_INVALIDATE_MAX_BYTES=<bytes|MiB|KiB>` caps auto-invalidate batch size (default 16 MiB). Lower this to trim readbacks for small buffers only.
+- `VENUS_INVALIDATE_HANDLES=0xA,0xB,...` (optional) whitelists which mapped handles may auto-invalidate; anything else is skipped.
 - When `VENUS_TRACE_MEM=1`, each eligible mapping logs once (`handle`, `size`, `threshold`) plus per-wait batch summaries, so you can target the specific buffers that must stay enabled.
