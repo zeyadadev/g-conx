@@ -372,26 +372,153 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
     }
 
     IcdDevice* icd_device = icd_device_from_handle(device);
-    const auto wait_start = std::chrono::steady_clock::now();
-    VkResult result = vn_call_vkWaitForFences(&g_ring,
-                                              icd_device->remote_handle,
-                                              fenceCount,
-                                              remote_fences.data(),
-                                              waitAll,
-                                              timeout);
-    const auto wait_end = std::chrono::steady_clock::now();
-    const uint64_t elapsed_us =
-        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(wait_end - wait_start).count());
-    if (result == VK_SUCCESS) {
-        for (uint32_t i = 0; i < fenceCount; ++i) {
-            g_sync_state.set_fence_signaled(pFences[i], true);
+    const bool enable_latency = latency_mode_enabled();
+    const bool trace_mem = memory_trace_enabled();
+    InvalidateBatchPayload invalidate_batch;
+    if (enable_latency) {
+        VkResult prep = build_invalidate_payload(device, &invalidate_batch, trace_mem);
+        if (prep != VK_SUCCESS) {
+            return prep;
         }
-        VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+    }
+
+    const auto wait_start = std::chrono::steady_clock::now();
+    VkResult result = VK_SUCCESS;
+    uint64_t elapsed_us = 0;
+
+    if (!enable_latency) {
+        result = vn_call_vkWaitForFences(&g_ring,
+                                         icd_device->remote_handle,
+                                         fenceCount,
+                                         remote_fences.data(),
+                                         waitAll,
+                                         timeout);
+        const auto wait_end = std::chrono::steady_clock::now();
+        elapsed_us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(wait_end - wait_start).count());
+        if (result == VK_SUCCESS) {
+            for (uint32_t i = 0; i < fenceCount; ++i) {
+                g_sync_state.set_fence_signaled(pFences[i], true);
+            }
+            VkResult invalidate_result = invalidate_host_coherent_mappings(device);
+            if (invalidate_result != VK_SUCCESS) {
+                return invalidate_result;
+            }
+            record_sync_timing(g_wait_timing, elapsed_us, "vkWaitForFences");
+        }
+        return result;
+    }
+
+    size_t cmd_size = vn_sizeof_vkWaitForFences(icd_device->remote_handle,
+                                               fenceCount,
+                                               remote_fences.data(),
+                                               waitAll,
+                                               timeout);
+    if (!cmd_size || cmd_size > std::numeric_limits<uint32_t>::max()) {
+        finalize_invalidate_ranges(invalidate_batch);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    WaitInvalidateHeader header = {};
+    header.command = VENUS_PLUS_CMD_COALESCE_WAIT;
+    header.flags = kVenusCoalesceFlagCommand;
+    header.wait_command_size = static_cast<uint32_t>(cmd_size);
+    header.invalidate_size = static_cast<uint32_t>(invalidate_batch.request.size());
+    if (!invalidate_batch.request.empty()) {
+        header.flags |= kVenusCoalesceFlagInvalidate;
+    }
+
+    const size_t payload_size = sizeof(header) + cmd_size + invalidate_batch.request.size();
+    if (!check_payload_size(payload_size)) {
+        finalize_invalidate_ranges(invalidate_batch);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    std::vector<uint8_t> payload(payload_size);
+    std::memcpy(payload.data(), &header, sizeof(header));
+
+    std::vector<uint8_t> command_stream(cmd_size);
+    vn_cs_encoder encoder;
+    vn_cs_encoder_init_external(&encoder, command_stream.data(), cmd_size);
+    vn_encode_vkWaitForFences(&encoder,
+                              VK_COMMAND_GENERATE_REPLY_BIT_EXT,
+                              icd_device->remote_handle,
+                              fenceCount,
+                              remote_fences.data(),
+                              waitAll,
+                              timeout);
+
+    size_t offset = sizeof(header);
+    std::memcpy(payload.data() + offset, command_stream.data(), command_stream.size());
+    offset += command_stream.size();
+    if (!invalidate_batch.request.empty()) {
+        std::memcpy(payload.data() + offset,
+                    invalidate_batch.request.data(),
+                    invalidate_batch.request.size());
+    }
+
+    if (!g_client.send(payload.data(), payload.size())) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send coalesced wait-for-fences";
+        finalize_invalidate_ranges(invalidate_batch);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply) || reply.size() < sizeof(WaitInvalidateReplyHeader)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive coalesced wait reply";
+        finalize_invalidate_ranges(invalidate_batch);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    WaitInvalidateReplyHeader reply_header = {};
+    std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
+    const size_t expected_size = sizeof(reply_header) +
+                                 reply_header.wait_reply_size +
+                                 reply_header.invalidate_reply_size;
+    if (reply.size() != expected_size) {
+        ICD_LOG_ERROR() << "[Client ICD] Coalesced wait reply size mismatch";
+        finalize_invalidate_ranges(invalidate_batch);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    vn_cs_decoder decoder;
+    vn_cs_decoder_init(&decoder,
+                       reply.data() + sizeof(reply_header),
+                       reply_header.wait_reply_size);
+    result = vn_decode_vkWaitForFences_reply(&decoder,
+                                             icd_device->remote_handle,
+                                             fenceCount,
+                                             remote_fences.data(),
+                                             waitAll,
+                                             timeout);
+    vn_cs_decoder_reset_temp_storage(&decoder);
+
+    const auto wait_end = std::chrono::steady_clock::now();
+    elapsed_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(wait_end - wait_start).count());
+
+    if (result != VK_SUCCESS) {
+        finalize_invalidate_ranges(invalidate_batch);
+        return result;
+    }
+
+    for (uint32_t i = 0; i < fenceCount; ++i) {
+        g_sync_state.set_fence_signaled(pFences[i], true);
+    }
+    if (!invalidate_batch.request.empty()) {
+        std::vector<uint8_t> invalidate_reply(reply_header.invalidate_reply_size);
+        if (reply_header.invalidate_reply_size > 0) {
+            std::memcpy(invalidate_reply.data(),
+                        reply.data() + sizeof(reply_header) + reply_header.wait_reply_size,
+                        reply_header.invalidate_reply_size);
+        }
+        VkResult invalidate_result =
+            apply_invalidate_reply(invalidate_batch, invalidate_reply, elapsed_us, trace_mem);
         if (invalidate_result != VK_SUCCESS) {
             return invalidate_result;
         }
-        record_sync_timing(g_wait_timing, elapsed_us, "vkWaitForFences");
     }
+    record_sync_timing(g_wait_timing, elapsed_us, "vkWaitForFences");
     return result;
 }
 
@@ -498,10 +625,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 
     IcdQueue* icd_queue = icd_queue_from_handle(queue);
     VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
-    VkResult flush_result = flush_host_coherent_mappings(queue_device);
-    if (flush_result != VK_SUCCESS) {
-        return flush_result;
-    }
 
     VkFence remote_fence = VK_NULL_HANDLE;
     if (fence != VK_NULL_HANDLE) {
@@ -635,9 +758,102 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
         }
     }
 
+    const bool enable_latency = latency_mode_enabled();
+    FlushBatchPayload flush_batch;
+    if (enable_latency) {
+        VkResult flush_prep = build_flush_payload(queue_device, &flush_batch);
+        if (flush_prep != VK_SUCCESS) {
+            return flush_prep;
+        }
+    } else {
+        VkResult flush_result = flush_host_coherent_mappings(queue_device);
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
+        }
+    }
+
     const VkSubmitInfo* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
     const auto submit_start = std::chrono::steady_clock::now();
-    VkResult result = vn_call_vkQueueSubmit(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    VkResult result = VK_SUCCESS;
+
+    if (!enable_latency) {
+        result = vn_call_vkQueueSubmit(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    } else {
+        size_t cmd_size = vn_sizeof_vkQueueSubmit(remote_queue, submitCount, submit_ptr, remote_fence);
+        if (!cmd_size || cmd_size > std::numeric_limits<uint32_t>::max()) {
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        std::vector<uint8_t> command_stream(cmd_size);
+        vn_cs_encoder encoder;
+        vn_cs_encoder_init_external(&encoder, command_stream.data(), cmd_size);
+        vn_encode_vkQueueSubmit(&encoder,
+                                VK_COMMAND_GENERATE_REPLY_BIT_EXT,
+                                remote_queue,
+                                submitCount,
+                                submit_ptr,
+                                remote_fence);
+
+        SubmitCoalesceHeader header = {};
+        header.command = VENUS_PLUS_CMD_COALESCE_SUBMIT;
+        header.flags = kVenusCoalesceFlagCommand;
+        header.transfer_size = static_cast<uint32_t>(flush_batch.payload.size());
+        header.command_size = static_cast<uint32_t>(command_stream.size());
+        if (!flush_batch.payload.empty()) {
+            header.flags |= kVenusCoalesceFlagTransfer;
+        }
+
+        const size_t payload_size = sizeof(header) + flush_batch.payload.size() + command_stream.size();
+        if (!check_payload_size(payload_size)) {
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        std::vector<uint8_t> payload(payload_size);
+        std::memcpy(payload.data(), &header, sizeof(header));
+        size_t offset = sizeof(header);
+        if (!flush_batch.payload.empty()) {
+            std::memcpy(payload.data() + offset, flush_batch.payload.data(), flush_batch.payload.size());
+            offset += flush_batch.payload.size();
+        }
+        std::memcpy(payload.data() + offset, command_stream.data(), command_stream.size());
+
+        if (!g_client.send(payload.data(), payload.size())) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to send coalesced submit";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        std::vector<uint8_t> reply;
+        if (!g_client.receive(reply) || reply.size() < sizeof(SubmitCoalesceReplyHeader)) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to receive coalesced submit reply";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        SubmitCoalesceReplyHeader reply_header = {};
+        std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
+        if (reply_header.transfer_result != VK_SUCCESS) {
+            finalize_flush_ranges(flush_batch);
+            return reply_header.transfer_result;
+        }
+
+        const size_t expected_reply_size = sizeof(reply_header) + reply_header.command_reply_size;
+        if (reply.size() != expected_reply_size) {
+            ICD_LOG_ERROR() << "[Client ICD] Coalesced submit reply size mismatch";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        vn_cs_decoder decoder;
+        vn_cs_decoder_init(&decoder,
+                           reply.data() + sizeof(reply_header),
+                           reply_header.command_reply_size);
+        result = vn_decode_vkQueueSubmit_reply(&decoder, remote_queue, submitCount, submit_ptr, remote_fence);
+        vn_cs_decoder_reset_temp_storage(&decoder);
+        finalize_flush_ranges(flush_batch);
+    }
+
     const auto submit_end = std::chrono::steady_clock::now();
     const uint64_t submit_us =
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(submit_end - submit_start).count());
@@ -701,10 +917,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
 
     IcdQueue* icd_queue = icd_queue_from_handle(queue);
     VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
-    VkResult flush_result = flush_host_coherent_mappings(queue_device);
-    if (flush_result != VK_SUCCESS) {
-        return flush_result;
-    }
 
     VkFence remote_fence = VK_NULL_HANDLE;
     if (fence != VK_NULL_HANDLE) {
@@ -811,9 +1023,102 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
         }
     }
 
+    const bool enable_latency = latency_mode_enabled();
+    FlushBatchPayload flush_batch;
+    if (enable_latency) {
+        VkResult flush_prep = build_flush_payload(queue_device, &flush_batch);
+        if (flush_prep != VK_SUCCESS) {
+            return flush_prep;
+        }
+    } else {
+        VkResult flush_result = flush_host_coherent_mappings(queue_device);
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
+        }
+    }
+
     const VkSubmitInfo2* submit_ptr = submitCount > 0 ? remote_submits.data() : nullptr;
     const auto submit_start = std::chrono::steady_clock::now();
-    VkResult result = vn_call_vkQueueSubmit2(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    VkResult result = VK_SUCCESS;
+
+    if (!enable_latency) {
+        result = vn_call_vkQueueSubmit2(&g_ring, remote_queue, submitCount, submit_ptr, remote_fence);
+    } else {
+        size_t cmd_size = vn_sizeof_vkQueueSubmit2(remote_queue, submitCount, submit_ptr, remote_fence);
+        if (!cmd_size || cmd_size > std::numeric_limits<uint32_t>::max()) {
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        std::vector<uint8_t> command_stream(cmd_size);
+        vn_cs_encoder encoder;
+        vn_cs_encoder_init_external(&encoder, command_stream.data(), cmd_size);
+        vn_encode_vkQueueSubmit2(&encoder,
+                                 VK_COMMAND_GENERATE_REPLY_BIT_EXT,
+                                 remote_queue,
+                                 submitCount,
+                                 submit_ptr,
+                                 remote_fence);
+
+        SubmitCoalesceHeader header = {};
+        header.command = VENUS_PLUS_CMD_COALESCE_SUBMIT;
+        header.flags = kVenusCoalesceFlagCommand;
+        header.transfer_size = static_cast<uint32_t>(flush_batch.payload.size());
+        header.command_size = static_cast<uint32_t>(command_stream.size());
+        if (!flush_batch.payload.empty()) {
+            header.flags |= kVenusCoalesceFlagTransfer;
+        }
+
+        const size_t payload_size = sizeof(header) + flush_batch.payload.size() + command_stream.size();
+        if (!check_payload_size(payload_size)) {
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        std::vector<uint8_t> payload(payload_size);
+        std::memcpy(payload.data(), &header, sizeof(header));
+        size_t offset = sizeof(header);
+        if (!flush_batch.payload.empty()) {
+            std::memcpy(payload.data() + offset, flush_batch.payload.data(), flush_batch.payload.size());
+            offset += flush_batch.payload.size();
+        }
+        std::memcpy(payload.data() + offset, command_stream.data(), command_stream.size());
+
+        if (!g_client.send(payload.data(), payload.size())) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to send coalesced submit2";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        std::vector<uint8_t> reply;
+        if (!g_client.receive(reply) || reply.size() < sizeof(SubmitCoalesceReplyHeader)) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to receive coalesced submit2 reply";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        SubmitCoalesceReplyHeader reply_header = {};
+        std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
+        if (reply_header.transfer_result != VK_SUCCESS) {
+            finalize_flush_ranges(flush_batch);
+            return reply_header.transfer_result;
+        }
+
+        const size_t expected_reply = sizeof(reply_header) + reply_header.command_reply_size;
+        if (reply.size() != expected_reply) {
+            ICD_LOG_ERROR() << "[Client ICD] Coalesced submit2 reply size mismatch";
+            finalize_flush_ranges(flush_batch);
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        vn_cs_decoder decoder;
+        vn_cs_decoder_init(&decoder,
+                           reply.data() + sizeof(reply_header),
+                           reply_header.command_reply_size);
+        result = vn_decode_vkQueueSubmit2_reply(&decoder, remote_queue, submitCount, submit_ptr, remote_fence);
+        vn_cs_decoder_reset_temp_storage(&decoder);
+        finalize_flush_ranges(flush_batch);
+    }
+
     const auto submit_end = std::chrono::steady_clock::now();
     const uint64_t submit_us =
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(submit_end - submit_start).count());

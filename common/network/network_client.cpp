@@ -9,6 +9,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <cstring>
+#include <cstdlib>
 #include <atomic>
 #include <chrono>
 
@@ -27,6 +28,33 @@ inline bool trace_net() {
         return env && env[0] != '0';
     }();
     return enabled;
+}
+
+inline bool pipeline_enabled_env() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_PIPELINED_RECV");
+        if (env && env[0] != '\0' && env[0] != '0') {
+            return true;
+        }
+        env = std::getenv("VENUS_LATENCY_MODE");
+        return env && env[0] != '0';
+    }();
+    return enabled;
+}
+
+inline int socket_buffer_bytes() {
+    static const int buf = []() {
+        const char* env = std::getenv("VENUS_SOCKET_BUFFER_BYTES");
+        if (!env || env[0] == '\0') {
+            return 4 * 1024 * 1024;
+        }
+        long parsed = std::strtol(env, nullptr, 10);
+        if (parsed <= 0) {
+            return 4 * 1024 * 1024;
+        }
+        return static_cast<int>(parsed);
+    }();
+    return buf;
 }
 
 struct NetStats {
@@ -66,7 +94,7 @@ inline void set_tcp_opts(int fd) {
 #ifdef TCP_QUICKACK
     setsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
 #endif
-    int buf_size = 4 * 1024 * 1024;
+    const int buf_size = socket_buffer_bytes();
     setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
 }
@@ -112,6 +140,13 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
     set_tcp_opts(fd_);
 
     NETWORK_LOG_INFO() << "Connected to " << host << ":" << port;
+    pipeline_enabled_ = pipeline_enabled_env();
+    stop_requested_.store(false, std::memory_order_relaxed);
+    running_.store(true, std::memory_order_relaxed);
+    recv_queue_.clear();
+    if (pipeline_enabled_) {
+        start_receive_thread();
+    }
     return true;
 }
 
@@ -176,6 +211,33 @@ bool NetworkClient::send(const void* data, size_t size) {
 }
 
 bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
+    if (!pipeline_enabled_) {
+        return receive_one(buffer);
+    }
+
+    std::unique_lock<std::mutex> lock(recv_mutex_);
+    recv_cv_.wait(lock, [this]() {
+        return !recv_queue_.empty() || !running_.load(std::memory_order_relaxed);
+    });
+
+    if (!recv_queue_.empty()) {
+        buffer = std::move(recv_queue_.front());
+        recv_queue_.pop_front();
+        return true;
+    }
+    return false;
+}
+
+void NetworkClient::disconnect() {
+    stop_receive_thread();
+    if (fd_ >= 0) {
+        close(fd_);
+        fd_ = -1;
+    }
+    running_.store(false, std::memory_order_relaxed);
+}
+
+bool NetworkClient::receive_one(std::vector<uint8_t>& buffer) {
     if (fd_ < 0) {
         NETWORK_LOG_ERROR() << "Not connected";
         return false;
@@ -184,19 +246,16 @@ bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
     const bool do_trace = trace_net();
     auto start = do_trace ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 
-    // Receive header
     MessageHeader header;
     if (!read_all(fd_, &header, sizeof(header))) {
         return false;
     }
 
-    // Validate magic
     if (header.magic != MESSAGE_MAGIC) {
         NETWORK_LOG_ERROR() << "Invalid message magic";
         return false;
     }
 
-    // Receive payload
     buffer.resize(header.size);
     if (!read_all(fd_, buffer.data(), header.size)) {
         return false;
@@ -212,10 +271,40 @@ bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
     return true;
 }
 
-void NetworkClient::disconnect() {
+void NetworkClient::start_receive_thread() {
+    if (recv_thread_.joinable()) {
+        return;
+    }
+    recv_thread_ = std::thread([this]() {
+        while (!stop_requested_.load(std::memory_order_relaxed)) {
+            std::vector<uint8_t> buffer;
+            if (!receive_one(buffer)) {
+                running_.store(false, std::memory_order_relaxed);
+                break;
+            }
+            {
+                std::lock_guard<std::mutex> lock(recv_mutex_);
+                recv_queue_.push_back(std::move(buffer));
+            }
+            recv_cv_.notify_one();
+        }
+        recv_cv_.notify_all();
+    });
+}
+
+void NetworkClient::stop_receive_thread() {
+    stop_requested_.store(true, std::memory_order_relaxed);
+    running_.store(false, std::memory_order_relaxed);
+    recv_cv_.notify_all();
     if (fd_ >= 0) {
-        close(fd_);
-        fd_ = -1;
+        shutdown(fd_, SHUT_RDWR);
+    }
+    if (recv_thread_.joinable()) {
+        recv_thread_.join();
+    }
+    {
+        std::lock_guard<std::mutex> lock(recv_mutex_);
+        recv_queue_.clear();
     }
 }
 

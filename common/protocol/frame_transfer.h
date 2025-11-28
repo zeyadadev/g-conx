@@ -16,6 +16,9 @@ enum VenusPlusCommandType : uint32_t {
     VENUS_PLUS_CMD_DESTROY_SWAPCHAIN    = 0x10000011u,
     VENUS_PLUS_CMD_ACQUIRE_IMAGE        = 0x10000012u,
     VENUS_PLUS_CMD_PRESENT              = 0x10000013u,
+
+    VENUS_PLUS_CMD_COALESCE_SUBMIT      = 0x10000020u,
+    VENUS_PLUS_CMD_COALESCE_WAIT        = 0x10000021u,
 };
 
 static constexpr uint32_t kVenusMaxSwapchainImages = 8;

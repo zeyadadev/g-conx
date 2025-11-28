@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <chrono>
+#include <cstdlib>
 
 #include "utils/logging.h"
 
@@ -17,6 +18,25 @@
 #define NETWORK_LOG_INFO() VP_LOG_STREAM_INFO(NETWORK)
 
 namespace venus_plus {
+
+namespace {
+
+inline int socket_buffer_bytes() {
+    static const int buf = []() {
+        const char* env = std::getenv("VENUS_SOCKET_BUFFER_BYTES");
+        if (!env || env[0] == '\0') {
+            return 4 * 1024 * 1024;
+        }
+        long parsed = std::strtol(env, nullptr, 10);
+        if (parsed <= 0) {
+            return 4 * 1024 * 1024;
+        }
+        return static_cast<int>(parsed);
+    }();
+    return buf;
+}
+
+} // namespace
 
 NetworkServer::NetworkServer() : server_fd_(-1), running_(false) {}
 
@@ -88,7 +108,7 @@ void NetworkServer::run(ClientHandler handler) {
 #ifdef TCP_QUICKACK
         setsockopt(client_fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
 #endif
-        int buf_size = 4 * 1024 * 1024;
+        const int buf_size = socket_buffer_bytes();
         setsockopt(client_fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
         setsockopt(client_fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
 

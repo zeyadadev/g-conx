@@ -3,6 +3,7 @@
 #include "renderer_decoder.h"
 #include "server_state.h"
 #include "protocol/memory_transfer.h"
+#include "protocol/remote_perf.h"
 #include "protocol/frame_transfer.h"
 #include "wsi/swapchain_manager.h"
 #include "utils/logging.h"
@@ -26,6 +27,125 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
     if (size >= sizeof(uint32_t)) {
         uint32_t command = 0;
         std::memcpy(&command, data, sizeof(command));
+        if (command == VENUS_PLUS_CMD_COALESCE_SUBMIT) {
+            if (size < sizeof(SubmitCoalesceHeader)) {
+                return false;
+            }
+            auto* header = reinterpret_cast<const SubmitCoalesceHeader*>(data);
+            const size_t expected_size = sizeof(SubmitCoalesceHeader) +
+                                         static_cast<size_t>(header->transfer_size) +
+                                         static_cast<size_t>(header->command_size);
+            if (size != expected_size) {
+                SERVER_LOG_ERROR() << "Coalesced submit size mismatch";
+                return false;
+            }
+
+            const uint8_t* transfer_ptr = static_cast<const uint8_t*>(data) + sizeof(SubmitCoalesceHeader);
+            const uint8_t* command_ptr = transfer_ptr + header->transfer_size;
+
+            VkResult transfer_result = VK_SUCCESS;
+            if ((header->flags & kVenusCoalesceFlagTransfer) && header->transfer_size > 0) {
+                transfer_result = g_memory_transfer.handle_transfer_batch_command(transfer_ptr, header->transfer_size);
+            }
+
+            uint8_t* venus_reply = nullptr;
+            size_t venus_reply_size = 0;
+            if (transfer_result == VK_SUCCESS &&
+                (header->flags & kVenusCoalesceFlagCommand) &&
+                header->command_size > 0) {
+                if (!venus_renderer_handle(g_renderer, command_ptr, header->command_size, &venus_reply, &venus_reply_size)) {
+                    if (venus_reply) {
+                        std::free(venus_reply);
+                    }
+                    return false;
+                }
+            }
+
+            SubmitCoalesceReplyHeader reply_header = {};
+            reply_header.transfer_result = transfer_result;
+            reply_header.command_reply_size =
+                transfer_result == VK_SUCCESS ? static_cast<uint32_t>(venus_reply_size) : 0;
+            const size_t reply_size = sizeof(reply_header) + reply_header.command_reply_size;
+            std::vector<uint8_t> reply(reply_size);
+            std::memcpy(reply.data(), &reply_header, sizeof(reply_header));
+            if (reply_header.command_reply_size && venus_reply) {
+                std::memcpy(reply.data() + sizeof(reply_header), venus_reply, venus_reply_size);
+            }
+            if (venus_reply) {
+                std::free(venus_reply);
+            }
+            if (!NetworkServer::send_to_client(client_fd, reply.data(), reply.size())) {
+                SERVER_LOG_ERROR() << "Failed to send coalesced submit reply";
+                return false;
+            }
+            return true;
+        }
+        if (command == VENUS_PLUS_CMD_COALESCE_WAIT) {
+            if (size < sizeof(WaitInvalidateHeader)) {
+                return false;
+            }
+            auto* header = reinterpret_cast<const WaitInvalidateHeader*>(data);
+            const size_t expected_size = sizeof(WaitInvalidateHeader) +
+                                         static_cast<size_t>(header->wait_command_size) +
+                                         static_cast<size_t>(header->invalidate_size);
+            if (size != expected_size) {
+                SERVER_LOG_ERROR() << "Coalesced wait payload size mismatch";
+                return false;
+            }
+
+            const uint8_t* wait_ptr = static_cast<const uint8_t*>(data) + sizeof(WaitInvalidateHeader);
+            const uint8_t* invalidate_ptr = wait_ptr + header->wait_command_size;
+
+            uint8_t* wait_reply = nullptr;
+            size_t wait_reply_size = 0;
+            if ((header->flags & kVenusCoalesceFlagCommand) && header->wait_command_size > 0) {
+                if (!venus_renderer_handle(g_renderer, wait_ptr, header->wait_command_size, &wait_reply, &wait_reply_size)) {
+                    if (wait_reply) {
+                        std::free(wait_reply);
+                    }
+                    return false;
+                }
+            }
+
+            std::vector<uint8_t> invalidate_reply;
+            if ((header->flags & kVenusCoalesceFlagInvalidate) && header->invalidate_size > 0) {
+                VkResult read_result =
+                    g_memory_transfer.handle_read_batch_command(invalidate_ptr, header->invalidate_size, &invalidate_reply);
+                if (read_result != VK_SUCCESS) {
+                    ReadMemoryBatchReplyHeader failure = {};
+                    failure.result = read_result;
+                    failure.range_count = 0;
+                    invalidate_reply.assign(reinterpret_cast<uint8_t*>(&failure),
+                                            reinterpret_cast<uint8_t*>(&failure) + sizeof(failure));
+                }
+            }
+
+            WaitInvalidateReplyHeader reply_header = {};
+            reply_header.wait_reply_size = static_cast<uint32_t>(wait_reply_size);
+            reply_header.invalidate_reply_size = static_cast<uint32_t>(invalidate_reply.size());
+
+            const size_t reply_size = sizeof(reply_header) +
+                                      reply_header.wait_reply_size +
+                                      reply_header.invalidate_reply_size;
+            std::vector<uint8_t> reply(reply_size);
+            std::memcpy(reply.data(), &reply_header, sizeof(reply_header));
+            size_t reply_offset = sizeof(reply_header);
+            if (reply_header.wait_reply_size && wait_reply) {
+                std::memcpy(reply.data() + reply_offset, wait_reply, wait_reply_size);
+                reply_offset += wait_reply_size;
+            }
+            if (reply_header.invalidate_reply_size && !invalidate_reply.empty()) {
+                std::memcpy(reply.data() + reply_offset, invalidate_reply.data(), invalidate_reply.size());
+            }
+            if (wait_reply) {
+                std::free(wait_reply);
+            }
+            if (!NetworkServer::send_to_client(client_fd, reply.data(), reply.size())) {
+                SERVER_LOG_ERROR() << "Failed to send coalesced wait reply";
+                return false;
+            }
+            return true;
+        }
         if (command == VENUS_PLUS_CMD_TRANSFER_MEMORY_DATA) {
             VkResult result = g_memory_transfer.handle_transfer_command(data, size);
             if (!NetworkServer::send_to_client(client_fd, &result, sizeof(result))) {

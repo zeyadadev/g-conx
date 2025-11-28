@@ -21,6 +21,7 @@
 #include "wsi/platform_wsi.h"
 #include "protocol/memory_transfer.h"
 #include "protocol/frame_transfer.h"
+#include "protocol/remote_perf.h"
 #include "branding.h"
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
@@ -55,6 +56,14 @@ using namespace venus_plus;
 inline bool memory_trace_enabled() {
     static const bool enabled = []() {
         const char* env = std::getenv("VENUS_TRACE_MEM");
+        return env && env[0] != '0';
+    }();
+    return enabled;
+}
+
+inline bool latency_mode_enabled() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_LATENCY_MODE");
         return env && env[0] != '0';
     }();
     return enabled;
@@ -626,18 +635,44 @@ bool send_swapchain_command(const void* request,
                             size_t request_size,
                             std::vector<uint8_t>* reply);
 
-inline VkResult flush_host_coherent_mappings(VkDevice device) {
+struct FlushBatchPayload {
+    std::vector<uint8_t> payload;
+    std::vector<ShadowCoherentRange> ranges;
+};
+
+struct InvalidateBatchPayload {
+    std::vector<uint8_t> request;
+    std::vector<ShadowCoherentRange> ranges;
+    size_t total_bytes = 0;
+    size_t largest_range = 0;
+    size_t skipped_dirty = 0;
+    size_t skipped_large = 0;
+    size_t skipped_handle = 0;
+};
+
+inline void finalize_flush_ranges(const FlushBatchPayload& batch) {
+    for (const auto& range : batch.ranges) {
+        g_shadow_buffer_manager.finalize_coherent_range_flush(range);
+    }
+}
+
+inline VkResult build_flush_payload(VkDevice device, FlushBatchPayload* out) {
+    if (!out) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    out->payload.clear();
+    out->ranges.clear();
     if (device == VK_NULL_HANDLE) {
         return VK_SUCCESS;
     }
-    std::vector<ShadowCoherentRange> ranges;
-    g_shadow_buffer_manager.collect_dirty_coherent_ranges(device, &ranges);
-    if (ranges.empty()) {
+
+    g_shadow_buffer_manager.collect_dirty_coherent_ranges(device, &out->ranges);
+    if (out->ranges.empty()) {
         return VK_SUCCESS;
     }
 
     size_t total_bytes = 0;
-    for (const auto& range : ranges) {
+    for (const auto& range : out->ranges) {
         if (!range.data || range.size == 0) {
             continue;
         }
@@ -648,13 +683,13 @@ inline VkResult flush_host_coherent_mappings(VkDevice device) {
         total_bytes += static_cast<size_t>(range.size);
     }
 
-    if (ranges.size() > std::numeric_limits<uint32_t>::max()) {
+    if (out->ranges.size() > std::numeric_limits<uint32_t>::max()) {
         ICD_LOG_ERROR() << "[Client ICD] Too many ranges to flush";
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
     const size_t header_bytes = sizeof(TransferMemoryBatchHeader) +
-                                ranges.size() * sizeof(TransferMemoryRange);
+                                out->ranges.size() * sizeof(TransferMemoryRange);
     const size_t payload_size = header_bytes + total_bytes;
     if (total_bytes == 0) {
         return VK_SUCCESS;
@@ -663,19 +698,20 @@ inline VkResult flush_host_coherent_mappings(VkDevice device) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    std::vector<uint8_t> payload(payload_size);
-    auto* header = reinterpret_cast<TransferMemoryBatchHeader*>(payload.data());
+    out->payload.resize(payload_size);
+    auto* header = reinterpret_cast<TransferMemoryBatchHeader*>(out->payload.data());
     header->command = VENUS_PLUS_CMD_TRANSFER_MEMORY_BATCH;
-    header->range_count = static_cast<uint32_t>(ranges.size());
-    auto* range_out = reinterpret_cast<TransferMemoryRange*>(payload.data() + sizeof(TransferMemoryBatchHeader));
-    uint8_t* data_out = reinterpret_cast<uint8_t*>(range_out + ranges.size());
+    header->range_count = static_cast<uint32_t>(out->ranges.size());
+    auto* range_out = reinterpret_cast<TransferMemoryRange*>(out->payload.data() + sizeof(TransferMemoryBatchHeader));
+    uint8_t* data_out = reinterpret_cast<uint8_t*>(range_out + out->ranges.size());
 
     size_t copied = 0;
-    for (size_t i = 0; i < ranges.size(); ++i) {
-        const auto& range = ranges[i];
+    for (size_t i = 0; i < out->ranges.size(); ++i) {
+        const auto& range = out->ranges[i];
         VkDeviceMemory remote_mem = g_resource_state.get_remote_memory(range.memory);
         if (remote_mem == VK_NULL_HANDLE) {
             ICD_LOG_ERROR() << "[Client ICD] Missing remote memory handle for flush";
+            finalize_flush_ranges(*out);
             return VK_ERROR_MEMORY_MAP_FAILED;
         }
         range_out[i].memory_handle = reinterpret_cast<uint64_t>(remote_mem);
@@ -689,35 +725,91 @@ inline VkResult flush_host_coherent_mappings(VkDevice device) {
         copied += static_cast<size_t>(range.size);
     }
 
-    if (!g_client.send(payload.data(), payload.size())) {
+    return VK_SUCCESS;
+}
+
+inline VkResult send_flush_payload(const FlushBatchPayload& batch) {
+    if (batch.payload.empty()) {
+        return VK_SUCCESS;
+    }
+
+    if (!g_client.send(batch.payload.data(), batch.payload.size())) {
         ICD_LOG_ERROR() << "[Client ICD] Failed to send batch memory transfer";
-        for (const auto& range : ranges) {
-            g_shadow_buffer_manager.finalize_coherent_range_flush(range);
-        }
+        finalize_flush_ranges(batch);
         return VK_ERROR_DEVICE_LOST;
     }
 
     std::vector<uint8_t> reply;
     if (!g_client.receive(reply) || reply.size() < sizeof(VkResult)) {
         ICD_LOG_ERROR() << "[Client ICD] Failed to receive batch transfer reply";
-        for (const auto& range : ranges) {
-            g_shadow_buffer_manager.finalize_coherent_range_flush(range);
-        }
+        finalize_flush_ranges(batch);
         return VK_ERROR_DEVICE_LOST;
     }
 
     VkResult result = VK_ERROR_DEVICE_LOST;
     std::memcpy(&result, reply.data(), sizeof(VkResult));
-    for (const auto& range : ranges) {
-        g_shadow_buffer_manager.finalize_coherent_range_flush(range);
-    }
+    finalize_flush_ranges(batch);
     if (result != VK_SUCCESS) {
         ICD_LOG_ERROR() << "[Client ICD] Batch memory transfer failed: " << result << "\n";
     }
     return result;
 }
 
-inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
+inline VkResult flush_host_coherent_mappings(VkDevice device) {
+    FlushBatchPayload batch;
+    VkResult prep = build_flush_payload(device, &batch);
+    if (prep != VK_SUCCESS || batch.payload.empty()) {
+        return prep;
+    }
+    return send_flush_payload(batch);
+}
+
+inline void finalize_invalidate_ranges(const InvalidateBatchPayload& payload) {
+    for (const auto& range : payload.ranges) {
+        g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
+    }
+}
+
+inline void update_invalidate_timing(uint64_t elapsed_us, uint64_t total_bytes, bool trace_mem) {
+    static std::atomic<uint64_t> timing_calls{0};
+    static std::atomic<uint64_t> timing_total_us{0};
+    static std::atomic<uint64_t> timing_total_bytes{0};
+    static std::atomic<uint64_t> timing_max_us{0};
+
+    const uint64_t calls = timing_calls.fetch_add(1) + 1;
+    timing_total_us.fetch_add(elapsed_us);
+    timing_total_bytes.fetch_add(total_bytes);
+    uint64_t prev_max = timing_max_us.load(std::memory_order_relaxed);
+    while (elapsed_us > prev_max &&
+           !timing_max_us.compare_exchange_weak(prev_max, elapsed_us, std::memory_order_relaxed)) {
+    }
+    if (trace_mem && (calls % 100 == 0)) {
+        const uint64_t total_us = timing_total_us.load(std::memory_order_relaxed);
+        const uint64_t total_b = timing_total_bytes.load(std::memory_order_relaxed);
+        const uint64_t max_us = timing_max_us.load(std::memory_order_relaxed);
+        const double avg_us = calls ? static_cast<double>(total_us) / static_cast<double>(calls) : 0.0;
+        const double avg_b = calls ? static_cast<double>(total_b) / static_cast<double>(calls) : 0.0;
+        VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate summary: calls=" << calls
+                                   << " avg_us=" << avg_us
+                                   << " avg_bytes=" << avg_b
+                                   << " max_us=" << max_us;
+    }
+}
+
+inline VkResult build_invalidate_payload(VkDevice device,
+                                         InvalidateBatchPayload* out,
+                                         bool trace_mem) {
+    if (!out) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    out->request.clear();
+    out->ranges.clear();
+    out->total_bytes = 0;
+    out->largest_range = 0;
+    out->skipped_dirty = 0;
+    out->skipped_large = 0;
+    out->skipped_handle = 0;
+
     if (device == VK_NULL_HANDLE) {
         return VK_SUCCESS;
     }
@@ -730,26 +822,17 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     g_shadow_buffer_manager.collect_host_coherent_ranges(device, &ranges);
     std::vector<ShadowCoherentRange> eligible;
     eligible.reserve(ranges.size());
-    size_t total_bytes = 0;
-    size_t skipped_dirty = 0;
-    size_t skipped_large = 0;
-    size_t skipped_handle_filter = 0;
-    size_t largest_range = 0;
-    const bool trace_mem = memory_trace_enabled();
+
     static std::mutex seen_mutex;
     static std::unordered_set<uint64_t> seen_handles;
     const auto& handle_whitelist = invalidate_handle_whitelist();
-    static std::atomic<uint64_t> timing_calls{0};
-    static std::atomic<uint64_t> timing_total_us{0};
-    static std::atomic<uint64_t> timing_total_bytes{0};
-    static std::atomic<uint64_t> timing_max_us{0};
 
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
             continue;
         }
         if (range.size > kMaxInvalidateBytes) {
-            ++skipped_large;
+            ++out->skipped_large;
             if (!warned_skip.exchange(true)) {
                 ICD_LOG_WARN() << "[Client ICD] Skipping host-coherent invalidate for large mapped range ("
                                << range.size << " bytes); data visibility relies on explicit vkInvalidateMappedMemoryRanges\n";
@@ -757,19 +840,19 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
             continue;
         }
         if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
-            ++skipped_dirty;
+            ++out->skipped_dirty;
             continue;
         }
         const uint64_t handle_key_val = reinterpret_cast<uint64_t>(range.memory);
         if (!handle_whitelist.empty() && handle_whitelist.count(handle_key_val) == 0) {
-            ++skipped_handle_filter;
+            ++out->skipped_handle;
             continue;
         }
         if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
-        total_bytes += static_cast<size_t>(range.size);
-        largest_range = std::max(largest_range, static_cast<size_t>(range.size));
+        out->total_bytes += static_cast<size_t>(range.size);
+        out->largest_range = std::max(out->largest_range, static_cast<size_t>(range.size));
         eligible.push_back(range);
         if (trace_mem) {
             const uint64_t handle_key = reinterpret_cast<uint64_t>(range.memory);
@@ -786,14 +869,14 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         }
     }
 
-    if (trace_mem && (!eligible.empty() || skipped_dirty > 0 || skipped_large > 0)) {
+    if (trace_mem && (!eligible.empty() || out->skipped_dirty > 0 || out->skipped_large > 0)) {
         VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate: ranges=" << ranges.size()
                                    << " eligible=" << eligible.size()
-                                   << " bytes=" << total_bytes
-                                   << " largest=" << largest_range
-                                   << " skipped_dirty=" << skipped_dirty
-                                   << " skipped_large=" << skipped_large
-                                   << " skipped_handle=" << skipped_handle_filter
+                                   << " bytes=" << out->total_bytes
+                                   << " largest=" << out->largest_range
+                                   << " skipped_dirty=" << out->skipped_dirty
+                                   << " skipped_large=" << out->skipped_large
+                                   << " skipped_handle=" << out->skipped_handle
                                    << " cap=" << kMaxInvalidateBytes;
     }
 
@@ -812,15 +895,16 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    std::vector<uint8_t> request(payload_size);
-    auto* header = reinterpret_cast<ReadMemoryBatchHeader*>(request.data());
+    out->request.resize(payload_size);
+    auto* header = reinterpret_cast<ReadMemoryBatchHeader*>(out->request.data());
     header->command = VENUS_PLUS_CMD_READ_MEMORY_BATCH;
     header->range_count = static_cast<uint32_t>(eligible.size());
-    auto* range_out = reinterpret_cast<ReadMemoryRange*>(request.data() + sizeof(ReadMemoryBatchHeader));
+    auto* range_out = reinterpret_cast<ReadMemoryRange*>(out->request.data() + sizeof(ReadMemoryBatchHeader));
     for (size_t i = 0; i < eligible.size(); ++i) {
         const auto& range = eligible[i];
         VkDeviceMemory remote_mem = g_resource_state.get_remote_memory(range.memory);
         if (remote_mem == VK_NULL_HANDLE) {
+            finalize_invalidate_ranges({{}, eligible});
             return VK_ERROR_MEMORY_MAP_FAILED;
         }
         range_out[i].memory_handle = reinterpret_cast<uint64_t>(remote_mem);
@@ -829,57 +913,53 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         g_shadow_buffer_manager.prepare_coherent_range_invalidate(range);
     }
 
-    const auto send_start = std::chrono::steady_clock::now();
-    if (!g_client.send(request.data(), request.size())) {
-        ICD_LOG_ERROR() << "[Client ICD] Failed to send read batch request";
-        for (const auto& range : eligible) {
-            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        }
+    out->ranges = std::move(eligible);
+    return VK_SUCCESS;
+}
+
+inline VkResult apply_invalidate_reply(const InvalidateBatchPayload& payload,
+                                       const std::vector<uint8_t>& reply,
+                                       uint64_t elapsed_us,
+                                       bool trace_mem) {
+    if (payload.request.empty()) {
+        return VK_SUCCESS;
+    }
+    if (reply.size() < sizeof(ReadMemoryBatchReplyHeader)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive read batch reply";
+        finalize_invalidate_ranges(payload);
         return VK_ERROR_DEVICE_LOST;
     }
 
-    std::vector<uint8_t> reply;
-    if (!g_client.receive(reply) || reply.size() < sizeof(ReadMemoryBatchReplyHeader)) {
-        ICD_LOG_ERROR() << "[Client ICD] Failed to receive read batch reply";
-        for (const auto& range : eligible) {
-            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        }
-        return VK_ERROR_DEVICE_LOST;
-    }
+    const auto* request_header =
+        reinterpret_cast<const ReadMemoryBatchHeader*>(payload.request.data());
 
     ReadMemoryBatchReplyHeader reply_header = {};
     std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
     if (reply_header.result != VK_SUCCESS) {
         ICD_LOG_ERROR() << "[Client ICD] Read batch failed: " << reply_header.result << "\n";
-        for (const auto& range : eligible) {
-            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        }
+        finalize_invalidate_ranges(payload);
         return reply_header.result;
     }
 
-    if (reply_header.range_count != header->range_count) {
+    if (reply_header.range_count != request_header->range_count) {
         ICD_LOG_ERROR() << "[Client ICD] Read batch range count mismatch";
-        for (const auto& range : eligible) {
-            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        }
+        finalize_invalidate_ranges(payload);
         return VK_ERROR_DEVICE_LOST;
     }
 
     size_t expected_payload = 0;
-    for (const auto& range : eligible) {
+    for (const auto& range : payload.ranges) {
         expected_payload += static_cast<size_t>(range.size);
     }
     if (reply.size() != sizeof(ReadMemoryBatchReplyHeader) + expected_payload) {
         ICD_LOG_ERROR() << "[Client ICD] Read batch payload size mismatch";
-        for (const auto& range : eligible) {
-            g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
-        }
+        finalize_invalidate_ranges(payload);
         return VK_ERROR_DEVICE_LOST;
     }
 
     const uint8_t* data_ptr = reply.data() + sizeof(ReadMemoryBatchReplyHeader);
     size_t consumed = 0;
-    for (const auto& range : eligible) {
+    for (const auto& range : payload.ranges) {
         if (range.size == 0) {
             continue;
         }
@@ -888,27 +968,35 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         g_shadow_buffer_manager.finalize_coherent_range_invalidate(range);
     }
 
+    update_invalidate_timing(elapsed_us, static_cast<uint64_t>(payload.total_bytes), trace_mem);
+    return VK_SUCCESS;
+}
+
+inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
+    const bool trace_mem = memory_trace_enabled();
+    InvalidateBatchPayload payload;
+    VkResult prep = build_invalidate_payload(device, &payload, trace_mem);
+    if (prep != VK_SUCCESS || payload.request.empty()) {
+        return prep;
+    }
+
+    const auto send_start = std::chrono::steady_clock::now();
+    if (!g_client.send(payload.request.data(), payload.request.size())) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to send read batch request";
+        finalize_invalidate_ranges(payload);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    std::vector<uint8_t> reply;
+    if (!g_client.receive(reply)) {
+        ICD_LOG_ERROR() << "[Client ICD] Failed to receive read batch reply";
+        finalize_invalidate_ranges(payload);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
     const auto send_end = std::chrono::steady_clock::now();
     const uint64_t elapsed_us =
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(send_end - send_start).count());
-    const uint64_t calls = timing_calls.fetch_add(1) + 1;
-    timing_total_us.fetch_add(elapsed_us);
-    timing_total_bytes.fetch_add(static_cast<uint64_t>(total_bytes));
-    uint64_t prev_max = timing_max_us.load(std::memory_order_relaxed);
-    while (elapsed_us > prev_max &&
-           !timing_max_us.compare_exchange_weak(prev_max, elapsed_us, std::memory_order_relaxed)) {
-    }
-    if (trace_mem && (calls % 100 == 0)) {
-        const uint64_t total_us = timing_total_us.load(std::memory_order_relaxed);
-        const uint64_t total_b = timing_total_bytes.load(std::memory_order_relaxed);
-        const uint64_t max_us = timing_max_us.load(std::memory_order_relaxed);
-        const double avg_us = calls ? static_cast<double>(total_us) / static_cast<double>(calls) : 0.0;
-        const double avg_b = calls ? static_cast<double>(total_b) / static_cast<double>(calls) : 0.0;
-        VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate summary: calls=" << calls
-                                   << " avg_us=" << avg_us
-                                   << " avg_bytes=" << avg_b
-                                   << " max_us=" << max_us;
-    }
 
-    return VK_SUCCESS;
+    return apply_invalidate_reply(payload, reply, elapsed_us, trace_mem);
 }

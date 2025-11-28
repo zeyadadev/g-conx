@@ -20,6 +20,11 @@
   - Network: `VENUS_TRACE_NET` (logs per-100 message stats), TCP_NODELAY/QUICKACK and larger socket buffers are enabled by default.
   - Submit cadence (llama Vulkan backend): `GGML_VULKAN_NODES_PER_SUBMIT`, `GGML_VULKAN_MULMAT_BYTES_PER_SUBMIT`, `GGML_VULKAN_SUBMIT_ALMOST_READY`.
 
+## Implementation toggles
+- `VENUS_LATENCY_MODE=1` enables coalesced submit/wait messages and the pipelined receive path.
+- `VENUS_PIPELINED_RECV=1` can force the background receive thread without enabling other latency features.
+- `VENUS_SOCKET_BUFFER_BYTES=<bytes>` overrides the 4 MiB socket buffers on both client and server.
+
 ## Milestones
 - M1: implement message coalescing where protocol permits; measure drop in send/recv call counts per token.
 - M2: add optional pipelined receive (in-flight >1) behind env flag; measure RTT hiding and TPS impact.
