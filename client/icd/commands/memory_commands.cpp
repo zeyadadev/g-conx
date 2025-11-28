@@ -326,7 +326,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(
         }
     }
 
-    constexpr VkDeviceSize kInvalidateWaitThreshold = 16 * 1024 * 1024; // 16 MiB
+    const VkDeviceSize kInvalidateWaitThreshold = invalidate_max_bytes();
     bool invalidate_on_wait = g_resource_state.should_invalidate_on_wait(memory);
     // If the mapped slice is small, allow automatic invalidate-on-wait even
     // when the backing allocation is large (e.g., a shared arena).

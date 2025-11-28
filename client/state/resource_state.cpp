@@ -1,14 +1,36 @@
 #include "resource_state.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace venus_plus {
 
 ResourceState g_resource_state;
 
 namespace {
-constexpr VkDeviceSize kAutoInvalidateOnWaitThreshold = 16 * 1024 * 1024; // 16 MiB
+
+VkDeviceSize auto_invalidate_on_wait_threshold() {
+    static const VkDeviceSize threshold = []() -> VkDeviceSize {
+        const char* env = std::getenv("VENUS_INVALIDATE_MAX_BYTES");
+        if (!env || env[0] == '\0') {
+            return 16 * 1024 * 1024; // 16 MiB default
+        }
+        char* end = nullptr;
+        long long parsed = std::strtoll(env, &end, 10);
+        if (end && (*end == 'm' || *end == 'M')) {
+            parsed *= 1024LL * 1024LL;
+        } else if (end && (*end == 'k' || *end == 'K')) {
+            parsed *= 1024LL;
+        }
+        if (parsed <= 0) {
+            return 0;
+        }
+        return static_cast<VkDeviceSize>(parsed);
+    }();
+    return threshold;
 }
+
+} // namespace
 
 void ResourceState::add_buffer(VkDevice device, VkBuffer local, VkBuffer remote, const VkBufferCreateInfo& info) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -88,7 +110,7 @@ bool ResourceState::bind_buffer(VkBuffer buffer, VkDeviceMemory memory, VkDevice
     if (std::find(vec.begin(), vec.end(), buffer) == vec.end()) {
         vec.push_back(buffer);
     }
-    if (bit->second.size <= kAutoInvalidateOnWaitThreshold) {
+    if (bit->second.size <= auto_invalidate_on_wait_threshold()) {
         mit->second.invalidate_on_wait = true;
     }
     return true;

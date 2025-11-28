@@ -36,6 +36,8 @@
 #include <new>
 #include <vector>
 #include <string>
+#include <unordered_set>
+#include <mutex>
 #include "wsi/linux_surface.h"
 #include <xcb/xcb.h>
 #include <X11/Xlib.h>
@@ -55,6 +57,38 @@ inline bool memory_trace_enabled() {
         return env && env[0] != '0';
     }();
     return enabled;
+}
+
+inline bool invalidate_on_wait_enabled() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_INVALIDATE_ON_WAIT");
+        if (!env) {
+            return true;
+        }
+        return !(env[0] == '0' || env[0] == 'f' || env[0] == 'F' || env[0] == 'n' || env[0] == 'N');
+    }();
+    return enabled;
+}
+
+inline VkDeviceSize invalidate_max_bytes() {
+    static const VkDeviceSize max_bytes = []() -> VkDeviceSize {
+        const char* env = std::getenv("VENUS_INVALIDATE_MAX_BYTES");
+        if (!env || env[0] == '\0') {
+            return 16 * 1024 * 1024; // default 16 MiB
+        }
+        char* end = nullptr;
+        long long parsed = std::strtoll(env, &end, 10);
+        if (end && (*end == 'm' || *end == 'M')) {
+            parsed *= 1024LL * 1024LL;
+        } else if (end && (*end == 'k' || *end == 'K')) {
+            parsed *= 1024LL;
+        }
+        if (parsed <= 0) {
+            return 0;
+        }
+        return static_cast<VkDeviceSize>(parsed);
+    }();
+    return max_bytes;
 }
 
 // Global connection state (defined in commands_common.cpp)
@@ -658,8 +692,11 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     if (device == VK_NULL_HANDLE) {
         return VK_SUCCESS;
     }
-    static constexpr VkDeviceSize kMaxInvalidateBytes = 16 * 1024 * 1024; // cap to avoid huge copies
+    const VkDeviceSize kMaxInvalidateBytes = invalidate_max_bytes(); // cap to avoid huge copies
     static std::atomic<bool> warned_skip{false};
+    if (!invalidate_on_wait_enabled() || kMaxInvalidateBytes == 0) {
+        return VK_SUCCESS;
+    }
     std::vector<ShadowCoherentRange> ranges;
     g_shadow_buffer_manager.collect_host_coherent_ranges(device, &ranges);
     std::vector<ShadowCoherentRange> eligible;
@@ -669,6 +706,8 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     size_t skipped_large = 0;
     size_t largest_range = 0;
     const bool trace_mem = memory_trace_enabled();
+    static std::mutex seen_mutex;
+    static std::unordered_set<uint64_t> seen_handles;
 
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
@@ -692,6 +731,19 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
         total_bytes += static_cast<size_t>(range.size);
         largest_range = std::max(largest_range, static_cast<size_t>(range.size));
         eligible.push_back(range);
+        if (trace_mem) {
+            const uint64_t handle_key = reinterpret_cast<uint64_t>(range.memory);
+            bool first_time = false;
+            {
+                std::lock_guard<std::mutex> lock(seen_mutex);
+                first_time = seen_handles.insert(handle_key).second;
+            }
+            if (first_time) {
+                VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate eligible handle=" << range.memory
+                                           << " size=" << range.size
+                                           << " threshold=" << kMaxInvalidateBytes;
+            }
+        }
     }
 
     if (trace_mem && (!eligible.empty() || skipped_dirty > 0 || skipped_large > 0)) {
