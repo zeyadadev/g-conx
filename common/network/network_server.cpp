@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
+#include <chrono>
 
 #include "utils/logging.h"
 
@@ -83,6 +84,12 @@ void NetworkServer::run(ClientHandler handler) {
         // Disable Nagle's algorithm for low latency
         int flag = 1;
         setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+#ifdef TCP_QUICKACK
+        setsockopt(client_fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
+#endif
+        int buf_size = 4 * 1024 * 1024;
+        setsockopt(client_fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
+        setsockopt(client_fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
 
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
@@ -139,13 +146,40 @@ bool NetworkServer::send_to_client(int client_fd, const void* data, size_t size)
     header.magic = MESSAGE_MAGIC;
     header.size = size;
 
-    if (!write_all(client_fd, &header, sizeof(header))) {
-        return false;
-    }
+    // Send header + payload in one go to reduce syscalls
+    struct iovec iov[2];
+    iov[0].iov_base = &header;
+    iov[0].iov_len = sizeof(header);
+    iov[1].iov_base = const_cast<void*>(data);
+    iov[1].iov_len = size;
 
-    // Send payload
-    if (!write_all(client_fd, data, size)) {
-        return false;
+    size_t remaining = sizeof(header) + size;
+    while (remaining > 0) {
+        ssize_t n = writev(client_fd, iov, 2);
+        if (n < 0) {
+            NETWORK_LOG_ERROR() << "writev() error";
+            return false;
+        }
+        remaining -= static_cast<size_t>(n);
+        if (remaining == 0) {
+            break;
+        }
+        size_t written = static_cast<size_t>(n);
+        if (iov[0].iov_len > 0) {
+            if (written >= iov[0].iov_len) {
+                written -= iov[0].iov_len;
+                iov[0].iov_len = 0;
+                iov[0].iov_base = nullptr;
+            } else {
+                iov[0].iov_base = static_cast<uint8_t*>(iov[0].iov_base) + written;
+                iov[0].iov_len -= written;
+                written = 0;
+            }
+        }
+        if (written > 0) {
+            iov[1].iov_base = static_cast<uint8_t*>(iov[1].iov_base) + written;
+            iov[1].iov_len -= written;
+        }
     }
 
     return true;

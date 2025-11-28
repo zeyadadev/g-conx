@@ -6,8 +6,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 #include <cstring>
+#include <atomic>
+#include <chrono>
 
 #include "utils/logging.h"
 
@@ -15,6 +18,60 @@
 #define NETWORK_LOG_INFO() VP_LOG_STREAM_INFO(NETWORK)
 
 namespace venus_plus {
+
+namespace {
+
+inline bool trace_net() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_TRACE_NET");
+        return env && env[0] != '0';
+    }();
+    return enabled;
+}
+
+struct NetStats {
+    std::atomic<uint64_t> calls{0};
+    std::atomic<uint64_t> total_us{0};
+    std::atomic<uint64_t> total_bytes{0};
+    std::atomic<uint64_t> max_us{0};
+};
+
+void record_net(NetStats& stats, uint64_t elapsed_us, uint64_t bytes, const char* tag) {
+    const uint64_t count = stats.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    stats.total_us.fetch_add(elapsed_us, std::memory_order_relaxed);
+    stats.total_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    uint64_t prev_max = stats.max_us.load(std::memory_order_relaxed);
+    while (elapsed_us > prev_max &&
+           !stats.max_us.compare_exchange_weak(prev_max, elapsed_us, std::memory_order_relaxed)) {
+    }
+    if (count % 100 == 0) {
+        const uint64_t total_us = stats.total_us.load(std::memory_order_relaxed);
+        const uint64_t total_b = stats.total_bytes.load(std::memory_order_relaxed);
+        const uint64_t max_seen = stats.max_us.load(std::memory_order_relaxed);
+        const double avg_us = count ? static_cast<double>(total_us) / static_cast<double>(count) : 0.0;
+        const double avg_b = count ? static_cast<double>(total_b) / static_cast<double>(count) : 0.0;
+        NETWORK_LOG_INFO() << "[Net] " << tag << " summary: calls=" << count
+                           << " avg_us=" << avg_us
+                           << " avg_bytes=" << avg_b
+                           << " max_us=" << max_seen;
+    }
+}
+
+NetStats g_send_stats;
+NetStats g_recv_stats;
+
+inline void set_tcp_opts(int fd) {
+    int flag = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+#ifdef TCP_QUICKACK
+    setsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
+#endif
+    int buf_size = 4 * 1024 * 1024;
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
+}
+
+} // namespace
 
 NetworkClient::NetworkClient() : fd_(-1) {}
 
@@ -51,9 +108,8 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
         return false;
     }
 
-    // Disable Nagle's algorithm for low latency
-    int flag = 1;
-    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    // Disable Nagle's algorithm for low latency and tune buffers/ACKs
+    set_tcp_opts(fd_);
 
     NETWORK_LOG_INFO() << "Connected to " << host << ":" << port;
     return true;
@@ -70,13 +126,50 @@ bool NetworkClient::send(const void* data, size_t size) {
     header.magic = MESSAGE_MAGIC;
     header.size = size;
 
-    if (!write_all(fd_, &header, sizeof(header))) {
-        return false;
+    const bool do_trace = trace_net();
+    auto start = do_trace ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
+    // Send header + payload with a single writev to minimize syscalls.
+    struct iovec iov[2];
+    iov[0].iov_base = &header;
+    iov[0].iov_len = sizeof(header);
+    iov[1].iov_base = const_cast<void*>(data);
+    iov[1].iov_len = size;
+
+    size_t remaining = sizeof(header) + size;
+    while (remaining > 0) {
+        ssize_t n = writev(fd_, iov, 2);
+        if (n < 0) {
+            NETWORK_LOG_ERROR() << "writev() error";
+            return false;
+        }
+        remaining -= static_cast<size_t>(n);
+        if (remaining == 0) {
+            break;
+        }
+        size_t written = static_cast<size_t>(n);
+        if (iov[0].iov_len > 0) {
+            if (written >= iov[0].iov_len) {
+                written -= iov[0].iov_len;
+                iov[0].iov_len = 0;
+                iov[0].iov_base = nullptr;
+            } else {
+                iov[0].iov_base = static_cast<uint8_t*>(iov[0].iov_base) + written;
+                iov[0].iov_len -= written;
+                written = 0;
+            }
+        }
+        if (written > 0) {
+            iov[1].iov_base = static_cast<uint8_t*>(iov[1].iov_base) + written;
+            iov[1].iov_len -= written;
+        }
     }
 
-    // Send payload
-    if (!write_all(fd_, data, size)) {
-        return false;
+    if (do_trace) {
+        const auto end = std::chrono::steady_clock::now();
+        const uint64_t elapsed_us =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+        record_net(g_send_stats, elapsed_us, sizeof(header) + size, "send");
     }
 
     return true;
@@ -87,6 +180,9 @@ bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
         NETWORK_LOG_ERROR() << "Not connected";
         return false;
     }
+
+    const bool do_trace = trace_net();
+    auto start = do_trace ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 
     // Receive header
     MessageHeader header;
@@ -104,6 +200,13 @@ bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
     buffer.resize(header.size);
     if (!read_all(fd_, buffer.data(), header.size)) {
         return false;
+    }
+
+    if (do_trace) {
+        const auto end = std::chrono::steady_clock::now();
+        const uint64_t elapsed_us =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+        record_net(g_recv_stats, elapsed_us, sizeof(header) + header.size, "recv");
     }
 
     return true;

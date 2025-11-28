@@ -18,6 +18,7 @@
         "fstream": "cpp",
         "memory": "cpp",
         "cstdarg": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "atomic": "cpp"
     }
 }
