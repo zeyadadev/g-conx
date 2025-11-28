@@ -24,6 +24,7 @@ typedef enum {
     VP_LOG_CATEGORY_VULKAN,
     VP_LOG_CATEGORY_MEMORY,
     VP_LOG_CATEGORY_SYNC,
+    VP_LOG_CATEGORY_COUNT,
 } vp_log_category;
 
 void vp_log_printf(vp_log_level level,

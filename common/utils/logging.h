@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -33,7 +34,8 @@ enum class LogCategory {
     PROTOCOL,
     VULKAN,
     MEMORY,
-    SYNC
+    SYNC,
+    COUNT
 };
 
 // Logger singleton
@@ -46,6 +48,19 @@ public:
 
     void set_level(LogLevel level) { level_ = level; }
     LogLevel get_level() const { return level_; }
+    LogLevel get_category_level(LogCategory category) const {
+        const size_t idx = static_cast<size_t>(category);
+        if (idx >= category_levels_.size()) {
+            return level_;
+        }
+        return category_levels_[idx];
+    }
+    void set_category_level(LogCategory category, LogLevel level) {
+        const size_t idx = static_cast<size_t>(category);
+        if (idx < category_levels_.size()) {
+            category_levels_[idx] = level;
+        }
+    }
 
     void log(LogLevel level, LogCategory category, const char* file, int line,
              const char* fmt, ...) __attribute__((format(printf, 6, 7))) {
@@ -57,7 +72,8 @@ public:
 
     void logv(LogLevel level, LogCategory category, const char* file, int line,
               const char* fmt, va_list args) {
-        if (level > level_) return;
+        const LogLevel threshold = get_category_level(category);
+        if (level > threshold) return;
 
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -88,15 +104,81 @@ public:
     }
 
 private:
-    Logger() {
-        // Initialize from environment
+    Logger() { initialize_from_env(); }
+
+    static LogLevel parse_level(const char* str, LogLevel fallback) {
+        if (!str) {
+            return fallback;
+        }
+        if (std::strcmp(str, "NONE") == 0) return LogLevel::NONE;
+        if (std::strcmp(str, "ERROR") == 0) return LogLevel::ERROR;
+        if (std::strcmp(str, "WARN") == 0) return LogLevel::WARN;
+        if (std::strcmp(str, "INFO") == 0) return LogLevel::INFO;
+        if (std::strcmp(str, "DEBUG") == 0) return LogLevel::DEBUG;
+        if (std::strcmp(str, "TRACE") == 0) return LogLevel::TRACE;
+        return fallback;
+    }
+
+    static bool parse_category(const std::string& str, LogCategory* out) {
+        if (!out) return false;
+        if (str == "GENERAL") { *out = LogCategory::GENERAL; return true; }
+        if (str == "NETWORK") { *out = LogCategory::NETWORK; return true; }
+        if (str == "CLIENT")  { *out = LogCategory::CLIENT;  return true; }
+        if (str == "SERVER")  { *out = LogCategory::SERVER;  return true; }
+        if (str == "PROTOCOL"){ *out = LogCategory::PROTOCOL;return true; }
+        if (str == "VULKAN")  { *out = LogCategory::VULKAN;  return true; }
+        if (str == "MEMORY")  { *out = LogCategory::MEMORY;  return true; }
+        if (str == "SYNC")    { *out = LogCategory::SYNC;    return true; }
+        return false;
+    }
+
+    static std::string trim(const std::string& input) {
+        const auto first = input.find_first_not_of(" \t");
+        if (first == std::string::npos) {
+            return "";
+        }
+        const auto last = input.find_last_not_of(" \t");
+        return input.substr(first, last - first + 1);
+    }
+
+    void initialize_from_env() {
+        // Default to WARN to avoid noisy INFO-level logs unless explicitly requested.
+        level_ = LogLevel::WARN;
+        category_levels_.fill(level_);
+
         if (const char* env = std::getenv("VENUS_LOG_LEVEL")) {
-            if (std::strcmp(env, "NONE") == 0) level_ = LogLevel::NONE;
-            else if (std::strcmp(env, "ERROR") == 0) level_ = LogLevel::ERROR;
-            else if (std::strcmp(env, "WARN") == 0) level_ = LogLevel::WARN;
-            else if (std::strcmp(env, "INFO") == 0) level_ = LogLevel::INFO;
-            else if (std::strcmp(env, "DEBUG") == 0) level_ = LogLevel::DEBUG;
-            else if (std::strcmp(env, "TRACE") == 0) level_ = LogLevel::TRACE;
+            level_ = parse_level(env, level_);
+            category_levels_.fill(level_);
+        }
+
+        // Allow per-category overrides via VENUS_LOG_CATEGORIES=MEMORY=INFO,SERVER=WARN
+        if (const char* cat_env = std::getenv("VENUS_LOG_CATEGORIES")) {
+            std::stringstream ss(cat_env);
+            std::string token;
+            while (std::getline(ss, token, ',')) {
+                token = trim(token);
+                if (token.empty()) {
+                    continue;
+                }
+                std::string name = token;
+                std::string level_str;
+                const auto eq = token.find('=');
+                if (eq != std::string::npos) {
+                    name = token.substr(0, eq);
+                    level_str = token.substr(eq + 1);
+                }
+                name = trim(name);
+                level_str = trim(level_str);
+                LogCategory category;
+                if (!parse_category(name, &category)) {
+                    continue;
+                }
+                LogLevel lvl = level_;
+                if (!level_str.empty()) {
+                    lvl = parse_level(level_str.c_str(), lvl);
+                }
+                set_category_level(category, lvl);
+            }
         }
     }
 
@@ -125,7 +207,8 @@ private:
         }
     }
 
-    LogLevel level_ = LogLevel::INFO;
+    LogLevel level_ = LogLevel::WARN;
+    std::array<LogLevel, static_cast<size_t>(LogCategory::COUNT)> category_levels_ = {};
     std::mutex mutex_;
 };
 

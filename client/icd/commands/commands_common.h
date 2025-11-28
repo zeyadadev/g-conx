@@ -49,6 +49,14 @@ using namespace venus_plus;
 #define ICD_LOG_WARN() VP_LOG_STREAM_WARN(CLIENT)
 #define ICD_LOG_INFO() VP_LOG_STREAM_INFO(CLIENT)
 
+inline bool memory_trace_enabled() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_TRACE_MEM");
+        return env && env[0] != '0';
+    }();
+    return enabled;
+}
+
 // Global connection state (defined in commands_common.cpp)
 extern NetworkClient g_client;
 extern vn_ring g_ring;
@@ -657,12 +665,17 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
     std::vector<ShadowCoherentRange> eligible;
     eligible.reserve(ranges.size());
     size_t total_bytes = 0;
+    size_t skipped_dirty = 0;
+    size_t skipped_large = 0;
+    size_t largest_range = 0;
+    const bool trace_mem = memory_trace_enabled();
 
     for (const auto& range : ranges) {
         if (!range.data || range.size == 0) {
             continue;
         }
         if (range.size > kMaxInvalidateBytes) {
+            ++skipped_large;
             if (!warned_skip.exchange(true)) {
                 ICD_LOG_WARN() << "[Client ICD] Skipping host-coherent invalidate for large mapped range ("
                                << range.size << " bytes); data visibility relies on explicit vkInvalidateMappedMemoryRanges\n";
@@ -670,13 +683,25 @@ inline VkResult invalidate_host_coherent_mappings(VkDevice device) {
             continue;
         }
         if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
+            ++skipped_dirty;
             continue;
         }
         if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
         total_bytes += static_cast<size_t>(range.size);
+        largest_range = std::max(largest_range, static_cast<size_t>(range.size));
         eligible.push_back(range);
+    }
+
+    if (trace_mem && (!eligible.empty() || skipped_dirty > 0 || skipped_large > 0)) {
+        VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate: ranges=" << ranges.size()
+                                   << " eligible=" << eligible.size()
+                                   << " bytes=" << total_bytes
+                                   << " largest=" << largest_range
+                                   << " skipped_dirty=" << skipped_dirty
+                                   << " skipped_large=" << skipped_large
+                                   << " cap=" << kMaxInvalidateBytes;
     }
 
     if (eligible.empty()) {
