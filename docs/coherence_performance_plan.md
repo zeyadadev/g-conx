@@ -16,6 +16,7 @@
 - Default logging is now WARN; to avoid global debug noise set `VENUS_LOG_LEVEL=NONE` and opt-in only to memory traces with `VENUS_LOG_CATEGORIES=MEMORY=INFO`.
 - Enable the coherence trace with `VENUS_TRACE_MEM=1` to log auto-invalidate batches (ranges scanned, bytes copied, skipped ranges >16 MiB or dirty).
 - Leave all other categories at NONE/WARN so remote runs aren't slowed by unrelated logging while still surfacing memory-coherence diagnostics.
+- Network/logging traces: `VENUS_TRACE_NET=1` emits per-100 message send/recv summaries (avg/max us, avg bytes) under the NETWORK category; combine with `VENUS_LOG_LEVEL=NONE` and `VENUS_LOG_CATEGORIES=NETWORK=INFO` when needed.
 
 ## Coherence knobs (remote perf)
 - `VENUS_INVALIDATE_ON_WAIT=0` disables automatic invalidate-on-wait entirely (use when you want to prove corruption vs performance).
