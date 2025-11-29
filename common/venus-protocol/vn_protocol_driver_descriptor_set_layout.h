@@ -109,7 +109,7 @@ static inline void
 vn_encode_VkDescriptorSetLayoutBindingFlagsCreateInfo(struct vn_cs_encoder *enc, const VkDescriptorSetLayoutBindingFlagsCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorSetLayoutBindingFlagsCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorSetLayoutBindingFlagsCreateInfo_self(enc, val);
 }
@@ -227,7 +227,7 @@ static inline void
 vn_encode_VkDescriptorSetLayoutCreateInfo(struct vn_cs_encoder *enc, const VkDescriptorSetLayoutCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorSetLayoutCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorSetLayoutCreateInfo_self(enc, val);
 }
@@ -335,7 +335,7 @@ static inline void
 vn_encode_VkDescriptorSetVariableDescriptorCountLayoutSupport_partial(struct vn_cs_encoder *enc, const VkDescriptorSetVariableDescriptorCountLayoutSupport *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT; &_vn_temp; }));
     vn_encode_VkDescriptorSetVariableDescriptorCountLayoutSupport_pnext_partial(enc, val->pNext);
     vn_encode_VkDescriptorSetVariableDescriptorCountLayoutSupport_self_partial(enc, val);
 }
@@ -514,7 +514,7 @@ static inline void
 vn_encode_VkDescriptorSetLayoutSupport_partial(struct vn_cs_encoder *enc, const VkDescriptorSetLayoutSupport *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT; &_vn_temp; }));
     vn_encode_VkDescriptorSetLayoutSupport_pnext_partial(enc, val->pNext);
     vn_encode_VkDescriptorSetLayoutSupport_self_partial(enc, val);
 }

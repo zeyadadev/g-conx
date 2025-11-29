@@ -66,7 +66,7 @@ static inline void
 vn_encode_VkExportSemaphoreCreateInfo(struct vn_cs_encoder *enc, const VkExportSemaphoreCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkExportSemaphoreCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkExportSemaphoreCreateInfo_self(enc, val);
 }
@@ -164,7 +164,7 @@ static inline void
 vn_encode_VkSemaphoreCreateInfo(struct vn_cs_encoder *enc, const VkSemaphoreCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkSemaphoreCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkSemaphoreCreateInfo_self(enc, val);
 }
@@ -245,7 +245,7 @@ static inline void
 vn_encode_VkSemaphoreWaitInfo(struct vn_cs_encoder *enc, const VkSemaphoreWaitInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO; &_vn_temp; }));
     vn_encode_VkSemaphoreWaitInfo_pnext(enc, val->pNext);
     vn_encode_VkSemaphoreWaitInfo_self(enc, val);
 }
@@ -300,7 +300,7 @@ static inline void
 vn_encode_VkSemaphoreSignalInfo(struct vn_cs_encoder *enc, const VkSemaphoreSignalInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO; &_vn_temp; }));
     vn_encode_VkSemaphoreSignalInfo_pnext(enc, val->pNext);
     vn_encode_VkSemaphoreSignalInfo_self(enc, val);
 }
@@ -355,7 +355,7 @@ static inline void
 vn_encode_VkImportSemaphoreResourceInfoMESA(struct vn_cs_encoder *enc, const VkImportSemaphoreResourceInfoMESA *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_RESOURCE_INFO_MESA);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_RESOURCE_INFO_MESA });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_RESOURCE_INFO_MESA; &_vn_temp; }));
     vn_encode_VkImportSemaphoreResourceInfoMESA_pnext(enc, val->pNext);
     vn_encode_VkImportSemaphoreResourceInfoMESA_self(enc, val);
 }

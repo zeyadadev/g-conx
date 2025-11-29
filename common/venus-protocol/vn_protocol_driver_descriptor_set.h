@@ -77,7 +77,7 @@ static inline void
 vn_encode_VkDescriptorSetVariableDescriptorCountAllocateInfo(struct vn_cs_encoder *enc, const VkDescriptorSetVariableDescriptorCountAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorSetVariableDescriptorCountAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorSetVariableDescriptorCountAllocateInfo_self(enc, val);
 }
@@ -179,7 +179,7 @@ static inline void
 vn_encode_VkDescriptorSetAllocateInfo(struct vn_cs_encoder *enc, const VkDescriptorSetAllocateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorSetAllocateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorSetAllocateInfo_self(enc, val);
 }
@@ -244,7 +244,7 @@ static inline void
 vn_encode_VkCopyDescriptorSet(struct vn_cs_encoder *enc, const VkCopyDescriptorSet *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET; &_vn_temp; }));
     vn_encode_VkCopyDescriptorSet_pnext(enc, val->pNext);
     vn_encode_VkCopyDescriptorSet_self(enc, val);
 }

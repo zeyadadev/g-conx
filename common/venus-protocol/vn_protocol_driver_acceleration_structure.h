@@ -77,7 +77,7 @@ static inline void
 vn_encode_VkAccelerationStructureVersionInfoKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureVersionInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_VERSION_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_VERSION_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_VERSION_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureVersionInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureVersionInfoKHR_self(enc, val);
 }
@@ -140,7 +140,7 @@ static inline void
 vn_encode_VkAccelerationStructureCreateInfoKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureCreateInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureCreateInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureCreateInfoKHR_self(enc, val);
 }
@@ -193,7 +193,7 @@ static inline void
 vn_encode_VkAccelerationStructureDeviceAddressInfoKHR(struct vn_cs_encoder *enc, const VkAccelerationStructureDeviceAddressInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureDeviceAddressInfoKHR_pnext(enc, val->pNext);
     vn_encode_VkAccelerationStructureDeviceAddressInfoKHR_self(enc, val);
 }
@@ -309,7 +309,7 @@ static inline void
 vn_encode_VkAccelerationStructureBuildSizesInfoKHR_partial(struct vn_cs_encoder *enc, const VkAccelerationStructureBuildSizesInfoKHR *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR; &_vn_temp; }));
     vn_encode_VkAccelerationStructureBuildSizesInfoKHR_pnext_partial(enc, val->pNext);
     vn_encode_VkAccelerationStructureBuildSizesInfoKHR_self_partial(enc, val);
 }

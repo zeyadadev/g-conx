@@ -59,7 +59,7 @@ static inline void
 vn_encode_VkImageViewUsageCreateInfo(struct vn_cs_encoder *enc, const VkImageViewUsageCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkImageViewUsageCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkImageViewUsageCreateInfo_self(enc, val);
 }
@@ -114,7 +114,7 @@ static inline void
 vn_encode_VkImageViewSlicedCreateInfoEXT(struct vn_cs_encoder *enc, const VkImageViewSlicedCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkImageViewSlicedCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkImageViewSlicedCreateInfoEXT_self(enc, val);
 }
@@ -167,7 +167,7 @@ static inline void
 vn_encode_VkImageViewMinLodCreateInfoEXT(struct vn_cs_encoder *enc, const VkImageViewMinLodCreateInfoEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT; &_vn_temp; }));
     vn_encode_VkImageViewMinLodCreateInfoEXT_pnext(enc, val->pNext);
     vn_encode_VkImageViewMinLodCreateInfoEXT_self(enc, val);
 }
@@ -307,7 +307,7 @@ static inline void
 vn_encode_VkImageViewCreateInfo(struct vn_cs_encoder *enc, const VkImageViewCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkImageViewCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkImageViewCreateInfo_self(enc, val);
 }

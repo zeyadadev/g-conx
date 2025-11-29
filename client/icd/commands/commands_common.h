@@ -23,8 +23,13 @@
 #include "protocol/frame_transfer.h"
 #include "protocol/remote_perf.h"
 #include "branding.h"
+
+// Venus protocol headers are C code - must be wrapped in extern "C" for C++ compilation
+extern "C" {
 #include "vn_protocol_driver.h"
 #include "vn_ring.h"
+}
+
 #include "utils/logging.h"
 #include <algorithm>
 #include <array>

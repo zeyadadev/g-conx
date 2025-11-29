@@ -1695,7 +1695,7 @@ static inline void
 vn_encode_VkMemoryDedicatedRequirements(struct vn_cs_encoder *enc, const VkMemoryDedicatedRequirements *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS; &_vn_temp; }));
     vn_encode_VkMemoryDedicatedRequirements_pnext(enc, val->pNext);
     vn_encode_VkMemoryDedicatedRequirements_self(enc, val);
 }
@@ -1766,7 +1766,7 @@ static inline void
 vn_encode_VkMemoryRequirements2(struct vn_cs_encoder *enc, const VkMemoryRequirements2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2; &_vn_temp; }));
     vn_encode_VkMemoryRequirements2_pnext(enc, val->pNext);
     vn_encode_VkMemoryRequirements2_self(enc, val);
 }

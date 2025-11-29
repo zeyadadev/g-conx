@@ -66,7 +66,7 @@ static inline void
 vn_encode_VkExportFenceCreateInfo(struct vn_cs_encoder *enc, const VkExportFenceCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkExportFenceCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkExportFenceCreateInfo_self(enc, val);
 }
@@ -152,7 +152,7 @@ static inline void
 vn_encode_VkFenceCreateInfo(struct vn_cs_encoder *enc, const VkFenceCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkFenceCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkFenceCreateInfo_self(enc, val);
 }

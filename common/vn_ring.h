@@ -27,6 +27,12 @@ struct vn_ring {
     std::vector<uint8_t> pending_buffer;
 };
 
+// These functions must have C linkage because they're called from Venus protocol headers
+// which are wrapped in extern "C"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 vn_cs_encoder* vn_ring_submit_command_init(struct vn_ring* ring,
                                            struct vn_ring_submit_command* submit,
                                            void* cmd_data,
@@ -37,5 +43,9 @@ void vn_ring_submit_command(struct vn_ring* ring, struct vn_ring_submit_command*
 void vn_ring_flush_pending(struct vn_ring* ring);
 vn_cs_decoder* vn_ring_get_command_reply(struct vn_ring* ring, struct vn_ring_submit_command* submit);
 void vn_ring_free_command_reply(struct vn_ring* ring, struct vn_ring_submit_command* submit);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // VENUS_PLUS_VN_RING_H

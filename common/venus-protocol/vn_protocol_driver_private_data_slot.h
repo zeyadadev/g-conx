@@ -59,7 +59,7 @@ static inline void
 vn_encode_VkPrivateDataSlotCreateInfo(struct vn_cs_encoder *enc, const VkPrivateDataSlotCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_PRIVATE_DATA_SLOT_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_PRIVATE_DATA_SLOT_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_PRIVATE_DATA_SLOT_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkPrivateDataSlotCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkPrivateDataSlotCreateInfo_self(enc, val);
 }

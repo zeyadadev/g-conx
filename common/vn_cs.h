@@ -63,6 +63,7 @@ void vn_cs_decoder_init(struct vn_cs_decoder* dec, const void* data, size_t size
 // Driver-facing CS helpers required by the generated venus protocol headers
 size_t vn_cs_encoder_get_len(const struct vn_cs_encoder* enc);
 bool vn_cs_encoder_reserve(struct vn_cs_encoder* enc, size_t size);
+size_t vn_cs_decoder_bytes_remaining(const struct vn_cs_decoder* dec);
 
 #ifndef VN_RENDERER_STATIC_DISPATCH
 void vn_cs_encoder_write(struct vn_cs_encoder* enc, size_t size, const void* value, size_t value_size);
@@ -70,7 +71,6 @@ void vn_cs_decoder_set_fatal(struct vn_cs_decoder* dec);
 void vn_cs_decoder_read(struct vn_cs_decoder* dec, size_t size, void* value, size_t value_size);
 void vn_cs_decoder_peek(struct vn_cs_decoder* dec, size_t size, void* value, size_t value_size);
 bool vn_cs_decoder_get_fatal(const struct vn_cs_decoder* dec);
-size_t vn_cs_decoder_bytes_remaining(const struct vn_cs_decoder* dec);
 void* vn_cs_decoder_alloc_temp(struct vn_cs_decoder* dec, size_t size);
 void* vn_cs_decoder_alloc_temp_array(struct vn_cs_decoder* dec, size_t size, size_t count);
 vn_object_id vn_cs_handle_load_id(const void** handle, VkObjectType type);

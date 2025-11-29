@@ -61,7 +61,7 @@ static inline void
 vn_encode_VkCommandPoolCreateInfo(struct vn_cs_encoder *enc, const VkCommandPoolCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkCommandPoolCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkCommandPoolCreateInfo_self(enc, val);
 }

@@ -894,7 +894,7 @@ static inline void
 vn_encode_VkSparseImageMemoryRequirements2(struct vn_cs_encoder *enc, const VkSparseImageMemoryRequirements2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2; &_vn_temp; }));
     vn_encode_VkSparseImageMemoryRequirements2_pnext(enc, val->pNext);
     vn_encode_VkSparseImageMemoryRequirements2_self(enc, val);
 }
@@ -1015,7 +1015,7 @@ static inline void
 vn_encode_VkImageDrmFormatModifierPropertiesEXT(struct vn_cs_encoder *enc, const VkImageDrmFormatModifierPropertiesEXT *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT; &_vn_temp; }));
     vn_encode_VkImageDrmFormatModifierPropertiesEXT_pnext(enc, val->pNext);
     vn_encode_VkImageDrmFormatModifierPropertiesEXT_self(enc, val);
 }
@@ -1126,7 +1126,7 @@ static inline void
 vn_encode_VkSubresourceHostMemcpySize(struct vn_cs_encoder *enc, const VkSubresourceHostMemcpySize *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE; &_vn_temp; }));
     vn_encode_VkSubresourceHostMemcpySize_pnext(enc, val->pNext);
     vn_encode_VkSubresourceHostMemcpySize_self(enc, val);
 }
@@ -1196,7 +1196,7 @@ static inline void
 vn_encode_VkSubresourceLayout2(struct vn_cs_encoder *enc, const VkSubresourceLayout2 *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2 });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2; &_vn_temp; }));
     vn_encode_VkSubresourceLayout2_pnext(enc, val->pNext);
     vn_encode_VkSubresourceLayout2_self(enc, val);
 }

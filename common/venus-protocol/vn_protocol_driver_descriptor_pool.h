@@ -77,7 +77,7 @@ static inline void
 vn_encode_VkDescriptorPoolInlineUniformBlockCreateInfo(struct vn_cs_encoder *enc, const VkDescriptorPoolInlineUniformBlockCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorPoolInlineUniformBlockCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorPoolInlineUniformBlockCreateInfo_self(enc, val);
 }
@@ -201,7 +201,7 @@ static inline void
 vn_encode_VkDescriptorPoolCreateInfo(struct vn_cs_encoder *enc, const VkDescriptorPoolCreateInfo *val)
 {
     assert(val->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
-    vn_encode_VkStructureType(enc, &(VkStructureType){ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO });
+    vn_encode_VkStructureType(enc, ({ VkStructureType _vn_temp = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO; &_vn_temp; }));
     vn_encode_VkDescriptorPoolCreateInfo_pnext(enc, val->pNext);
     vn_encode_VkDescriptorPoolCreateInfo_self(enc, val);
 }
