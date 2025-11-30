@@ -30,6 +30,14 @@ struct CommandBufferInfo {
     VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     CommandBufferLifecycleState state = CommandBufferLifecycleState::INITIAL;
     VkCommandBufferUsageFlags usage_flags = 0;
+    struct BoundDescriptorState {
+        bool valid = false;
+        VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+        VkPipelineLayout layout = VK_NULL_HANDLE;
+        uint32_t first_set = 0;
+        std::vector<VkDescriptorSet> sets;
+        std::vector<uint32_t> dynamic_offsets;
+    } bound_descriptors;
 };
 
 class CommandBufferState {
@@ -51,6 +59,17 @@ public:
     void set_buffer_state(VkCommandBuffer buffer, CommandBufferLifecycleState state);
     VkCommandBufferUsageFlags get_usage_flags(VkCommandBuffer buffer) const;
     void set_usage_flags(VkCommandBuffer buffer, VkCommandBufferUsageFlags flags);
+
+    // Returns true if the incoming bind differs from the cached state and updates the cache.
+    bool update_descriptor_bind_state(VkCommandBuffer buffer,
+                                      VkPipelineBindPoint bind_point,
+                                      VkPipelineLayout layout,
+                                      uint32_t first_set,
+                                      uint32_t descriptor_set_count,
+                                      const VkDescriptorSet* sets,
+                                      uint32_t dynamic_offset_count,
+                                      const uint32_t* dynamic_offsets);
+    void clear_descriptor_bind_state(VkCommandBuffer buffer);
 
     void remove_device(VkDevice device,
                        std::vector<VkCommandBuffer>* buffers_to_free,

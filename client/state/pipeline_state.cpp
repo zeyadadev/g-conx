@@ -76,6 +76,7 @@ void PipelineState::remove_descriptor_pool(VkDescriptorPool pool) {
     }
     for (VkDescriptorSet set : it->second.descriptor_sets) {
         descriptor_sets_.erase(handle_key(set));
+        descriptor_write_cache_.erase(handle_key(set));
     }
     descriptor_pools_.erase(it);
 }
@@ -88,6 +89,7 @@ void PipelineState::reset_descriptor_pool(VkDescriptorPool pool) {
     }
     for (VkDescriptorSet set : it->second.descriptor_sets) {
         descriptor_sets_.erase(handle_key(set));
+        descriptor_write_cache_.erase(handle_key(set));
     }
     it->second.descriptor_sets.clear();
 }
@@ -133,6 +135,7 @@ void PipelineState::remove_descriptor_set(VkDescriptorSet set) {
         vec.erase(std::remove(vec.begin(), vec.end(), set), vec.end());
     }
     descriptor_sets_.erase(it);
+    descriptor_write_cache_.erase(handle_key(set));
 }
 
 VkDescriptorSet PipelineState::get_remote_descriptor_set(VkDescriptorSet set) const {
@@ -151,6 +154,103 @@ VkDescriptorPool PipelineState::get_descriptor_set_pool(VkDescriptorSet set) con
         return VK_NULL_HANDLE;
     }
     return it->second.parent_pool;
+}
+
+bool PipelineState::update_descriptor_write_cache(VkDescriptorSet set,
+                                                  const VkWriteDescriptorSet& write,
+                                                  const VkDescriptorBufferInfo* buffer_infos,
+                                                  const VkDescriptorImageInfo* image_infos,
+                                                  const VkBufferView* texel_views) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // If the set is not tracked, fall back to sending the write.
+    if (descriptor_sets_.find(handle_key(set)) == descriptor_sets_.end()) {
+        return true;
+    }
+
+    if (write.descriptorCount == 0) {
+        return false;
+    }
+
+    auto& binding_map = descriptor_write_cache_[handle_key(set)];
+    DescriptorBindingSnapshot& snapshot = binding_map[write.dstBinding];
+
+    if (snapshot.type != write.descriptorType) {
+        snapshot.type = write.descriptorType;
+        snapshot.items.clear();
+    }
+
+    const uint32_t required_size = write.dstArrayElement + write.descriptorCount;
+    if (snapshot.items.size() < required_size) {
+        snapshot.items.resize(required_size);
+    }
+
+    bool changed = false;
+    for (uint32_t j = 0; j < write.descriptorCount; ++j) {
+        DescriptorWriteItemSnapshot& cached = snapshot.items[write.dstArrayElement + j];
+        DescriptorWriteItemSnapshot latest = {};
+
+        switch (write.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            if (!buffer_infos) {
+                changed = true;
+                break;
+            }
+            latest.buffer = buffer_infos[j].buffer;
+            latest.offset = buffer_infos[j].offset;
+            latest.range = buffer_infos[j].range;
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            if (!image_infos) {
+                changed = true;
+                break;
+            }
+            latest.image_view = image_infos[j].imageView;
+            latest.image_layout = image_infos[j].imageLayout;
+            latest.sampler = image_infos[j].sampler;
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            if (!texel_views) {
+                changed = true;
+                break;
+            }
+            latest.texel_view = texel_views[j];
+            break;
+        default:
+            // Unknown type; conservatively treat as changed.
+            changed = true;
+            break;
+        }
+
+        if (!changed &&
+            cached.buffer == latest.buffer &&
+            cached.offset == latest.offset &&
+            cached.range == latest.range &&
+            cached.image_view == latest.image_view &&
+            cached.image_layout == latest.image_layout &&
+            cached.sampler == latest.sampler &&
+            cached.texel_view == latest.texel_view) {
+            continue;
+        }
+
+        cached = latest;
+        changed = true;
+    }
+
+    return changed;
+}
+
+void PipelineState::clear_descriptor_write_cache(VkDescriptorSet set) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    descriptor_write_cache_.erase(handle_key(set));
 }
 
 void PipelineState::add_pipeline_layout(VkDevice device,
@@ -296,6 +396,7 @@ void PipelineState::remove_device_resources(VkDevice device) {
                                       reinterpret_cast<VkDescriptorSet>(it->first)),
                           vec.end());
             }
+            descriptor_write_cache_.erase(it->first);
             it = descriptor_sets_.erase(it);
         } else {
             ++it;
@@ -306,6 +407,7 @@ void PipelineState::remove_device_resources(VkDevice device) {
         if (it->second.device == device) {
             for (VkDescriptorSet set : it->second.descriptor_sets) {
                 descriptor_sets_.erase(handle_key(set));
+                descriptor_write_cache_.erase(handle_key(set));
             }
             it = descriptor_pools_.erase(it);
         } else {

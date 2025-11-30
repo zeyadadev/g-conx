@@ -33,6 +33,21 @@ struct DescriptorSetInfo {
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 };
 
+struct DescriptorWriteItemSnapshot {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceSize range = 0;
+    VkImageView image_view = VK_NULL_HANDLE;
+    VkImageLayout image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkSampler sampler = VK_NULL_HANDLE;
+    VkBufferView texel_view = VK_NULL_HANDLE;
+};
+
+struct DescriptorBindingSnapshot {
+    VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+    std::vector<DescriptorWriteItemSnapshot> items;
+};
+
 struct PipelineLayoutInfo {
     VkDevice device = VK_NULL_HANDLE;
     VkPipelineLayout remote_handle = VK_NULL_HANDLE;
@@ -77,6 +92,14 @@ public:
     VkDescriptorSet get_remote_descriptor_set(VkDescriptorSet set) const;
     VkDescriptorPool get_descriptor_set_pool(VkDescriptorSet set) const;
 
+    // Returns true if the write differs from the cached snapshot and updates the cache.
+    bool update_descriptor_write_cache(VkDescriptorSet set,
+                                       const VkWriteDescriptorSet& write,
+                                       const VkDescriptorBufferInfo* buffer_infos,
+                                       const VkDescriptorImageInfo* image_infos,
+                                       const VkBufferView* texel_views);
+    void clear_descriptor_write_cache(VkDescriptorSet set);
+
     void add_pipeline_layout(VkDevice device,
                              VkPipelineLayout local,
                              VkPipelineLayout remote,
@@ -114,6 +137,8 @@ private:
     std::unordered_map<uint64_t, DescriptorSetLayoutInfo> descriptor_set_layouts_;
     std::unordered_map<uint64_t, DescriptorPoolInfo> descriptor_pools_;
     std::unordered_map<uint64_t, DescriptorSetInfo> descriptor_sets_;
+    std::unordered_map<uint64_t, std::unordered_map<uint32_t, DescriptorBindingSnapshot>>
+        descriptor_write_cache_;
     std::unordered_map<uint64_t, PipelineLayoutInfo> pipeline_layouts_;
     std::unordered_map<uint64_t, PipelineInfo> pipelines_;
     std::unordered_map<uint64_t, PipelineCacheInfo> pipeline_caches_;

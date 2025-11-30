@@ -78,6 +78,7 @@ void CommandBufferState::reset_pool(VkCommandPool pool) {
         if (bit != buffers_.end()) {
             bit->second.state = CommandBufferLifecycleState::INITIAL;
             bit->second.usage_flags = 0;
+            bit->second.bound_descriptors = {};
         }
     }
 }
@@ -159,6 +160,7 @@ void CommandBufferState::set_buffer_state(VkCommandBuffer buffer, CommandBufferL
     bit->second.state = state;
     if (state == CommandBufferLifecycleState::INVALID) {
         bit->second.usage_flags = 0;
+        bit->second.bound_descriptors = {};
     }
 }
 
@@ -178,6 +180,77 @@ void CommandBufferState::set_usage_flags(VkCommandBuffer buffer, VkCommandBuffer
         return;
     }
     bit->second.usage_flags = flags;
+}
+
+bool CommandBufferState::update_descriptor_bind_state(VkCommandBuffer buffer,
+                                                      VkPipelineBindPoint bind_point,
+                                                      VkPipelineLayout layout,
+                                                      uint32_t first_set,
+                                                      uint32_t descriptor_set_count,
+                                                      const VkDescriptorSet* sets,
+                                                      uint32_t dynamic_offset_count,
+                                                      const uint32_t* dynamic_offsets) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return true;
+    }
+
+    if ((descriptor_set_count > 0 && !sets) ||
+        (dynamic_offset_count > 0 && !dynamic_offsets)) {
+        return true;
+    }
+
+    auto& cache = bit->second.bound_descriptors;
+    bool changed = !cache.valid || cache.bind_point != bind_point || cache.layout != layout ||
+                   cache.first_set != first_set || cache.sets.size() != descriptor_set_count ||
+                   cache.dynamic_offsets.size() != dynamic_offset_count;
+
+    if (!changed) {
+        for (uint32_t i = 0; i < descriptor_set_count; ++i) {
+            if (cache.sets[i] != sets[i]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    if (!changed) {
+        for (uint32_t i = 0; i < dynamic_offset_count; ++i) {
+            if (cache.dynamic_offsets[i] != dynamic_offsets[i]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    if (!changed) {
+        return false;
+    }
+
+    cache.valid = true;
+    cache.bind_point = bind_point;
+    cache.layout = layout;
+    cache.first_set = first_set;
+    cache.sets.clear();
+    if (descriptor_set_count > 0 && sets) {
+        cache.sets.assign(sets, sets + descriptor_set_count);
+    }
+
+    cache.dynamic_offsets.clear();
+    if (dynamic_offset_count > 0 && dynamic_offsets) {
+        cache.dynamic_offsets.assign(dynamic_offsets, dynamic_offsets + dynamic_offset_count);
+    }
+    return true;
+}
+
+void CommandBufferState::clear_descriptor_bind_state(VkCommandBuffer buffer) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return;
+    }
+    bit->second.bound_descriptors = {};
 }
 
 void CommandBufferState::remove_device(VkDevice device,

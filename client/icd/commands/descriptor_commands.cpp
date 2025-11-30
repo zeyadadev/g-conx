@@ -379,6 +379,8 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
     std::vector<std::vector<VkDescriptorBufferInfo>> buffer_infos(descriptorWriteCount);
     std::vector<std::vector<VkDescriptorImageInfo>> image_infos(descriptorWriteCount);
     std::vector<std::vector<VkBufferView>> texel_views(descriptorWriteCount);
+    std::vector<VkWriteDescriptorSet> pending_writes;
+    pending_writes.reserve(descriptorWriteCount);
 
     for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
         const VkWriteDescriptorSet& src = pDescriptorWrites[i];
@@ -410,9 +412,6 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
                        << ", Binding=" << src.dstBinding
                        << ", Count=" << src.descriptorCount
                        << ", ArrayElem=" << src.dstArrayElement << "\n";
-
-        // Track this descriptor update by type
-        VENUS_PROFILE_DESCRIPTOR_TYPE(src.descriptorType);
 
         switch (src.descriptorType) {
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
@@ -505,6 +504,24 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
             dst.pTexelBufferView = nullptr;
             break;
         }
+
+        const VkDescriptorBufferInfo* buffer_ptr = buffer_infos[i].empty() ? nullptr : buffer_infos[i].data();
+        const VkDescriptorImageInfo* image_ptr = image_infos[i].empty() ? nullptr : image_infos[i].data();
+        const VkBufferView* texel_ptr = texel_views[i].empty() ? nullptr : texel_views[i].data();
+
+        // Only send updates when something actually changed to cut network traffic.
+        bool changed = g_pipeline_state.update_descriptor_write_cache(src.dstSet,
+                                                                      dst,
+                                                                      buffer_ptr,
+                                                                      image_ptr,
+                                                                      texel_ptr);
+        if (!changed) {
+            ICD_LOG_INFO() << "  [" << i << "] Skipping unchanged descriptor write" << "\n";
+            continue;
+        }
+
+        VENUS_PROFILE_DESCRIPTOR_TYPE(src.descriptorType);
+        pending_writes.push_back(dst);
     }
 
     std::vector<VkCopyDescriptorSet> remote_copies(descriptorCopyCount);
@@ -521,13 +538,20 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
         }
     }
 
+    if (pending_writes.empty() && descriptorCopyCount == 0) {
+        ICD_LOG_INFO() << "[Client ICD] Descriptor updates skipped (no changes)\n";
+        return;
+    }
+
     vn_async_vkUpdateDescriptorSets(&g_ring,
                                     icd_device->remote_handle,
-                                    descriptorWriteCount,
-                                    remote_writes.data(),
+                                    static_cast<uint32_t>(pending_writes.size()),
+                                    pending_writes.empty() ? nullptr : pending_writes.data(),
                                     descriptorCopyCount,
                                     remote_copies.data());
-    ICD_LOG_INFO() << "[Client ICD] Descriptor sets updated\n";
+    ICD_LOG_INFO() << "[Client ICD] Descriptor sets updated (writes sent="
+              << pending_writes.size() << "/" << descriptorWriteCount
+              << ", copies=" << descriptorCopyCount << ")\n";
 }
 
 } // extern "C"

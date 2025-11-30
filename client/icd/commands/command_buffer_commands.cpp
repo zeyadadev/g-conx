@@ -221,6 +221,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(
     if (result == VK_SUCCESS) {
         g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::RECORDING);
         g_command_buffer_state.set_usage_flags(commandBuffer, pBeginInfo->flags);
+        g_command_buffer_state.clear_descriptor_bind_state(commandBuffer);
         ICD_LOG_INFO() << "[Client ICD] Command buffer recording begun\n";
     } else {
         g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INVALID);
@@ -295,6 +296,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(
     if (result == VK_SUCCESS) {
         g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INITIAL);
         g_command_buffer_state.set_usage_flags(commandBuffer, 0);
+        g_command_buffer_state.clear_descriptor_bind_state(commandBuffer);
         ICD_LOG_INFO() << "[Client ICD] Command buffer reset\n";
     } else {
         g_command_buffer_state.set_buffer_state(commandBuffer, CommandBufferLifecycleState::INVALID);
@@ -2413,6 +2415,20 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(
             ICD_LOG_ERROR() << "[Client ICD] Descriptor set not tracked in vkCmdBindDescriptorSets\n";
             return;
         }
+    }
+
+    bool changed = g_command_buffer_state.update_descriptor_bind_state(commandBuffer,
+                                                                       pipelineBindPoint,
+                                                                       layout,
+                                                                       firstSet,
+                                                                       descriptorSetCount,
+                                                                       pDescriptorSets,
+                                                                       dynamicOffsetCount,
+                                                                       pDynamicOffsets);
+
+    if (!changed) {
+        ICD_LOG_INFO() << "[Client ICD] vkCmdBindDescriptorSets skipped (unchanged state)\n";
+        return;
     }
 
     if (!ensure_connected()) {
