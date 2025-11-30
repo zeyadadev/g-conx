@@ -521,9 +521,9 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
                 ICD_LOG_ERROR() << "[Client ICD] Unsupported descriptor type in vkUpdateDescriptorSets\n";
                 return;
             }
-            dst.pBufferInfo = nullptr;
-            dst.pImageInfo = nullptr;
-            dst.pTexelBufferView = nullptr;
+            current.write.pBufferInfo = nullptr;
+            current.write.pImageInfo = nullptr;
+            current.write.pTexelBufferView = nullptr;
             break;
         }
 
