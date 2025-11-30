@@ -3,6 +3,7 @@
 
 #include "icd/icd_entrypoints.h"
 #include "icd/commands/commands_common.h"
+#include "profiling.h"
 #include <atomic>
 #include <chrono>
 
@@ -347,6 +348,27 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(
     VkBool32 waitAll,
     uint64_t timeout) {
 
+    VENUS_PROFILE_WAIT_FENCES();
+
+    // Heuristic token detection: assume each wait after the initial warmup is a token
+    // This is approximate but gives useful metrics
+    static std::atomic<uint64_t> wait_count{0};
+    static constexpr uint64_t WARMUP_WAITS = 50; // Skip warmup phase
+    uint64_t current_wait = wait_count.fetch_add(1, std::memory_order_relaxed);
+
+    if (current_wait >= WARMUP_WAITS) {
+        VENUS_PROFILE_TOKEN();
+    }
+
+    // Print profiling summary every 10 seconds
+    static auto last_print = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_print).count();
+    if (elapsed >= 10) {
+        VENUS_PROFILE_PRINT();
+        last_print = now;
+    }
+
     ICD_LOG_INFO() << "[Client ICD] vkWaitForFences called\n";
 
     if (!fenceCount || !pFences) {
@@ -607,6 +629,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
     uint32_t submitCount,
     const VkSubmitInfo* pSubmits,
     VkFence fence) {
+
+    VENUS_PROFILE_QUEUE_SUBMIT();
 
     ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit called (submitCount=" << submitCount << ")\n";
 
@@ -899,6 +923,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(
     uint32_t submitCount,
     const VkSubmitInfo2* pSubmits,
     VkFence fence) {
+
+    VENUS_PROFILE_QUEUE_SUBMIT();
 
     ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit2 called (submitCount=" << submitCount << ")\n";
 

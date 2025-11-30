@@ -1,6 +1,7 @@
 #include "network_client.h"
 #include "message.h"
 #include "socket_utils.h"
+#include "profiling.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -162,7 +163,7 @@ bool NetworkClient::send(const void* data, size_t size) {
     header.size = size;
 
     const bool do_trace = trace_net();
-    auto start = do_trace ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto start = std::chrono::steady_clock::now();  // Always measure for profiling
 
     // Send header + payload with a single writev to minimize syscalls.
     struct iovec iov[2];
@@ -200,10 +201,15 @@ bool NetworkClient::send(const void* data, size_t size) {
         }
     }
 
+    const auto end = std::chrono::steady_clock::now();
+    const uint64_t elapsed_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+
+    // Profile: track send bytes and RTT
+    VENUS_PROFILE_SEND(sizeof(header) + size);
+    VENUS_PROFILE_RTT_US(elapsed_us);
+
     if (do_trace) {
-        const auto end = std::chrono::steady_clock::now();
-        const uint64_t elapsed_us =
-            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
         record_net(g_send_stats, elapsed_us, sizeof(header) + size, "send");
     }
 
@@ -260,6 +266,9 @@ bool NetworkClient::receive_one(std::vector<uint8_t>& buffer) {
     if (!read_all(fd_, buffer.data(), header.size)) {
         return false;
     }
+
+    // Profile: track receive bytes
+    VENUS_PROFILE_RECEIVE(sizeof(header) + header.size);
 
     if (do_trace) {
         const auto end = std::chrono::steady_clock::now();

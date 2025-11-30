@@ -19,6 +19,7 @@
         "memory": "cpp",
         "cstdarg": "cpp",
         "chrono": "cpp",
-        "atomic": "cpp"
+        "atomic": "cpp",
+        "thread": "cpp"
     }
 }
