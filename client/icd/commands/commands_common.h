@@ -375,6 +375,9 @@ inline const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const VkSemapho
     return nullptr;
 }
 
+// Flush any pending submit batches (implemented in sync_commands.cpp)
+VkResult venus_flush_submit_accumulator();
+
 // Helper function: find timeline semaphore submit info in pNext chain
 inline const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void* pNext) {
     const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(pNext);

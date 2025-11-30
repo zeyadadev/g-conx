@@ -6,6 +6,8 @@
 #include "profiling.h"
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -35,7 +37,236 @@ inline void record_sync_timing(TimingState& state, uint64_t elapsed_us, const ch
 TimingState g_submit_timing;
 TimingState g_wait_timing;
 
+struct SubmitStorage {
+    std::vector<VkSemaphore> wait_local;
+    std::vector<VkSemaphore> signal_local;
+    std::vector<VkSemaphore> wait_remote;
+    std::vector<VkPipelineStageFlags> wait_stages;
+    std::vector<VkCommandBuffer> remote_cbs;
+    std::vector<VkSemaphore> signal_remote;
+    std::vector<uint64_t> wait_values;
+    std::vector<uint64_t> signal_values;
+    VkTimelineSemaphoreSubmitInfo timeline_info{};
+    bool has_timeline = false;
+};
+
+struct AccumulatedSubmit {
+    VkSubmitInfo submit{};
+    SubmitStorage storage;
+};
+
+struct SubmitAccumulator {
+    VkQueue queue = VK_NULL_HANDLE;
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    std::vector<AccumulatedSubmit> pending;
+};
+
+SubmitAccumulator g_submit_accumulator;
+
+inline bool batch_submit_enabled() {
+    static const bool enabled = []() {
+        const char* env = std::getenv("VENUS_BATCH_SUBMITS");
+        return env && env[0] != '0';
+    }();
+    return enabled;
+}
+
+inline uint32_t batch_submit_limit() {
+    static const uint32_t limit = []() -> uint32_t {
+        const char* env = std::getenv("VENUS_BATCH_SUBMITS");
+        if (!env || env[0] == '\0') {
+            return 8; // default batch size when enabled
+        }
+        char* end = nullptr;
+        long parsed = std::strtol(env, &end, 10);
+        if (end == env || parsed <= 0) {
+            return 8;
+        }
+        return static_cast<uint32_t>(parsed);
+    }();
+    return limit > 0 ? limit : 1;
+}
+
+inline void reset_submit_accumulator() {
+    g_submit_accumulator = {};
+}
+
+inline void fix_submit_pointers(VkSubmitInfo& submit, SubmitStorage& storage) {
+    submit.pWaitSemaphores = storage.wait_remote.empty() ? nullptr : storage.wait_remote.data();
+    submit.pWaitDstStageMask = storage.wait_stages.empty() ? nullptr : storage.wait_stages.data();
+    submit.pCommandBuffers = storage.remote_cbs.empty() ? nullptr : storage.remote_cbs.data();
+    submit.pSignalSemaphores = storage.signal_remote.empty() ? nullptr : storage.signal_remote.data();
+    if (storage.has_timeline) {
+        storage.timeline_info.pWaitSemaphoreValues =
+            storage.wait_values.empty() ? nullptr : storage.wait_values.data();
+        storage.timeline_info.pSignalSemaphoreValues =
+            storage.signal_values.empty() ? nullptr : storage.signal_values.data();
+        submit.pNext = &storage.timeline_info;
+    } else {
+        submit.pNext = nullptr;
+    }
+}
+
+VkResult flush_submit_accumulator();
+
+inline bool can_batch_submit(const VkSubmitInfo& submit, VkFence fence) {
+    if (fence != VK_NULL_HANDLE) {
+        return false; // batching would drop fence semantics
+    }
+    if (submit.waitSemaphoreCount || submit.signalSemaphoreCount) {
+        return false; // keep explicit sync out of the batch
+    }
+    if (submit.pNext && find_timeline_submit_info(submit.pNext)) {
+        return false; // timeline values must be honored immediately
+    }
+    if (submit.pNext) {
+        return false; // conservative: skip unknown pNext chains
+    }
+    return submit.commandBufferCount > 0;
+}
+
+VkResult flush_submit_accumulator() {
+    if (g_submit_accumulator.pending.empty()) {
+        return VK_SUCCESS;
+    }
+
+    const bool enable_latency = latency_mode_enabled();
+    FlushBatchPayload flush_batch;
+    if (enable_latency) {
+        VkResult prep = build_flush_payload(g_submit_accumulator.device, &flush_batch);
+        if (prep != VK_SUCCESS) {
+            reset_submit_accumulator();
+            return prep;
+        }
+    } else {
+        VkResult flush_result = flush_host_coherent_mappings(g_submit_accumulator.device);
+        if (flush_result != VK_SUCCESS) {
+            reset_submit_accumulator();
+            return flush_result;
+        }
+    }
+
+    std::vector<VkSubmitInfo> remote_submits;
+    remote_submits.reserve(g_submit_accumulator.pending.size());
+    for (auto& pending : g_submit_accumulator.pending) {
+        fix_submit_pointers(pending.submit, pending.storage);
+        remote_submits.push_back(pending.submit);
+    }
+
+    VkResult result = VK_SUCCESS;
+    const auto submit_start = std::chrono::steady_clock::now();
+
+    if (!enable_latency) {
+        result = vn_call_vkQueueSubmit(&g_ring,
+                                       g_submit_accumulator.remote_queue,
+                                       static_cast<uint32_t>(remote_submits.size()),
+                                       remote_submits.data(),
+                                       VK_NULL_HANDLE);
+    } else {
+        size_t cmd_size = vn_sizeof_vkQueueSubmit(g_submit_accumulator.remote_queue,
+                                                  static_cast<uint32_t>(remote_submits.size()),
+                                                  remote_submits.data(),
+                                                  VK_NULL_HANDLE);
+        if (!cmd_size || cmd_size > std::numeric_limits<uint32_t>::max()) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        std::vector<uint8_t> command_stream(cmd_size);
+        vn_cs_encoder encoder;
+        vn_cs_encoder_init_external(&encoder, command_stream.data(), cmd_size);
+        vn_encode_vkQueueSubmit(&encoder,
+                                VK_COMMAND_GENERATE_REPLY_BIT_EXT,
+                                g_submit_accumulator.remote_queue,
+                                static_cast<uint32_t>(remote_submits.size()),
+                                remote_submits.data(),
+                                VK_NULL_HANDLE);
+
+        SubmitCoalesceHeader header = {};
+        header.command = VENUS_PLUS_CMD_COALESCE_SUBMIT;
+        header.flags = kVenusCoalesceFlagCommand;
+        header.transfer_size = static_cast<uint32_t>(flush_batch.payload.size());
+        header.command_size = static_cast<uint32_t>(command_stream.size());
+        if (!flush_batch.payload.empty()) {
+            header.flags |= kVenusCoalesceFlagTransfer;
+        }
+
+        const size_t payload_size = sizeof(header) + flush_batch.payload.size() + command_stream.size();
+        if (!check_payload_size(payload_size)) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        std::vector<uint8_t> payload(payload_size);
+        std::memcpy(payload.data(), &header, sizeof(header));
+        size_t offset = sizeof(header);
+        if (!flush_batch.payload.empty()) {
+            std::memcpy(payload.data() + offset, flush_batch.payload.data(), flush_batch.payload.size());
+            offset += flush_batch.payload.size();
+        }
+        std::memcpy(payload.data() + offset, command_stream.data(), command_stream.size());
+
+        if (!g_client.send(payload.data(), payload.size())) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        std::vector<uint8_t> reply;
+        if (!g_client.receive(reply) || reply.size() < sizeof(SubmitCoalesceReplyHeader)) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        SubmitCoalesceReplyHeader reply_header = {};
+        std::memcpy(&reply_header, reply.data(), sizeof(reply_header));
+        if (reply_header.transfer_result != VK_SUCCESS) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return reply_header.transfer_result;
+        }
+
+        const size_t expected_reply_size = sizeof(reply_header) + reply_header.command_reply_size;
+        if (reply.size() != expected_reply_size) {
+            finalize_flush_ranges(flush_batch);
+            reset_submit_accumulator();
+            return VK_ERROR_DEVICE_LOST;
+        }
+
+        vn_cs_decoder decoder;
+        vn_cs_decoder_init(&decoder,
+                           reply.data() + sizeof(reply_header),
+                           reply_header.command_reply_size);
+        result = vn_decode_vkQueueSubmit_reply(&decoder,
+                                               g_submit_accumulator.remote_queue,
+                                               static_cast<uint32_t>(remote_submits.size()),
+                                               remote_submits.data(),
+                                               VK_NULL_HANDLE);
+        vn_cs_decoder_reset_temp_storage(&decoder);
+    }
+
+    const auto submit_end = std::chrono::steady_clock::now();
+    const uint64_t submit_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(submit_end - submit_start).count());
+
+    if (result == VK_SUCCESS) {
+        record_sync_timing(g_submit_timing, submit_us, "vkQueueSubmit(batched)");
+    }
+
+    finalize_flush_ranges(flush_batch);
+    reset_submit_accumulator();
+    return result;
+}
+
 } // namespace
+
+VkResult venus_flush_submit_accumulator() {
+    return flush_submit_accumulator();
+}
 
 extern "C" {
 
@@ -647,8 +878,23 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
+    if (batch_submit_enabled() && !g_submit_accumulator.pending.empty()) {
+        VkResult flush_result = flush_submit_accumulator();
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
+        }
+    }
+
     IcdQueue* icd_queue = icd_queue_from_handle(queue);
     VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
+
+    const bool batching = batch_submit_enabled();
+    if (batching && !g_submit_accumulator.pending.empty() && g_submit_accumulator.queue != queue) {
+        VkResult flush_result = flush_submit_accumulator();
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
+        }
+    }
 
     VkFence remote_fence = VK_NULL_HANDLE;
     if (fence != VK_NULL_HANDLE) {
@@ -658,19 +904,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
             return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
-
-    struct SubmitStorage {
-        std::vector<VkSemaphore> wait_local;
-        std::vector<VkSemaphore> signal_local;
-        std::vector<VkSemaphore> wait_remote;
-        std::vector<VkPipelineStageFlags> wait_stages;
-        std::vector<VkCommandBuffer> remote_cbs;
-        std::vector<VkSemaphore> signal_remote;
-        std::vector<uint64_t> wait_values;
-        std::vector<uint64_t> signal_values;
-        VkTimelineSemaphoreSubmitInfo timeline_info{};
-        bool has_timeline = false;
-    };
 
     std::vector<VkSubmitInfo> remote_submits;
     std::vector<SubmitStorage> storage;
@@ -779,6 +1012,64 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
         } else {
             dst.pNext = nullptr;
             slot.has_timeline = false;
+        }
+    }
+
+    bool all_batchable = batching && submitCount > 0;
+    if (all_batchable) {
+        for (uint32_t i = 0; i < submitCount; ++i) {
+            if (!can_batch_submit(pSubmits[i], fence)) {
+                all_batchable = false;
+                break;
+            }
+        }
+    }
+
+    if (all_batchable) {
+        if (g_submit_accumulator.pending.empty()) {
+            g_submit_accumulator.queue = queue;
+            g_submit_accumulator.remote_queue = remote_queue;
+            g_submit_accumulator.device = queue_device;
+        }
+
+        if (g_submit_accumulator.queue != queue) {
+            VkResult flush_result = flush_submit_accumulator();
+            if (flush_result != VK_SUCCESS) {
+                return flush_result;
+            }
+            g_submit_accumulator.queue = queue;
+            g_submit_accumulator.remote_queue = remote_queue;
+            g_submit_accumulator.device = queue_device;
+        }
+
+        const uint32_t limit = batch_submit_limit();
+        if (g_submit_accumulator.pending.size() + submitCount > limit) {
+            VkResult flush_result = flush_submit_accumulator();
+            if (flush_result != VK_SUCCESS) {
+                return flush_result;
+            }
+            g_submit_accumulator.queue = queue;
+            g_submit_accumulator.remote_queue = remote_queue;
+            g_submit_accumulator.device = queue_device;
+        }
+
+        for (uint32_t i = 0; i < submitCount; ++i) {
+            AccumulatedSubmit acc;
+            acc.storage = std::move(storage[i]);
+            acc.submit = remote_submits[i];
+            fix_submit_pointers(acc.submit, acc.storage);
+            g_submit_accumulator.pending.push_back(std::move(acc));
+        }
+
+        ICD_LOG_INFO() << "[Client ICD] vkQueueSubmit batched (pending="
+                  << g_submit_accumulator.pending.size() << ")\n";
+        return VK_SUCCESS;
+    }
+
+    if (batching && !g_submit_accumulator.pending.empty()) {
+        VkResult flush_result = flush_submit_accumulator();
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
         }
     }
 
@@ -1199,6 +1490,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
         ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+
+    if (batch_submit_enabled() && !g_submit_accumulator.pending.empty()) {
+        VkResult flush_result = flush_submit_accumulator();
+        if (flush_result != VK_SUCCESS) {
+            return flush_result;
+        }
+    }
+
     VkQueue remote_queue = VK_NULL_HANDLE;
     if (!ensure_queue_tracked(queue, &remote_queue)) {
         return VK_ERROR_INITIALIZATION_FAILED;

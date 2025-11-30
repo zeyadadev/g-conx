@@ -115,6 +115,12 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
         return;
     }
 
+    VkResult flush_result = venus_flush_submit_accumulator();
+    if (flush_result != VK_SUCCESS) {
+        ICD_LOG_WARN() << "[Client ICD] Pending submit batch flush failed during device destroy: "
+                  << flush_result << "\n";
+    }
+
     // Call server to destroy device
     vn_async_vkDestroyDevice(&g_ring, icd_device->remote_handle, pAllocator);
     vn_ring_flush_pending(&g_ring); // ensure batched async commands are delivered before teardown
@@ -198,6 +204,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
     if (!ensure_connected()) {
         ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
         return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult flush_result = venus_flush_submit_accumulator();
+    if (flush_result != VK_SUCCESS) {
+        return flush_result;
     }
     if (!g_device_state.has_device(device)) {
         ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDeviceWaitIdle\n";
