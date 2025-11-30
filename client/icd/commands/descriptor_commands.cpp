@@ -5,6 +5,8 @@
 #include "icd/commands/commands_common.h"
 #include "profiling.h"
 
+#include <unordered_map>
+
 extern "C" {
 
 // Vulkan function implementations
@@ -375,19 +377,39 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
     }
 
     IcdDevice* icd_device = icd_device_from_handle(device);
-    std::vector<VkWriteDescriptorSet> remote_writes(descriptorWriteCount);
-    std::vector<std::vector<VkDescriptorBufferInfo>> buffer_infos(descriptorWriteCount);
-    std::vector<std::vector<VkDescriptorImageInfo>> image_infos(descriptorWriteCount);
-    std::vector<std::vector<VkBufferView>> texel_views(descriptorWriteCount);
-    std::vector<VkWriteDescriptorSet> pending_writes;
-    pending_writes.reserve(descriptorWriteCount);
+    struct PreparedWrite {
+        VkWriteDescriptorSet write = {};
+        std::vector<VkDescriptorBufferInfo> buffers;
+        std::vector<VkDescriptorImageInfo> images;
+        std::vector<VkBufferView> texel_views;
+    };
+
+    std::vector<PreparedWrite> prepared_writes;
+    prepared_writes.reserve(descriptorWriteCount);
+
+    struct BindingKey {
+        VkDescriptorSet set;
+        uint32_t binding;
+        bool operator==(const BindingKey& other) const {
+            return set == other.set && binding == other.binding;
+        }
+    };
+    struct BindingKeyHash {
+        std::size_t operator()(const BindingKey& k) const {
+            // Combine handle value and binding index.
+            return std::hash<uint64_t>()(reinterpret_cast<uint64_t>(k.set)) ^
+                   (static_cast<std::size_t>(k.binding) << 1);
+        }
+    };
+
+    std::unordered_map<BindingKey, size_t, BindingKeyHash> last_write_for_binding;
 
     for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
         const VkWriteDescriptorSet& src = pDescriptorWrites[i];
-        VkWriteDescriptorSet& dst = remote_writes[i];
-        dst = src;
-        dst.dstSet = g_pipeline_state.get_remote_descriptor_set(src.dstSet);
-        if (dst.dstSet == VK_NULL_HANDLE) {
+        PreparedWrite current = {};
+        current.write = src;
+        current.write.dstSet = g_pipeline_state.get_remote_descriptor_set(src.dstSet);
+        if (current.write.dstSet == VK_NULL_HANDLE) {
             ICD_LOG_ERROR() << "[Client ICD] Descriptor set not tracked in vkUpdateDescriptorSets\n";
             return;
         }
@@ -422,21 +444,21 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
                 ICD_LOG_ERROR() << "[Client ICD] Missing buffer info for descriptor update\n";
                 return;
             }
-            buffer_infos[i].resize(src.descriptorCount);
+            current.buffers.resize(src.descriptorCount);
             for (uint32_t j = 0; j < src.descriptorCount; ++j) {
-                buffer_infos[i][j] = src.pBufferInfo[j];
-                if (buffer_infos[i][j].buffer != VK_NULL_HANDLE) {
-                    buffer_infos[i][j].buffer =
+                current.buffers[j] = src.pBufferInfo[j];
+                if (current.buffers[j].buffer != VK_NULL_HANDLE) {
+                    current.buffers[j].buffer =
                         g_resource_state.get_remote_buffer(src.pBufferInfo[j].buffer);
-                    if (buffer_infos[i][j].buffer == VK_NULL_HANDLE) {
+                    if (current.buffers[j].buffer == VK_NULL_HANDLE) {
                         ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked for descriptor update\n";
                         return;
                     }
                 }
             }
-            dst.pBufferInfo = buffer_infos[i].data();
-            dst.pImageInfo = nullptr;
-            dst.pTexelBufferView = nullptr;
+            current.write.pBufferInfo = current.buffers.data();
+            current.write.pImageInfo = nullptr;
+            current.write.pTexelBufferView = nullptr;
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -447,29 +469,29 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
                 ICD_LOG_ERROR() << "[Client ICD] Missing image info for descriptor update\n";
                 return;
             }
-            image_infos[i].resize(src.descriptorCount);
+            current.images.resize(src.descriptorCount);
             for (uint32_t j = 0; j < src.descriptorCount; ++j) {
-                image_infos[i][j] = src.pImageInfo[j];
-                if (image_infos[i][j].imageView != VK_NULL_HANDLE) {
-                    image_infos[i][j].imageView =
+                current.images[j] = src.pImageInfo[j];
+                if (current.images[j].imageView != VK_NULL_HANDLE) {
+                    current.images[j].imageView =
                         g_resource_state.get_remote_image_view(src.pImageInfo[j].imageView);
-                    if (image_infos[i][j].imageView == VK_NULL_HANDLE) {
+                    if (current.images[j].imageView == VK_NULL_HANDLE) {
                         ICD_LOG_ERROR() << "[Client ICD] Image view not tracked for descriptor update\n";
                         return;
                     }
                 }
-                if (image_infos[i][j].sampler != VK_NULL_HANDLE) {
-                    image_infos[i][j].sampler =
+                if (current.images[j].sampler != VK_NULL_HANDLE) {
+                    current.images[j].sampler =
                         g_resource_state.get_remote_sampler(src.pImageInfo[j].sampler);
-                    if (image_infos[i][j].sampler == VK_NULL_HANDLE) {
+                    if (current.images[j].sampler == VK_NULL_HANDLE) {
                         ICD_LOG_ERROR() << "[Client ICD] Sampler not tracked for descriptor update\n";
                         return;
                     }
                 }
             }
-            dst.pBufferInfo = nullptr;
-            dst.pImageInfo = image_infos[i].data();
-            dst.pTexelBufferView = nullptr;
+            current.write.pBufferInfo = nullptr;
+            current.write.pImageInfo = current.images.data();
+            current.write.pTexelBufferView = nullptr;
             break;
         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -477,22 +499,22 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
                 ICD_LOG_ERROR() << "[Client ICD] Missing texel buffer info for descriptor update\n";
                 return;
             }
-            texel_views[i].resize(src.descriptorCount);
+            current.texel_views.resize(src.descriptorCount);
             for (uint32_t j = 0; j < src.descriptorCount; ++j) {
                 if (src.pTexelBufferView[j] == VK_NULL_HANDLE) {
-                    texel_views[i][j] = VK_NULL_HANDLE;
+                    current.texel_views[j] = VK_NULL_HANDLE;
                     continue;
                 }
-                texel_views[i][j] =
+                current.texel_views[j] =
                     g_resource_state.get_remote_buffer_view(src.pTexelBufferView[j]);
-                if (texel_views[i][j] == VK_NULL_HANDLE) {
+                if (current.texel_views[j] == VK_NULL_HANDLE) {
                     ICD_LOG_ERROR() << "[Client ICD] Buffer view not tracked for descriptor update\n";
                     return;
                 }
             }
-            dst.pBufferInfo = nullptr;
-            dst.pImageInfo = nullptr;
-            dst.pTexelBufferView = texel_views[i].data();
+            current.write.pBufferInfo = nullptr;
+            current.write.pImageInfo = nullptr;
+            current.write.pTexelBufferView = current.texel_views.data();
             break;
         default:
             if (src.descriptorCount > 0) {
@@ -505,13 +527,13 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
             break;
         }
 
-        const VkDescriptorBufferInfo* buffer_ptr = buffer_infos[i].empty() ? nullptr : buffer_infos[i].data();
-        const VkDescriptorImageInfo* image_ptr = image_infos[i].empty() ? nullptr : image_infos[i].data();
-        const VkBufferView* texel_ptr = texel_views[i].empty() ? nullptr : texel_views[i].data();
+        const VkDescriptorBufferInfo* buffer_ptr = current.buffers.empty() ? nullptr : current.buffers.data();
+        const VkDescriptorImageInfo* image_ptr = current.images.empty() ? nullptr : current.images.data();
+        const VkBufferView* texel_ptr = current.texel_views.empty() ? nullptr : current.texel_views.data();
 
         // Only send updates when something actually changed to cut network traffic.
         bool changed = g_pipeline_state.update_descriptor_write_cache(src.dstSet,
-                                                                      dst,
+                                                                      current.write,
                                                                       buffer_ptr,
                                                                       image_ptr,
                                                                       texel_ptr);
@@ -521,7 +543,24 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
         }
 
         VENUS_PROFILE_DESCRIPTOR_TYPE(src.descriptorType);
-        pending_writes.push_back(dst);
+        BindingKey key{src.dstSet, src.dstBinding};
+        auto it = last_write_for_binding.find(key);
+        if (it == last_write_for_binding.end()) {
+            last_write_for_binding.emplace(key, prepared_writes.size());
+            prepared_writes.push_back(std::move(current));
+        } else {
+            prepared_writes[it->second] = std::move(current);  // Last write wins.
+        }
+    }
+
+    std::vector<VkWriteDescriptorSet> pending_writes;
+    pending_writes.reserve(prepared_writes.size());
+    for (auto& prepared : prepared_writes) {
+        pending_writes.push_back(prepared.write);
+        VkWriteDescriptorSet& write = pending_writes.back();
+        write.pBufferInfo = prepared.buffers.empty() ? nullptr : prepared.buffers.data();
+        write.pImageInfo = prepared.images.empty() ? nullptr : prepared.images.data();
+        write.pTexelBufferView = prepared.texel_views.empty() ? nullptr : prepared.texel_views.data();
     }
 
     std::vector<VkCopyDescriptorSet> remote_copies(descriptorCopyCount);
