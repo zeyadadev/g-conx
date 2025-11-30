@@ -3,6 +3,7 @@
 
 #include "icd/icd_entrypoints.h"
 #include "icd/commands/commands_common.h"
+#include "profiling.h"
 
 extern "C" {
 
@@ -388,6 +389,30 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
             ICD_LOG_ERROR() << "[Client ICD] Descriptor set not tracked in vkUpdateDescriptorSets\n";
             return;
         }
+
+        // Log what's being updated
+        const char* desc_type_str = "UNKNOWN";
+        switch (src.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: desc_type_str = "UNIFORM_BUFFER"; break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: desc_type_str = "STORAGE_BUFFER"; break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: desc_type_str = "UNIFORM_BUFFER_DYNAMIC"; break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: desc_type_str = "STORAGE_BUFFER_DYNAMIC"; break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER: desc_type_str = "SAMPLER"; break;
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: desc_type_str = "COMBINED_IMAGE_SAMPLER"; break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: desc_type_str = "SAMPLED_IMAGE"; break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: desc_type_str = "STORAGE_IMAGE"; break;
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: desc_type_str = "INPUT_ATTACHMENT"; break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: desc_type_str = "UNIFORM_TEXEL_BUFFER"; break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: desc_type_str = "STORAGE_TEXEL_BUFFER"; break;
+        default: break;
+        }
+        ICD_LOG_INFO() << "  [" << i << "] Type=" << desc_type_str
+                       << ", Binding=" << src.dstBinding
+                       << ", Count=" << src.descriptorCount
+                       << ", ArrayElem=" << src.dstArrayElement << "\n";
+
+        // Track this descriptor update by type
+        VENUS_PROFILE_DESCRIPTOR_TYPE(src.descriptorType);
 
         switch (src.descriptorType) {
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:

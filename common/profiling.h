@@ -44,6 +44,51 @@ public:
         recv_bytes_.fetch_add(bytes, std::memory_order_relaxed);
     }
 
+    // Detailed operation tracking
+    void record_memory_operation() {
+        memory_ops_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_descriptor_operation() {
+        descriptor_ops_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_descriptor_by_type(uint32_t descriptor_type) {
+        descriptor_ops_count_.fetch_add(1, std::memory_order_relaxed);
+
+        // VkDescriptorType enum values
+        switch (descriptor_type) {
+        case 6:  // VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+            desc_uniform_buffer_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 7:  // VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+            desc_storage_buffer_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 8:  // VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+            desc_uniform_buffer_dynamic_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 9:  // VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+            desc_storage_buffer_dynamic_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 1:  // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+            desc_combined_image_sampler_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 2:  // VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+            desc_sampled_image_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case 3:  // VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+            desc_storage_image_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        default:
+            desc_other_types_.fetch_add(1, std::memory_order_relaxed);
+            break;
+        }
+    }
+
+    void record_other_operation() {
+        other_ops_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+
     // Time tracking for round-trips
     void record_rtt_us(uint64_t microseconds) {
         rtt_count_.fetch_add(1, std::memory_order_relaxed);
@@ -93,6 +138,9 @@ public:
         uint64_t rtt_count = rtt_count_.load(std::memory_order_relaxed);
         uint64_t total_rtt = total_rtt_us_.load(std::memory_order_relaxed);
         uint64_t max_rtt = max_rtt_us_.load(std::memory_order_relaxed);
+        uint64_t memory_ops = memory_ops_count_.load(std::memory_order_relaxed);
+        uint64_t descriptor_ops = descriptor_ops_count_.load(std::memory_order_relaxed);
+        uint64_t other_ops = other_ops_count_.load(std::memory_order_relaxed);
 
         // Calculate derived metrics
         double tokens_per_sec = (tokens > 0 && duration_sec > 0) ? tokens / duration_sec : 0.0;
@@ -103,6 +151,12 @@ public:
         double maps_per_token = (tokens > 0) ? (double)maps / tokens : 0.0;
         double sends_per_token = (tokens > 0) ? (double)sends / tokens : 0.0;
         double recvs_per_token = (tokens > 0) ? (double)recvs / tokens : 0.0;
+        double memory_ops_per_token = (tokens > 0) ? (double)memory_ops / tokens : 0.0;
+        double descriptor_ops_per_token = (tokens > 0) ? (double)descriptor_ops / tokens : 0.0;
+        double other_ops_per_token = (tokens > 0) ? (double)other_ops / tokens : 0.0;
+        uint64_t accounted_ops = submits + waits + maps + memory_ops + descriptor_ops + other_ops;
+        uint64_t unaccounted_ops = (sends > accounted_ops) ? (sends - accounted_ops) : 0;
+        double unaccounted_per_token = (tokens > 0) ? (double)unaccounted_ops / tokens : 0.0;
 
         double avg_rtt_ms = (rtt_count > 0) ? (total_rtt / (double)rtt_count) / 1000.0 : 0.0;
         double max_rtt_ms = max_rtt / 1000.0;
@@ -140,6 +194,72 @@ public:
                   << " calls  (" << std::setw(6) << waits_per_token << " per token)\n";
         std::cout << "  vkMapMemory:          " << std::setw(10) << maps
                   << " calls  (" << std::setw(6) << maps_per_token << " per token)\n";
+
+        // Operation breakdown
+        std::cout << "\nOperation Breakdown:\n";
+        std::cout << "  Memory operations:    " << std::setw(10) << memory_ops
+                  << " calls  (" << std::setw(6) << memory_ops_per_token << " per token)\n";
+        std::cout << "  Descriptor ops:       " << std::setw(10) << descriptor_ops
+                  << " calls  (" << std::setw(6) << descriptor_ops_per_token << " per token)\n";
+
+        // Descriptor type breakdown (only show if we have descriptor ops)
+        if (descriptor_ops > 0) {
+            uint64_t ub = desc_uniform_buffer_.load(std::memory_order_relaxed);
+            uint64_t sb = desc_storage_buffer_.load(std::memory_order_relaxed);
+            uint64_t ubd = desc_uniform_buffer_dynamic_.load(std::memory_order_relaxed);
+            uint64_t sbd = desc_storage_buffer_dynamic_.load(std::memory_order_relaxed);
+            uint64_t cis = desc_combined_image_sampler_.load(std::memory_order_relaxed);
+            uint64_t si = desc_sampled_image_.load(std::memory_order_relaxed);
+            uint64_t sti = desc_storage_image_.load(std::memory_order_relaxed);
+            uint64_t other = desc_other_types_.load(std::memory_order_relaxed);
+
+            std::cout << "    └─ By type:\n";
+            if (ub > 0) {
+                double per_tok = (tokens > 0) ? (double)ub / tokens : 0.0;
+                std::cout << "       UNIFORM_BUFFER:        " << std::setw(10) << ub
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (sb > 0) {
+                double per_tok = (tokens > 0) ? (double)sb / tokens : 0.0;
+                std::cout << "       STORAGE_BUFFER:        " << std::setw(10) << sb
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (ubd > 0) {
+                double per_tok = (tokens > 0) ? (double)ubd / tokens : 0.0;
+                std::cout << "       UNIFORM_BUFFER_DYNAMIC:" << std::setw(10) << ubd
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (sbd > 0) {
+                double per_tok = (tokens > 0) ? (double)sbd / tokens : 0.0;
+                std::cout << "       STORAGE_BUFFER_DYNAMIC:" << std::setw(10) << sbd
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (cis > 0) {
+                double per_tok = (tokens > 0) ? (double)cis / tokens : 0.0;
+                std::cout << "       COMBINED_IMAGE_SAMPLER:" << std::setw(10) << cis
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (si > 0) {
+                double per_tok = (tokens > 0) ? (double)si / tokens : 0.0;
+                std::cout << "       SAMPLED_IMAGE:         " << std::setw(10) << si
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (sti > 0) {
+                double per_tok = (tokens > 0) ? (double)sti / tokens : 0.0;
+                std::cout << "       STORAGE_IMAGE:         " << std::setw(10) << sti
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+            if (other > 0) {
+                double per_tok = (tokens > 0) ? (double)other / tokens : 0.0;
+                std::cout << "       OTHER_TYPES:           " << std::setw(10) << other
+                          << " (" << std::setw(6) << per_tok << " per token)\n";
+            }
+        }
+
+        std::cout << "  Other operations:     " << std::setw(10) << other_ops
+                  << " calls  (" << std::setw(6) << other_ops_per_token << " per token)\n";
+        std::cout << "  Unaccounted ops:      " << std::setw(10) << unaccounted_ops
+                  << " calls  (" << std::setw(6) << unaccounted_per_token << " per token)\n";
 
         // Network operations
         std::cout << "\nNetwork Operations:\n";
@@ -250,6 +370,17 @@ public:
         rtt_count_.store(0, std::memory_order_relaxed);
         total_rtt_us_.store(0, std::memory_order_relaxed);
         max_rtt_us_.store(0, std::memory_order_relaxed);
+        memory_ops_count_.store(0, std::memory_order_relaxed);
+        descriptor_ops_count_.store(0, std::memory_order_relaxed);
+        other_ops_count_.store(0, std::memory_order_relaxed);
+        desc_uniform_buffer_.store(0, std::memory_order_relaxed);
+        desc_storage_buffer_.store(0, std::memory_order_relaxed);
+        desc_uniform_buffer_dynamic_.store(0, std::memory_order_relaxed);
+        desc_storage_buffer_dynamic_.store(0, std::memory_order_relaxed);
+        desc_combined_image_sampler_.store(0, std::memory_order_relaxed);
+        desc_sampled_image_.store(0, std::memory_order_relaxed);
+        desc_storage_image_.store(0, std::memory_order_relaxed);
+        desc_other_types_.store(0, std::memory_order_relaxed);
         inference_start_ = std::chrono::steady_clock::now();
         last_periodic_print_ = inference_start_;
     }
@@ -270,6 +401,21 @@ private:
     std::atomic<uint64_t> recv_count_{0};
     std::atomic<uint64_t> send_bytes_{0};
     std::atomic<uint64_t> recv_bytes_{0};
+
+    // Detailed operation counters
+    std::atomic<uint64_t> memory_ops_count_{0};
+    std::atomic<uint64_t> descriptor_ops_count_{0};
+    std::atomic<uint64_t> other_ops_count_{0};
+
+    // Descriptor type breakdown
+    std::atomic<uint64_t> desc_uniform_buffer_{0};
+    std::atomic<uint64_t> desc_storage_buffer_{0};
+    std::atomic<uint64_t> desc_uniform_buffer_dynamic_{0};
+    std::atomic<uint64_t> desc_storage_buffer_dynamic_{0};
+    std::atomic<uint64_t> desc_combined_image_sampler_{0};
+    std::atomic<uint64_t> desc_sampled_image_{0};
+    std::atomic<uint64_t> desc_storage_image_{0};
+    std::atomic<uint64_t> desc_other_types_{0};
 
     // Network latency tracking
     std::atomic<uint64_t> rtt_count_{0};
@@ -325,6 +471,18 @@ private:
 #define VENUS_PROFILE_RESET() \
     venus_plus::VenusProfiler::instance().reset()
 
+#define VENUS_PROFILE_MEMORY_OP() \
+    venus_plus::VenusProfiler::instance().record_memory_operation()
+
+#define VENUS_PROFILE_DESCRIPTOR_OP() \
+    venus_plus::VenusProfiler::instance().record_descriptor_operation()
+
+#define VENUS_PROFILE_DESCRIPTOR_TYPE(type) \
+    venus_plus::VenusProfiler::instance().record_descriptor_by_type(type)
+
+#define VENUS_PROFILE_OTHER_OP() \
+    venus_plus::VenusProfiler::instance().record_other_operation()
+
 #else
 
 // No-op macros when profiling disabled
@@ -339,6 +497,10 @@ private:
 #define VENUS_PROFILE_PRINT()
 #define VENUS_PROFILE_PERIODIC(interval_sec)
 #define VENUS_PROFILE_RESET()
+#define VENUS_PROFILE_MEMORY_OP()
+#define VENUS_PROFILE_DESCRIPTOR_OP()
+#define VENUS_PROFILE_DESCRIPTOR_TYPE(type)
+#define VENUS_PROFILE_OTHER_OP()
 
 #endif // VENUS_PROFILING_ENABLED
 

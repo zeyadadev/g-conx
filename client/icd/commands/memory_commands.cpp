@@ -3,6 +3,7 @@
 
 #include "icd/icd_entrypoints.h"
 #include "icd/commands/commands_common.h"
+#include "profiling.h"
 #include <atomic>
 
 VkResult send_transfer_memory_data(VkDeviceMemory memory,
@@ -404,6 +405,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges(
     uint32_t memoryRangeCount,
     const VkMappedMemoryRange* pMemoryRanges) {
 
+    VENUS_PROFILE_MEMORY_OP();
+
     ICD_LOG_INFO() << "[Client ICD] vkFlushMappedMemoryRanges called (count=" << memoryRangeCount << ")\n";
 
     if (memoryRangeCount == 0) {
@@ -470,6 +473,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkInvalidateMappedMemoryRanges(
     VkDevice device,
     uint32_t memoryRangeCount,
     const VkMappedMemoryRange* pMemoryRanges) {
+
+    VENUS_PROFILE_MEMORY_OP();
 
     ICD_LOG_INFO() << "[Client ICD] vkInvalidateMappedMemoryRanges called (count=" << memoryRangeCount << ")\n";
 
