@@ -142,6 +142,15 @@ VkCommandBuffer CommandBufferState::get_remote_command_buffer(VkCommandBuffer bu
     return bit->second.remote_handle;
 }
 
+VkDevice CommandBufferState::get_buffer_device(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return bit->second.device;
+}
+
 CommandBufferLifecycleState CommandBufferState::get_buffer_state(VkCommandBuffer buffer) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto bit = buffers_.find(handle_key(buffer));

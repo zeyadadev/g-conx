@@ -54,6 +54,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     icd_device->physical_device = physicalDevice;
     icd_device->remote_handle = VK_NULL_HANDLE;
 
+    // Fetch device properties to cache API version for capability checks.
+    VkPhysicalDeviceProperties phys_props = {};
+    vkGetPhysicalDeviceProperties(physicalDevice, &phys_props);
+
     // Call server to create device
     VkResult result = vn_call_vkCreateDevice(&g_ring, remote_physical_device, pCreateInfo, pAllocator, &icd_device->remote_handle);
 
@@ -66,8 +70,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     // Return the ICD device as VkDevice handle
     *pDevice = icd_device_to_handle(icd_device);
 
-    // Store device mapping
-    g_device_state.add_device(*pDevice, icd_device->remote_handle, physicalDevice);
+    // Store device mapping and enabled extensions
+    g_device_state.add_device(*pDevice, icd_device->remote_handle, physicalDevice, phys_props.apiVersion);
+    if (pCreateInfo->enabledExtensionCount > 0) {
+        g_device_state.set_device_extensions(*pDevice,
+                                             pCreateInfo->ppEnabledExtensionNames,
+                                             pCreateInfo->enabledExtensionCount);
+    }
 
     ICD_LOG_INFO() << "[Client ICD] Device created successfully (local=" << *pDevice
               << ", remote=" << icd_device->remote_handle << ")\n";

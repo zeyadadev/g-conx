@@ -305,6 +305,23 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         return nullptr;
     }
 
+    auto device_supports_extension = [&](const char* name) -> bool {
+        if (!name) {
+            return false;
+        }
+        if (device == VK_NULL_HANDLE) {
+            return true; // Allow loader queries before device creation
+        }
+        return g_device_state.is_extension_enabled(device, name);
+    };
+
+    auto device_api_version = [&]() -> uint32_t {
+        if (device == VK_NULL_HANDLE) {
+            return VK_API_VERSION_1_0;
+        }
+        return g_device_state.get_device_api_version(device);
+    };
+
     // Critical: vkGetDeviceProcAddr must return itself
     if (strcmp(pName, "vkGetDeviceProcAddr") == 0) {
         ICD_LOG_INFO() << " -> vkGetDeviceProcAddr\n";
@@ -507,6 +524,44 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkUpdateDescriptorSets") == 0) {
         ICD_LOG_INFO() << " -> vkUpdateDescriptorSets\n";
         return (PFN_vkVoidFunction)vkUpdateDescriptorSets;
+    }
+    if (strcmp(pName, "vkCreateDescriptorUpdateTemplate") == 0 ||
+        strcmp(pName, "vkCreateDescriptorUpdateTemplateKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCreateDescriptorUpdateTemplate\n";
+        return (PFN_vkVoidFunction)vkCreateDescriptorUpdateTemplate;
+    }
+    if (strcmp(pName, "vkDestroyDescriptorUpdateTemplate") == 0 ||
+        strcmp(pName, "vkDestroyDescriptorUpdateTemplateKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkDestroyDescriptorUpdateTemplate\n";
+        return (PFN_vkVoidFunction)vkDestroyDescriptorUpdateTemplate;
+    }
+    if (strcmp(pName, "vkUpdateDescriptorSetWithTemplate") == 0 ||
+        strcmp(pName, "vkUpdateDescriptorSetWithTemplateKHR") == 0) {
+        if (device_api_version() < VK_API_VERSION_1_1 &&
+            !device_supports_extension(VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME)) {
+            ICD_LOG_INFO() << " -> vkUpdateDescriptorSetWithTemplate (unsupported: descriptor_update_template not enabled)\n";
+            return nullptr;
+        }
+        ICD_LOG_INFO() << " -> vkUpdateDescriptorSetWithTemplate\n";
+        return (PFN_vkVoidFunction)vkUpdateDescriptorSetWithTemplate;
+    }
+    if (strcmp(pName, "vkCmdPushDescriptorSet") == 0 ||
+        strcmp(pName, "vkCmdPushDescriptorSetKHR") == 0) {
+        if (!device_supports_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+            ICD_LOG_INFO() << " -> vkCmdPushDescriptorSet (unsupported: push_descriptor not enabled)\n";
+            return nullptr;
+        }
+        ICD_LOG_INFO() << " -> vkCmdPushDescriptorSet\n";
+        return (PFN_vkVoidFunction)vkCmdPushDescriptorSet;
+    }
+    if (strcmp(pName, "vkCmdPushDescriptorSetWithTemplate") == 0 ||
+        strcmp(pName, "vkCmdPushDescriptorSetWithTemplateKHR") == 0) {
+        if (!device_supports_extension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+            ICD_LOG_INFO() << " -> vkCmdPushDescriptorSetWithTemplate (unsupported: push_descriptor not enabled)\n";
+            return nullptr;
+        }
+        ICD_LOG_INFO() << " -> vkCmdPushDescriptorSetWithTemplate\n";
+        return (PFN_vkVoidFunction)vkCmdPushDescriptorSetWithTemplate;
     }
     if (strcmp(pName, "vkCreatePipelineLayout") == 0) {
         ICD_LOG_INFO() << " -> vkCreatePipelineLayout\n";

@@ -4,6 +4,8 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
+#include <string>
+#include <unordered_set>
 
 namespace venus_plus {
 
@@ -19,6 +21,8 @@ struct DeviceEntry {
     VkDevice remote_handle;
     VkPhysicalDevice physical_device;  // The local physical device handle
     std::vector<QueueEntry> queues;
+    std::unordered_set<std::string> enabled_extensions;
+    uint32_t api_version = VK_API_VERSION_1_0;
 };
 
 class DeviceState {
@@ -27,7 +31,10 @@ public:
     ~DeviceState() = default;
 
     // Add a new device
-    void add_device(VkDevice local, VkDevice remote, VkPhysicalDevice phys_dev);
+    void add_device(VkDevice local,
+                    VkDevice remote,
+                    VkPhysicalDevice phys_dev,
+                    uint32_t api_version = VK_API_VERSION_1_0);
 
     // Remove a device and all its queues
     void remove_device(VkDevice local);
@@ -40,6 +47,12 @@ public:
 
     // Get device entry
     DeviceEntry* get_device(VkDevice local);
+
+    // Extension helpers
+    void set_device_extensions(VkDevice device, const char* const* names, uint32_t count);
+    bool is_extension_enabled(VkDevice device, const char* name) const;
+    uint32_t get_device_api_version(VkDevice device) const;
+    VkPhysicalDevice get_device_physical_device(VkDevice device) const;
 
     // Add a queue to a device
     void add_queue(VkDevice device, VkQueue local, VkQueue remote, uint32_t family, uint32_t index);

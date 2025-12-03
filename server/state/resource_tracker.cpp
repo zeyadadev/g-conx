@@ -17,6 +17,7 @@ ResourceTracker::ResourceTracker()
       next_sampler_handle_(0x78000000ull),
       next_shader_module_handle_(0x70000000ull),
       next_descriptor_set_layout_handle_(0x71000000ull),
+      next_descriptor_update_template_handle_(0x79000000ull),
       next_descriptor_pool_handle_(0x72000000ull),
       next_descriptor_set_handle_(0x73000000ull),
       next_pipeline_layout_handle_(0x74000000ull),
@@ -908,6 +909,87 @@ ResourceTracker::get_real_descriptor_set_layout(VkDescriptorSetLayout layout) co
         return VK_NULL_HANDLE;
     }
     return it->second.real_handle;
+}
+
+VkDescriptorUpdateTemplate ResourceTracker::create_descriptor_update_template(
+    VkDevice device,
+    VkDevice real_device,
+    const VkDescriptorUpdateTemplateCreateInfo& info) {
+
+    if (real_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+
+    VkDescriptorUpdateTemplateCreateInfo real_info = info;
+    if (info.descriptorSetLayout != VK_NULL_HANDLE) {
+        real_info.descriptorSetLayout = get_real_descriptor_set_layout(info.descriptorSetLayout);
+    }
+    if (info.pipelineLayout != VK_NULL_HANDLE) {
+        real_info.pipelineLayout = get_real_pipeline_layout(info.pipelineLayout);
+    }
+
+    VkDescriptorUpdateTemplate real_template = VK_NULL_HANDLE;
+    VkResult result = vkCreateDescriptorUpdateTemplate(real_device, &real_info, nullptr, &real_template);
+    if (result != VK_SUCCESS) {
+        RESOURCE_LOG_ERROR() << "vkCreateDescriptorUpdateTemplate failed: " << result;
+        return VK_NULL_HANDLE;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    VkDescriptorUpdateTemplate handle =
+        reinterpret_cast<VkDescriptorUpdateTemplate>(next_descriptor_update_template_handle_++);
+    DescriptorUpdateTemplateResource resource = {};
+    resource.handle_device = device;
+    resource.real_device = real_device;
+    resource.handle = handle;
+    resource.real_handle = real_template;
+    resource.template_type = info.templateType;
+    resource.bind_point = info.pipelineBindPoint;
+    resource.set_layout = info.descriptorSetLayout;
+    resource.pipeline_layout = info.pipelineLayout;
+    resource.set_number = info.set;
+    if (info.descriptorUpdateEntryCount > 0 && info.pDescriptorUpdateEntries) {
+        resource.entries.assign(info.pDescriptorUpdateEntries,
+                                info.pDescriptorUpdateEntries + info.descriptorUpdateEntryCount);
+    }
+    descriptor_update_templates_[handle_key(handle)] = resource;
+    return handle;
+}
+
+void ResourceTracker::destroy_descriptor_update_template(VkDescriptorUpdateTemplate tmpl) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_update_templates_.find(handle_key(tmpl));
+    if (it == descriptor_update_templates_.end()) {
+        return;
+    }
+    if (it->second.real_handle != VK_NULL_HANDLE) {
+        vkDestroyDescriptorUpdateTemplate(it->second.real_device, it->second.real_handle, nullptr);
+    }
+    descriptor_update_templates_.erase(it);
+}
+
+VkDescriptorUpdateTemplate
+ResourceTracker::get_real_descriptor_update_template(VkDescriptorUpdateTemplate tmpl) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_update_templates_.find(handle_key(tmpl));
+    if (it == descriptor_update_templates_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_handle;
+}
+
+bool ResourceTracker::get_descriptor_update_template_info(VkDescriptorUpdateTemplate tmpl,
+                                                          DescriptorUpdateTemplateResource* out_info) const {
+    if (!out_info) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_update_templates_.find(handle_key(tmpl));
+    if (it == descriptor_update_templates_.end()) {
+        return false;
+    }
+    *out_info = it->second;
+    return true;
 }
 
 VkDescriptorPool ResourceTracker::create_descriptor_pool(

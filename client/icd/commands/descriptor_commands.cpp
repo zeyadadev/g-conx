@@ -6,6 +6,189 @@
 #include "profiling.h"
 
 #include <unordered_map>
+#include <mutex>
+
+namespace {
+
+// Cached push descriptor limits keyed by physical device handle.
+uint32_t get_push_descriptor_limit(VkDevice device) {
+    DeviceEntry* entry = g_device_state.get_device(device);
+    if (!entry) {
+        return 0;
+    }
+    VkPhysicalDevice phys_dev = entry->physical_device;
+    if (phys_dev == VK_NULL_HANDLE) {
+        return 0;
+    }
+
+    static std::mutex cache_mutex;
+    static std::unordered_map<uint64_t, uint32_t> cache;
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = cache.find(reinterpret_cast<uint64_t>(phys_dev));
+        if (it != cache.end()) {
+            return it->second;
+        }
+    }
+
+    VkPhysicalDevicePushDescriptorPropertiesKHR push_props = {};
+    push_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR;
+    VkPhysicalDeviceProperties2 props2 = {};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &push_props;
+    vkGetPhysicalDeviceProperties2(phys_dev, &props2);
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        cache[reinterpret_cast<uint64_t>(phys_dev)] = push_props.maxPushDescriptors;
+    }
+    return push_props.maxPushDescriptors;
+}
+
+bool device_supports_push_descriptors(VkDevice device) {
+    if (device == VK_NULL_HANDLE) {
+        return true;
+    }
+    return g_device_state.is_extension_enabled(device, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+}
+
+size_t compute_template_data_size(const std::vector<VkDescriptorUpdateTemplateEntry>& entries) {
+    size_t max_offset = 0;
+    for (const auto& entry : entries) {
+        size_t end = static_cast<size_t>(entry.offset) +
+                     static_cast<size_t>(entry.stride) * entry.descriptorCount;
+        if (end > max_offset) {
+            max_offset = end;
+        }
+    }
+    return max_offset;
+}
+
+struct PreparedWrite {
+    VkWriteDescriptorSet write = {};
+    std::vector<VkDescriptorBufferInfo> buffers;
+    std::vector<VkDescriptorImageInfo> images;
+    std::vector<VkBufferView> texel_views;
+};
+
+bool build_writes_from_template_data(const DescriptorUpdateTemplateInfo& tmpl_info,
+                                     VkDescriptorSet dst_set,
+                                     const void* pData,
+                                     std::vector<PreparedWrite>* out_writes) {
+    if (!out_writes) {
+        return false;
+    }
+    out_writes->clear();
+
+    const size_t data_size = compute_template_data_size(tmpl_info.entries);
+    if (data_size > 0 && !pData) {
+        ICD_LOG_ERROR() << "[Client ICD] Template data is NULL but size is non-zero\n";
+        return false;
+    }
+
+    const uint8_t* data_bytes = static_cast<const uint8_t*>(pData);
+
+    for (const auto& entry : tmpl_info.entries) {
+        PreparedWrite prepared = {};
+        prepared.write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        prepared.write.pNext = nullptr;
+        prepared.write.dstSet = dst_set;
+        prepared.write.dstBinding = entry.dstBinding;
+        prepared.write.dstArrayElement = entry.dstArrayElement;
+        prepared.write.descriptorCount = entry.descriptorCount;
+        prepared.write.descriptorType = entry.descriptorType;
+
+        for (uint32_t i = 0; i < entry.descriptorCount; ++i) {
+            size_t offset = static_cast<size_t>(entry.offset) + static_cast<size_t>(entry.stride) * i;
+            const uint8_t* element_ptr = data_bytes ? data_bytes + offset : nullptr;
+
+            switch (entry.descriptorType) {
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
+                if (!element_ptr) {
+                    ICD_LOG_ERROR() << "[Client ICD] Missing buffer info for template entry\n";
+                    return false;
+                }
+                const VkDescriptorBufferInfo* src = reinterpret_cast<const VkDescriptorBufferInfo*>(element_ptr);
+                VkDescriptorBufferInfo info = *src;
+                if (info.buffer != VK_NULL_HANDLE) {
+                    info.buffer = g_resource_state.get_remote_buffer(src->buffer);
+                    if (info.buffer == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked in template data\n";
+                        return false;
+                    }
+                }
+                prepared.buffers.push_back(info);
+                break;
+            }
+            case VK_DESCRIPTOR_TYPE_SAMPLER:
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+                if (!element_ptr) {
+                    ICD_LOG_ERROR() << "[Client ICD] Missing image info for template entry\n";
+                    return false;
+                }
+                const VkDescriptorImageInfo* src = reinterpret_cast<const VkDescriptorImageInfo*>(element_ptr);
+                VkDescriptorImageInfo info = *src;
+                if (info.imageView != VK_NULL_HANDLE) {
+                    info.imageView = g_resource_state.get_remote_image_view(src->imageView);
+                    if (info.imageView == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Image view not tracked in template data\n";
+                        return false;
+                    }
+                }
+                if (info.sampler != VK_NULL_HANDLE) {
+                    info.sampler = g_resource_state.get_remote_sampler(src->sampler);
+                    if (info.sampler == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Sampler not tracked in template data\n";
+                        return false;
+                    }
+                }
+                prepared.images.push_back(info);
+                break;
+            }
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
+                if (!element_ptr) {
+                    ICD_LOG_ERROR() << "[Client ICD] Missing texel buffer view for template entry\n";
+                    return false;
+                }
+                const VkBufferView* src = reinterpret_cast<const VkBufferView*>(element_ptr);
+                VkBufferView view = *src;
+                if (view != VK_NULL_HANDLE) {
+                    view = g_resource_state.get_remote_buffer_view(*src);
+                    if (view == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Buffer view not tracked in template data\n";
+                        return false;
+                    }
+                }
+                prepared.texel_views.push_back(view);
+                break;
+            }
+            default:
+                ICD_LOG_ERROR() << "[Client ICD] Unsupported descriptor type in template entry\n";
+                return false;
+            }
+        }
+
+        prepared.write.pBufferInfo =
+            prepared.buffers.empty() ? nullptr : prepared.buffers.data();
+        prepared.write.pImageInfo =
+            prepared.images.empty() ? nullptr : prepared.images.data();
+        prepared.write.pTexelBufferView =
+            prepared.texel_views.empty() ? nullptr : prepared.texel_views.data();
+
+        out_writes->push_back(std::move(prepared));
+    }
+    return true;
+}
+
+} // namespace
 
 extern "C" {
 
@@ -47,7 +230,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorSetLayout(
     }
 
     VkDescriptorSetLayout local = g_handle_allocator.allocate<VkDescriptorSetLayout>();
-    g_pipeline_state.add_descriptor_set_layout(device, local, remote_layout);
+    g_pipeline_state.add_descriptor_set_layout(device, local, remote_layout, pCreateInfo);
     *pSetLayout = local;
     ICD_LOG_INFO() << "[Client ICD] Descriptor set layout created (local=" << local << ")\n";
     return VK_SUCCESS;
@@ -591,6 +774,514 @@ VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSets(
     ICD_LOG_INFO() << "[Client ICD] Descriptor sets updated (writes sent="
               << pending_writes.size() << "/" << descriptorWriteCount
               << ", copies=" << descriptorCopyCount << ")\n";
+}
+
+// ===== Descriptor Update Template Functions =====
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorUpdateTemplate(
+    VkDevice device,
+    const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCreateDescriptorUpdateTemplate called\n";
+
+    if (!pCreateInfo || !pDescriptorUpdateTemplate) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCreateDescriptorUpdateTemplate\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkCreateDescriptorUpdateTemplate\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+
+    // Translate descriptor set layout and pipeline layout to remote handles
+    VkDescriptorUpdateTemplateCreateInfo remote_info = *pCreateInfo;
+    if (pCreateInfo->descriptorSetLayout != VK_NULL_HANDLE) {
+        remote_info.descriptorSetLayout =
+            g_pipeline_state.get_remote_descriptor_set_layout(pCreateInfo->descriptorSetLayout);
+        if (remote_info.descriptorSetLayout == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Descriptor set layout not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+    if (pCreateInfo->pipelineLayout != VK_NULL_HANDLE) {
+        remote_info.pipelineLayout =
+            g_pipeline_state.get_remote_pipeline_layout(pCreateInfo->pipelineLayout);
+        if (remote_info.pipelineLayout == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Pipeline layout not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    VkDescriptorUpdateTemplate remote_template = VK_NULL_HANDLE;
+    VkResult result = vn_call_vkCreateDescriptorUpdateTemplate(&g_ring,
+                                                                icd_device->remote_handle,
+                                                                &remote_info,
+                                                                pAllocator,
+                                                                &remote_template);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkCreateDescriptorUpdateTemplate failed: " << result << "\n";
+        return result;
+    }
+
+    // Allocate local handle and store mapping
+    VkDescriptorUpdateTemplate local = g_handle_allocator.allocate<VkDescriptorUpdateTemplate>();
+    g_pipeline_state.add_descriptor_update_template(device, local, remote_template, pCreateInfo);
+
+    *pDescriptorUpdateTemplate = local;
+    ICD_LOG_INFO() << "[Client ICD] Descriptor update template created: local=" << local
+                   << ", remote=" << remote_template << "\n";
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyDescriptorUpdateTemplate(
+    VkDevice device,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    const VkAllocationCallbacks* pAllocator) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkDestroyDescriptorUpdateTemplate called: " << descriptorUpdateTemplate << "\n";
+
+    if (descriptorUpdateTemplate == VK_NULL_HANDLE) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkDestroyDescriptorUpdateTemplate\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkDescriptorUpdateTemplate remote_template =
+        g_pipeline_state.get_remote_descriptor_update_template(descriptorUpdateTemplate);
+
+    if (remote_template == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Descriptor update template not tracked\n";
+        return;
+    }
+
+    vn_async_vkDestroyDescriptorUpdateTemplate(&g_ring,
+                                                icd_device->remote_handle,
+                                                remote_template,
+                                                pAllocator);
+
+    g_pipeline_state.remove_descriptor_update_template(device, descriptorUpdateTemplate);
+    ICD_LOG_INFO() << "[Client ICD] Descriptor update template destroyed\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkUpdateDescriptorSetWithTemplate(
+    VkDevice device,
+    VkDescriptorSet descriptorSet,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    const void* pData) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkUpdateDescriptorSetWithTemplate called\n";
+
+    if (descriptorSet == VK_NULL_HANDLE || descriptorUpdateTemplate == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Null handles passed to vkUpdateDescriptorSetWithTemplate\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkUpdateDescriptorSetWithTemplate\n";
+        return;
+    }
+
+    VkDescriptorSet remote_set = g_pipeline_state.get_remote_descriptor_set(descriptorSet);
+    VkDescriptorUpdateTemplate remote_template =
+        g_pipeline_state.get_remote_descriptor_update_template(descriptorUpdateTemplate);
+    DescriptorUpdateTemplateInfo tmpl_info = {};
+    if (!g_pipeline_state.get_descriptor_update_template_info(descriptorUpdateTemplate, &tmpl_info)) {
+        ICD_LOG_ERROR() << "[Client ICD] Descriptor update template metadata not found\n";
+        return;
+    }
+
+    if (remote_set == VK_NULL_HANDLE || remote_template == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote descriptor handles missing for template update\n";
+        return;
+    }
+
+    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET) {
+        ICD_LOG_ERROR() << "[Client ICD] Unsupported template type for vkUpdateDescriptorSetWithTemplate\n";
+        return;
+    }
+
+    std::vector<PreparedWrite> prepared;
+    if (!build_writes_from_template_data(tmpl_info, remote_set, pData, &prepared)) {
+        return;
+    }
+
+    if (prepared.empty()) {
+        ICD_LOG_INFO() << "[Client ICD] Template update has no entries\n";
+        return;
+    }
+
+    std::vector<VkWriteDescriptorSet> pending_writes;
+    pending_writes.reserve(prepared.size());
+    for (auto& write : prepared) {
+        const VkDescriptorBufferInfo* buffer_ptr = write.buffers.empty() ? nullptr : write.buffers.data();
+        const VkDescriptorImageInfo* image_ptr = write.images.empty() ? nullptr : write.images.data();
+        const VkBufferView* texel_ptr = write.texel_views.empty() ? nullptr : write.texel_views.data();
+
+        bool changed = g_pipeline_state.update_descriptor_write_cache(descriptorSet,
+                                                                      write.write,
+                                                                      buffer_ptr,
+                                                                      image_ptr,
+                                                                      texel_ptr);
+        if (!changed) {
+            continue;
+        }
+
+        pending_writes.push_back(write.write);
+        VkWriteDescriptorSet& pending = pending_writes.back();
+        pending.pBufferInfo = buffer_ptr;
+        pending.pImageInfo = image_ptr;
+        pending.pTexelBufferView = texel_ptr;
+    }
+
+    if (pending_writes.empty()) {
+        ICD_LOG_INFO() << "[Client ICD] Template update skipped (no changes)\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkUpdateDescriptorSets(&g_ring,
+                                    icd_device->remote_handle,
+                                    static_cast<uint32_t>(pending_writes.size()),
+                                    pending_writes.data(),
+                                    0,
+                                    nullptr);
+    ICD_LOG_INFO() << "[Client ICD] Template descriptor update applied (" << pending_writes.size()
+              << " writes)\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSet(
+    VkCommandBuffer commandBuffer,
+    VkPipelineBindPoint pipelineBindPoint,
+    VkPipelineLayout layout,
+    uint32_t set,
+    uint32_t descriptorWriteCount,
+    const VkWriteDescriptorSet* pDescriptorWrites) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdPushDescriptorSet called (writes=" << descriptorWriteCount << ")\n";
+
+    if (descriptorWriteCount == 0) {
+        return;
+    }
+    if (!pDescriptorWrites) {
+        ICD_LOG_ERROR() << "[Client ICD] pDescriptorWrites is NULL\n";
+        return;
+    }
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdPushDescriptorSet")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkDevice device = g_command_buffer_state.get_buffer_device(commandBuffer);
+    if (!device_supports_push_descriptors(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptors not enabled on this device\n";
+        return;
+    }
+
+    if (set != 0) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptors only support set 0\n";
+        return;
+    }
+
+    uint32_t total_descriptors = 0;
+    for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
+        total_descriptors += pDescriptorWrites[i].descriptorCount;
+    }
+    const uint32_t max_push = get_push_descriptor_limit(device);
+    if (max_push > 0 && total_descriptors > max_push) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptor count " << total_descriptors
+                  << " exceeds device limit " << max_push << "\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cmd = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cmd == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer not tracked\n";
+        return;
+    }
+
+    VkPipelineLayout remote_layout = g_pipeline_state.get_remote_pipeline_layout(layout);
+    if (remote_layout == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Pipeline layout not tracked for push descriptors\n";
+        return;
+    }
+
+    std::vector<PreparedWrite> prepared_writes;
+    prepared_writes.reserve(descriptorWriteCount);
+
+    for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
+        const VkWriteDescriptorSet& src = pDescriptorWrites[i];
+        PreparedWrite current = {};
+        current.write = src;
+        current.write.dstSet = VK_NULL_HANDLE; // Unused for push descriptors
+
+        switch (src.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            if (!src.pBufferInfo) {
+                ICD_LOG_ERROR() << "[Client ICD] Missing buffer info for push descriptor write\n";
+                return;
+            }
+            current.buffers.resize(src.descriptorCount);
+            for (uint32_t j = 0; j < src.descriptorCount; ++j) {
+                current.buffers[j] = src.pBufferInfo[j];
+                if (current.buffers[j].buffer != VK_NULL_HANDLE) {
+                    current.buffers[j].buffer =
+                        g_resource_state.get_remote_buffer(src.pBufferInfo[j].buffer);
+                    if (current.buffers[j].buffer == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked for push descriptor\n";
+                        return;
+                    }
+                }
+            }
+            current.write.pBufferInfo = current.buffers.data();
+            current.write.pImageInfo = nullptr;
+            current.write.pTexelBufferView = nullptr;
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            if (!src.pImageInfo) {
+                ICD_LOG_ERROR() << "[Client ICD] Missing image info for push descriptor write\n";
+                return;
+            }
+            current.images.resize(src.descriptorCount);
+            for (uint32_t j = 0; j < src.descriptorCount; ++j) {
+                current.images[j] = src.pImageInfo[j];
+                if (current.images[j].imageView != VK_NULL_HANDLE) {
+                    current.images[j].imageView =
+                        g_resource_state.get_remote_image_view(src.pImageInfo[j].imageView);
+                    if (current.images[j].imageView == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Image view not tracked for push descriptor\n";
+                        return;
+                    }
+                }
+                if (current.images[j].sampler != VK_NULL_HANDLE) {
+                    current.images[j].sampler =
+                        g_resource_state.get_remote_sampler(src.pImageInfo[j].sampler);
+                    if (current.images[j].sampler == VK_NULL_HANDLE) {
+                        ICD_LOG_ERROR() << "[Client ICD] Sampler not tracked for push descriptor\n";
+                        return;
+                    }
+                }
+            }
+            current.write.pBufferInfo = nullptr;
+            current.write.pImageInfo = current.images.data();
+            current.write.pTexelBufferView = nullptr;
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            if (!src.pTexelBufferView) {
+                ICD_LOG_ERROR() << "[Client ICD] Missing texel buffer view for push descriptor write\n";
+                return;
+            }
+            current.texel_views.resize(src.descriptorCount);
+            for (uint32_t j = 0; j < src.descriptorCount; ++j) {
+                if (src.pTexelBufferView[j] == VK_NULL_HANDLE) {
+                    current.texel_views[j] = VK_NULL_HANDLE;
+                    continue;
+                }
+                current.texel_views[j] =
+                    g_resource_state.get_remote_buffer_view(src.pTexelBufferView[j]);
+                if (current.texel_views[j] == VK_NULL_HANDLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] Buffer view not tracked for push descriptor\n";
+                    return;
+                }
+            }
+            current.write.pBufferInfo = nullptr;
+            current.write.pImageInfo = nullptr;
+            current.write.pTexelBufferView = current.texel_views.data();
+            break;
+        default:
+            ICD_LOG_ERROR() << "[Client ICD] Unsupported descriptor type in push descriptor write\n";
+            return;
+        }
+
+        prepared_writes.push_back(std::move(current));
+    }
+
+    std::vector<VkWriteDescriptorSet> pending;
+    pending.reserve(prepared_writes.size());
+    for (auto& prepared : prepared_writes) {
+        pending.push_back(prepared.write);
+        VkWriteDescriptorSet& write = pending.back();
+        write.pBufferInfo = prepared.buffers.empty() ? nullptr : prepared.buffers.data();
+        write.pImageInfo = prepared.images.empty() ? nullptr : prepared.images.data();
+        write.pTexelBufferView = prepared.texel_views.empty() ? nullptr : prepared.texel_views.data();
+    }
+
+    vn_async_vkCmdPushDescriptorSet(&g_ring,
+                                    remote_cmd,
+                                    pipelineBindPoint,
+                                    remote_layout,
+                                    set,
+                                    static_cast<uint32_t>(pending.size()),
+                                    pending.data());
+    ICD_LOG_INFO() << "[Client ICD] Pushed " << pending.size() << " descriptor writes\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetKHR(
+    VkCommandBuffer commandBuffer,
+    VkPipelineBindPoint pipelineBindPoint,
+    VkPipelineLayout layout,
+    uint32_t set,
+    uint32_t descriptorWriteCount,
+    const VkWriteDescriptorSet* pDescriptorWrites) {
+    vkCmdPushDescriptorSet(commandBuffer,
+                           pipelineBindPoint,
+                           layout,
+                           set,
+                           descriptorWriteCount,
+                           pDescriptorWrites);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplate(
+    VkCommandBuffer commandBuffer,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    VkPipelineLayout layout,
+    uint32_t set,
+    const void* pData) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdPushDescriptorSetWithTemplate called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdPushDescriptorSetWithTemplate")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkDevice device = g_command_buffer_state.get_buffer_device(commandBuffer);
+    if (!device_supports_push_descriptors(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptors not enabled on this device\n";
+        return;
+    }
+
+    if (set != 0) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptors only support set 0\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cmd = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cmd == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer not tracked\n";
+        return;
+    }
+
+    VkPipelineLayout remote_layout = g_pipeline_state.get_remote_pipeline_layout(layout);
+    if (remote_layout == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Pipeline layout not tracked for push descriptors\n";
+        return;
+    }
+
+    VkDescriptorUpdateTemplate remote_template =
+        g_pipeline_state.get_remote_descriptor_update_template(descriptorUpdateTemplate);
+    DescriptorUpdateTemplateInfo tmpl_info = {};
+    if (!g_pipeline_state.get_descriptor_update_template_info(descriptorUpdateTemplate, &tmpl_info)) {
+        ICD_LOG_ERROR() << "[Client ICD] Descriptor update template metadata not found\n";
+        return;
+    }
+
+    if (remote_template == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote descriptor update template handle missing\n";
+        return;
+    }
+(void)remote_template;
+
+    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET) {
+        ICD_LOG_ERROR() << "[Client ICD] Unsupported template type for push descriptors\n";
+        return;
+    }
+
+    if (tmpl_info.set_number != set) {
+        ICD_LOG_ERROR() << "[Client ICD] Template set index " << tmpl_info.set_number
+                  << " does not match requested set " << set << "\n";
+        return;
+    }
+
+    if (tmpl_info.pipeline_layout != VK_NULL_HANDLE && tmpl_info.pipeline_layout != layout) {
+        ICD_LOG_WARN() << "[Client ICD] Pipeline layout differs from template definition; continuing\n";
+    }
+
+    uint32_t total_descriptors = 0;
+    for (const auto& entry : tmpl_info.entries) {
+        total_descriptors += entry.descriptorCount;
+    }
+    const uint32_t max_push = get_push_descriptor_limit(device);
+    if (max_push > 0 && total_descriptors > max_push) {
+        ICD_LOG_ERROR() << "[Client ICD] Push descriptor count " << total_descriptors
+                  << " exceeds device limit " << max_push << "\n";
+        return;
+    }
+
+    std::vector<PreparedWrite> prepared;
+    if (!build_writes_from_template_data(tmpl_info, VK_NULL_HANDLE, pData, &prepared)) {
+        return;
+    }
+
+    std::vector<VkWriteDescriptorSet> pending;
+    pending.reserve(prepared.size());
+    for (auto& write : prepared) {
+        pending.push_back(write.write);
+        VkWriteDescriptorSet& pending_write = pending.back();
+        pending_write.pBufferInfo = write.buffers.empty() ? nullptr : write.buffers.data();
+        pending_write.pImageInfo = write.images.empty() ? nullptr : write.images.data();
+        pending_write.pTexelBufferView = write.texel_views.empty() ? nullptr : write.texel_views.data();
+    }
+
+    vn_async_vkCmdPushDescriptorSet(&g_ring,
+                                    remote_cmd,
+                                    tmpl_info.bind_point,
+                                    remote_layout,
+                                    set,
+                                    static_cast<uint32_t>(pending.size()),
+                                    pending.data());
+    ICD_LOG_INFO() << "[Client ICD] Pushed " << pending.size()
+              << " descriptor writes via template\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplateKHR(
+    VkCommandBuffer commandBuffer,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    VkPipelineLayout layout,
+    uint32_t set,
+    const void* pData) {
+    vkCmdPushDescriptorSetWithTemplate(commandBuffer,
+                                       descriptorUpdateTemplate,
+                                       layout,
+                                       set,
+                                       pData);
 }
 
 } // extern "C"

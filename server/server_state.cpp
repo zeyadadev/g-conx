@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <cstdlib>
 
 #define SERVER_LOG_ERROR() VP_LOG_STREAM_ERROR(SERVER)
 #define SERVER_LOG_INFO() VP_LOG_STREAM_INFO(SERVER)
@@ -453,6 +454,62 @@ VkDescriptorSetLayout server_state_get_real_descriptor_set_layout(
     const ServerState* state,
     VkDescriptorSetLayout layout) {
     return state->resource_tracker.get_real_descriptor_set_layout(layout);
+}
+
+VkDescriptorUpdateTemplate server_state_create_descriptor_update_template(
+    ServerState* state,
+    VkDevice device,
+    const VkDescriptorUpdateTemplateCreateInfo* info) {
+    if (!info) {
+        return VK_NULL_HANDLE;
+    }
+    VkDevice real_device = server_state_get_real_device(state, device);
+    return state->resource_tracker.create_descriptor_update_template(device, real_device, *info);
+}
+
+void server_state_destroy_descriptor_update_template(ServerState* state,
+                                                     VkDescriptorUpdateTemplate tmpl) {
+    state->resource_tracker.destroy_descriptor_update_template(tmpl);
+}
+
+VkDescriptorUpdateTemplate server_state_get_real_descriptor_update_template(
+    const ServerState* state,
+    VkDescriptorUpdateTemplate tmpl) {
+    return state->resource_tracker.get_real_descriptor_update_template(tmpl);
+}
+
+bool server_state_get_descriptor_update_template_info(const ServerState* state,
+                                                      VkDescriptorUpdateTemplate tmpl,
+                                                      DescriptorUpdateTemplateInfoBridge* out_info) {
+    if (!state || !out_info) {
+        return false;
+    }
+    venus_plus::ResourceTracker::DescriptorUpdateTemplateResource info = {};
+    if (!state->resource_tracker.get_descriptor_update_template_info(tmpl, &info)) {
+        return false;
+    }
+
+    out_info->template_type = info.template_type;
+    out_info->bind_point = info.bind_point;
+    out_info->set_layout = info.set_layout;
+    out_info->pipeline_layout = info.pipeline_layout;
+    out_info->set_number = info.set_number;
+    out_info->entry_count = static_cast<uint32_t>(info.entries.size());
+    if (out_info->entry_count > 0) {
+        out_info->entries = static_cast<VkDescriptorUpdateTemplateEntry*>(
+            std::calloc(out_info->entry_count, sizeof(VkDescriptorUpdateTemplateEntry)));
+        if (!out_info->entries) {
+            out_info->entry_count = 0;
+            out_info->entries = nullptr;
+            return false;
+        }
+        for (uint32_t i = 0; i < out_info->entry_count; ++i) {
+            out_info->entries[i] = info.entries[i];
+        }
+    } else {
+        out_info->entries = nullptr;
+    }
+    return true;
 }
 
 VkDescriptorPool server_state_create_descriptor_pool(ServerState* state,
@@ -1337,6 +1394,31 @@ void server_state_bridge_destroy_descriptor_set_layout(struct ServerState* state
 VkDescriptorSetLayout server_state_bridge_get_real_descriptor_set_layout(const struct ServerState* state,
                                                                          VkDescriptorSetLayout layout) {
     return venus_plus::server_state_get_real_descriptor_set_layout(state, layout);
+}
+
+VkDescriptorUpdateTemplate server_state_bridge_create_descriptor_update_template(
+    struct ServerState* state,
+    VkDevice device,
+    const VkDescriptorUpdateTemplateCreateInfo* info) {
+    return venus_plus::server_state_create_descriptor_update_template(state, device, info);
+}
+
+void server_state_bridge_destroy_descriptor_update_template(struct ServerState* state,
+                                                            VkDescriptorUpdateTemplate tmpl) {
+    venus_plus::server_state_destroy_descriptor_update_template(state, tmpl);
+}
+
+VkDescriptorUpdateTemplate server_state_bridge_get_real_descriptor_update_template(
+    const struct ServerState* state,
+    VkDescriptorUpdateTemplate tmpl) {
+    return venus_plus::server_state_get_real_descriptor_update_template(state, tmpl);
+}
+
+bool server_state_bridge_get_descriptor_update_template_info(
+    const struct ServerState* state,
+    VkDescriptorUpdateTemplate tmpl,
+    struct DescriptorUpdateTemplateInfoBridge* out_info) {
+    return venus_plus::server_state_get_descriptor_update_template_info(state, tmpl, out_info);
 }
 
 VkDescriptorPool server_state_bridge_create_descriptor_pool(struct ServerState* state,

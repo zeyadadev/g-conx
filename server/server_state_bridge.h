@@ -9,6 +9,15 @@ extern "C" {
 #endif
 
 struct ServerState;
+struct DescriptorUpdateTemplateInfoBridge {
+    VkDescriptorUpdateTemplateType template_type;
+    VkPipelineBindPoint bind_point;
+    VkDescriptorSetLayout set_layout;
+    VkPipelineLayout pipeline_layout;
+    uint32_t set_number;
+    uint32_t entry_count;
+    VkDescriptorUpdateTemplateEntry* entries; // allocated by bridge, freed by caller
+};
 
 VkInstance server_state_bridge_alloc_instance(struct ServerState* state);
 void server_state_bridge_remove_instance(struct ServerState* state, VkInstance instance);
@@ -47,6 +56,16 @@ void server_state_bridge_destroy_descriptor_set_layout(struct ServerState* state
                                                        VkDescriptorSetLayout layout);
 VkDescriptorSetLayout server_state_bridge_get_real_descriptor_set_layout(const struct ServerState* state,
                                                                          VkDescriptorSetLayout layout);
+VkDescriptorUpdateTemplate server_state_bridge_create_descriptor_update_template(struct ServerState* state,
+                                                                                 VkDevice device,
+                                                                                 const VkDescriptorUpdateTemplateCreateInfo* info);
+void server_state_bridge_destroy_descriptor_update_template(struct ServerState* state,
+                                                            VkDescriptorUpdateTemplate tmpl);
+VkDescriptorUpdateTemplate server_state_bridge_get_real_descriptor_update_template(const struct ServerState* state,
+                                                                                   VkDescriptorUpdateTemplate tmpl);
+bool server_state_bridge_get_descriptor_update_template_info(const struct ServerState* state,
+                                                             VkDescriptorUpdateTemplate tmpl,
+                                                             struct DescriptorUpdateTemplateInfoBridge* out_info);
 VkDescriptorPool server_state_bridge_create_descriptor_pool(struct ServerState* state,
                                                             VkDevice device,
                                                             const VkDescriptorPoolCreateInfo* info);

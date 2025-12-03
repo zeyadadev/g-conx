@@ -196,6 +196,143 @@ static bool translate_rendering_attachment(struct ServerState* state,
     return true;
 }
 
+static bool translate_descriptor_write(struct ServerState* state,
+                                       const VkWriteDescriptorSet* src,
+                                       VkWriteDescriptorSet* dst,
+                                       VkDescriptorBufferInfo** out_buffers,
+                                       VkDescriptorImageInfo** out_images,
+                                       VkBufferView** out_texel_views,
+                                       const char* name) {
+    if (!src || !dst) {
+        return false;
+    }
+    *dst = *src;
+    *out_buffers = NULL;
+    *out_images = NULL;
+    *out_texel_views = NULL;
+
+    switch (src->descriptorType) {
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+        if (!src->pBufferInfo || src->descriptorCount == 0) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: %s missing buffer info", name);
+            return false;
+        }
+        *out_buffers =
+            calloc(src->descriptorCount ? src->descriptorCount : 1, sizeof(VkDescriptorBufferInfo));
+        if (!*out_buffers) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in %s", name);
+            return false;
+        }
+        for (uint32_t i = 0; i < src->descriptorCount; ++i) {
+            (*out_buffers)[i] = src->pBufferInfo[i];
+            (*out_buffers)[i].buffer =
+                server_state_bridge_get_real_buffer(state, src->pBufferInfo[i].buffer);
+            if ((*out_buffers)[i].buffer == VK_NULL_HANDLE) {
+                VP_LOG_ERROR(SERVER,
+                             "[Venus Server]   -> ERROR: Unknown buffer in %s write %u",
+                             name,
+                             i);
+                free(*out_buffers);
+                *out_buffers = NULL;
+                return false;
+            }
+        }
+        dst->pBufferInfo = *out_buffers;
+        dst->pImageInfo = NULL;
+        dst->pTexelBufferView = NULL;
+        break;
+    case VK_DESCRIPTOR_TYPE_SAMPLER:
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+        if (!src->pImageInfo || src->descriptorCount == 0) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: %s missing image info", name);
+            return false;
+        }
+        *out_images =
+            calloc(src->descriptorCount ? src->descriptorCount : 1, sizeof(VkDescriptorImageInfo));
+        if (!*out_images) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in %s", name);
+            return false;
+        }
+        for (uint32_t i = 0; i < src->descriptorCount; ++i) {
+            (*out_images)[i] = src->pImageInfo[i];
+            if ((*out_images)[i].imageView != VK_NULL_HANDLE) {
+                (*out_images)[i].imageView =
+                    server_state_bridge_get_real_image_view(state, src->pImageInfo[i].imageView);
+                if ((*out_images)[i].imageView == VK_NULL_HANDLE) {
+                    VP_LOG_ERROR(SERVER,
+                                 "[Venus Server]   -> ERROR: Unknown image view in %s write %u",
+                                 name,
+                                 i);
+                    free(*out_images);
+                    *out_images = NULL;
+                    return false;
+                }
+            }
+            if ((*out_images)[i].sampler != VK_NULL_HANDLE) {
+                (*out_images)[i].sampler =
+                    server_state_bridge_get_real_sampler(state, src->pImageInfo[i].sampler);
+                if ((*out_images)[i].sampler == VK_NULL_HANDLE) {
+                    VP_LOG_ERROR(SERVER,
+                                 "[Venus Server]   -> ERROR: Unknown sampler in %s write %u",
+                                 name,
+                                 i);
+                    free(*out_images);
+                    *out_images = NULL;
+                    return false;
+                }
+            }
+        }
+        dst->pBufferInfo = NULL;
+        dst->pImageInfo = *out_images;
+        dst->pTexelBufferView = NULL;
+        break;
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        if (!src->pTexelBufferView || src->descriptorCount == 0) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: %s missing texel buffer view", name);
+            return false;
+        }
+        *out_texel_views =
+            calloc(src->descriptorCount ? src->descriptorCount : 1, sizeof(VkBufferView));
+        if (!*out_texel_views) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in %s", name);
+            return false;
+        }
+        for (uint32_t i = 0; i < src->descriptorCount; ++i) {
+            (*out_texel_views)[i] =
+                server_state_bridge_get_real_buffer_view(state, src->pTexelBufferView[i]);
+            if ((*out_texel_views)[i] == VK_NULL_HANDLE && src->pTexelBufferView[i] != VK_NULL_HANDLE) {
+                VP_LOG_ERROR(SERVER,
+                             "[Venus Server]   -> ERROR: Unknown buffer view in %s write %u",
+                             name,
+                             i);
+                free(*out_texel_views);
+                *out_texel_views = NULL;
+                return false;
+            }
+        }
+        dst->pBufferInfo = NULL;
+        dst->pImageInfo = NULL;
+        dst->pTexelBufferView = *out_texel_views;
+        break;
+    default:
+        VP_LOG_ERROR(SERVER,
+                     "[Venus Server]   -> ERROR: Unsupported descriptor type %d in %s",
+                     src->descriptorType,
+                     name);
+        return false;
+    }
+
+    dst->dstSet = VK_NULL_HANDLE; // push descriptors do not use a descriptor set
+    return true;
+}
+
 static VkBufferCopy* clone_buffer_copy2_array(uint32_t count, const VkBufferCopy2* src) {
     if (!count || !src)
         return NULL;
@@ -1326,6 +1463,41 @@ static void server_dispatch_vkDestroyDescriptorSetLayout(
     }
 }
 
+static void server_dispatch_vkCreateDescriptorUpdateTemplate(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCreateDescriptorUpdateTemplate* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateDescriptorUpdateTemplate");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCreateInfo || !args->pDescriptorUpdateTemplate) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing create info or output pointer");
+        return;
+    }
+
+    VkDescriptorUpdateTemplate tmpl =
+        server_state_bridge_create_descriptor_update_template(state, args->device, args->pCreateInfo);
+    if (tmpl == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to create descriptor update template");
+        return;
+    }
+    *args->pDescriptorUpdateTemplate = tmpl;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Descriptor update template created: %p", (void*)tmpl);
+}
+
+static void server_dispatch_vkDestroyDescriptorUpdateTemplate(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkDestroyDescriptorUpdateTemplate* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkDestroyDescriptorUpdateTemplate (template: %p)",
+           (void*)args->descriptorUpdateTemplate);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (args->descriptorUpdateTemplate != VK_NULL_HANDLE) {
+        server_state_bridge_destroy_descriptor_update_template(state, args->descriptorUpdateTemplate);
+    }
+}
+
 static void server_dispatch_vkCreateDescriptorPool(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCreateDescriptorPool* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateDescriptorPool");
@@ -1529,6 +1701,317 @@ cleanup:
     free(writes);
     free(copies);
     (void)result;
+}
+
+static void server_dispatch_vkCmdPushDescriptorSet(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdPushDescriptorSet* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushDescriptorSet (writes=%u)",
+           args->descriptorWriteCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdPushDescriptorSet")) {
+        return;
+    }
+
+    if (args->set != 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Push descriptors support set 0 only");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    VkCommandBuffer real_cmd =
+        server_state_bridge_get_real_command_buffer(state, args->commandBuffer);
+    VkPipelineLayout real_layout =
+        server_state_bridge_get_real_pipeline_layout(state, args->layout);
+
+    if (real_cmd == VK_NULL_HANDLE || real_layout == VK_NULL_HANDLE) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    VkWriteDescriptorSet* writes = NULL;
+    VkDescriptorBufferInfo** buffer_arrays = NULL;
+    VkDescriptorImageInfo** image_arrays = NULL;
+    VkBufferView** texel_arrays = NULL;
+
+    if (args->descriptorWriteCount > 0) {
+        writes = calloc(args->descriptorWriteCount, sizeof(*writes));
+        buffer_arrays = calloc(args->descriptorWriteCount, sizeof(*buffer_arrays));
+        image_arrays = calloc(args->descriptorWriteCount, sizeof(*image_arrays));
+        texel_arrays = calloc(args->descriptorWriteCount, sizeof(*texel_arrays));
+        if (!writes || !buffer_arrays || !image_arrays || !texel_arrays) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for push descriptors");
+            goto cleanup;
+        }
+    }
+
+    for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+        if (!translate_descriptor_write(state,
+                                        &args->pDescriptorWrites[i],
+                                        &writes[i],
+                                        &buffer_arrays[i],
+                                        &image_arrays[i],
+                                        &texel_arrays[i],
+                                        "vkCmdPushDescriptorSet")) {
+            server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+            goto cleanup;
+        }
+    }
+
+    vkCmdPushDescriptorSet(real_cmd,
+                           args->pipelineBindPoint,
+                           real_layout,
+                           args->set,
+                           args->descriptorWriteCount,
+                           writes);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Push descriptors recorded");
+
+cleanup:
+    if (buffer_arrays) {
+        for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+            free(buffer_arrays[i]);
+        }
+    }
+    if (image_arrays) {
+        for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+            free(image_arrays[i]);
+        }
+    }
+    if (texel_arrays) {
+        for (uint32_t i = 0; i < args->descriptorWriteCount; ++i) {
+            free(texel_arrays[i]);
+        }
+    }
+    free(writes);
+    free(buffer_arrays);
+    free(image_arrays);
+    free(texel_arrays);
+}
+
+static void server_dispatch_vkCmdPushDescriptorSetWithTemplate(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdPushDescriptorSetWithTemplate* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushDescriptorSetWithTemplate");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdPushDescriptorSetWithTemplate")) {
+        return;
+    }
+
+    struct DescriptorUpdateTemplateInfoBridge tmpl_info = {};
+    if (!server_state_bridge_get_descriptor_update_template_info(
+            state, args->descriptorUpdateTemplate, &tmpl_info)) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Template metadata not found");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unsupported template type for push descriptors");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    if (args->set != tmpl_info.set_number) {
+        VP_LOG_ERROR(SERVER,
+                     "[Venus Server]   -> ERROR: Template set %u does not match requested set %u",
+                     tmpl_info.set_number,
+                     args->set);
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    if (args->set != 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Push descriptors support set 0 only");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    VkCommandBuffer real_cmd =
+        server_state_bridge_get_real_command_buffer(state, args->commandBuffer);
+    VkPipelineLayout real_layout =
+        server_state_bridge_get_real_pipeline_layout(state, args->layout);
+
+    if (real_cmd == VK_NULL_HANDLE || real_layout == VK_NULL_HANDLE) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    const uint8_t* data_bytes = (const uint8_t*)args->pData;
+    bool success = true;
+    const uint32_t write_count = tmpl_info.entry_count;
+    VkWriteDescriptorSet* writes =
+        write_count ? calloc(write_count, sizeof(*writes)) : NULL;
+    VkDescriptorBufferInfo** buffer_arrays =
+        write_count ? calloc(write_count, sizeof(*buffer_arrays)) : NULL;
+    VkDescriptorImageInfo** image_arrays =
+        write_count ? calloc(write_count, sizeof(*image_arrays)) : NULL;
+    VkBufferView** texel_arrays =
+        write_count ? calloc(write_count, sizeof(*texel_arrays)) : NULL;
+
+    if ((write_count && (!writes || !buffer_arrays || !image_arrays || !texel_arrays))) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for push descriptor template");
+        success = false;
+        goto cleanup;
+    }
+
+    for (uint32_t i = 0; i < write_count; ++i) {
+        const VkDescriptorUpdateTemplateEntry* entry = &tmpl_info.entries[i];
+        VkWriteDescriptorSet write = {};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstBinding = entry->dstBinding;
+        write.dstArrayElement = entry->dstArrayElement;
+        write.descriptorCount = entry->descriptorCount;
+        write.descriptorType = entry->descriptorType;
+        write.dstSet = VK_NULL_HANDLE;
+
+        switch (entry->descriptorType) {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            buffer_arrays[i] =
+                calloc(entry->descriptorCount ? entry->descriptorCount : 1, sizeof(VkDescriptorBufferInfo));
+            if (!buffer_arrays[i]) {
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in push template buffer translation");
+                success = false;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < entry->descriptorCount; ++j) {
+                size_t offset = (size_t)entry->offset + (size_t)entry->stride * j;
+                const VkDescriptorBufferInfo* src =
+                    data_bytes ? (const VkDescriptorBufferInfo*)(data_bytes + offset) : NULL;
+                if (!src) {
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing buffer info in push template");
+                    success = false;
+                    goto cleanup;
+                }
+                buffer_arrays[i][j] = *src;
+                buffer_arrays[i][j].buffer =
+                    server_state_bridge_get_real_buffer(state, src->buffer);
+                if (buffer_arrays[i][j].buffer == VK_NULL_HANDLE && src->buffer != VK_NULL_HANDLE) {
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown buffer in push template");
+                    success = false;
+                    goto cleanup;
+                }
+            }
+            write.pBufferInfo = buffer_arrays[i];
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            image_arrays[i] =
+                calloc(entry->descriptorCount ? entry->descriptorCount : 1, sizeof(VkDescriptorImageInfo));
+            if (!image_arrays[i]) {
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in push template image translation");
+                success = false;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < entry->descriptorCount; ++j) {
+                size_t offset = (size_t)entry->offset + (size_t)entry->stride * j;
+                const VkDescriptorImageInfo* src =
+                    data_bytes ? (const VkDescriptorImageInfo*)(data_bytes + offset) : NULL;
+                if (!src) {
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing image info in push template");
+                    success = false;
+                    goto cleanup;
+                }
+                image_arrays[i][j] = *src;
+                if (image_arrays[i][j].imageView != VK_NULL_HANDLE) {
+                    image_arrays[i][j].imageView =
+                        server_state_bridge_get_real_image_view(state, src->imageView);
+                    if (image_arrays[i][j].imageView == VK_NULL_HANDLE) {
+                        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown image view in push template");
+                        success = false;
+                        goto cleanup;
+                    }
+                }
+                if (image_arrays[i][j].sampler != VK_NULL_HANDLE) {
+                    image_arrays[i][j].sampler =
+                        server_state_bridge_get_real_sampler(state, src->sampler);
+                    if (image_arrays[i][j].sampler == VK_NULL_HANDLE) {
+                        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown sampler in push template");
+                        success = false;
+                        goto cleanup;
+                    }
+                }
+            }
+            write.pImageInfo = image_arrays[i];
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            texel_arrays[i] =
+                calloc(entry->descriptorCount ? entry->descriptorCount : 1, sizeof(VkBufferView));
+            if (!texel_arrays[i]) {
+                VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory in push template texel translation");
+                success = false;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < entry->descriptorCount; ++j) {
+                size_t offset = (size_t)entry->offset + (size_t)entry->stride * j;
+                const VkBufferView* src =
+                    data_bytes ? (const VkBufferView*)(data_bytes + offset) : NULL;
+                if (!src) {
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing texel buffer view in push template");
+                    success = false;
+                    goto cleanup;
+                }
+                texel_arrays[i][j] =
+                    server_state_bridge_get_real_buffer_view(state, *src);
+                if (texel_arrays[i][j] == VK_NULL_HANDLE && *src != VK_NULL_HANDLE) {
+                    VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown buffer view in push template");
+                    success = false;
+                    goto cleanup;
+                }
+            }
+            write.pTexelBufferView = texel_arrays[i];
+            break;
+        default:
+            VP_LOG_ERROR(SERVER,
+                         "[Venus Server]   -> ERROR: Unsupported descriptor type %d in push template",
+                         entry->descriptorType);
+            success = false;
+            goto cleanup;
+        }
+
+        writes[i] = write;
+    }
+
+    vkCmdPushDescriptorSet(real_cmd,
+                           tmpl_info.bind_point,
+                           real_layout,
+                           args->set,
+                           write_count,
+                           writes);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Push descriptors recorded via template");
+
+cleanup:
+    if (buffer_arrays) {
+        for (uint32_t i = 0; i < write_count; ++i) {
+            free(buffer_arrays[i]);
+        }
+    }
+    if (image_arrays) {
+        for (uint32_t i = 0; i < write_count; ++i) {
+            free(image_arrays[i]);
+        }
+    }
+    if (texel_arrays) {
+        for (uint32_t i = 0; i < write_count; ++i) {
+            free(texel_arrays[i]);
+        }
+    }
+    free(writes);
+    free(buffer_arrays);
+    free(image_arrays);
+    free(texel_arrays);
+
+    if (!success) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+    }
+    free(tmpl_info.entries);
 }
 
 static void server_dispatch_vkCreatePipelineLayout(struct vn_dispatch_context* ctx,
@@ -3780,6 +4263,11 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkAllocateDescriptorSets = server_dispatch_vkAllocateDescriptorSets;
     renderer->ctx.dispatch_vkFreeDescriptorSets = server_dispatch_vkFreeDescriptorSets;
     renderer->ctx.dispatch_vkUpdateDescriptorSets = server_dispatch_vkUpdateDescriptorSets;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSet = server_dispatch_vkCmdPushDescriptorSet;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSetWithTemplate =
+        server_dispatch_vkCmdPushDescriptorSetWithTemplate;
+    renderer->ctx.dispatch_vkCreateDescriptorUpdateTemplate = server_dispatch_vkCreateDescriptorUpdateTemplate;
+    renderer->ctx.dispatch_vkDestroyDescriptorUpdateTemplate = server_dispatch_vkDestroyDescriptorUpdateTemplate;
     renderer->ctx.dispatch_vkCreatePipelineLayout = server_dispatch_vkCreatePipelineLayout;
     renderer->ctx.dispatch_vkDestroyPipelineLayout = server_dispatch_vkDestroyPipelineLayout;
     renderer->ctx.dispatch_vkCreatePipelineCache = server_dispatch_vkCreatePipelineCache;

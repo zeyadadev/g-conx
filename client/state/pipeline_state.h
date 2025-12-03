@@ -17,6 +17,7 @@ struct ShaderModuleInfo {
 struct DescriptorSetLayoutInfo {
     VkDevice device = VK_NULL_HANDLE;
     VkDescriptorSetLayout remote_handle = VK_NULL_HANDLE;
+    bool is_push_descriptor = false;
 };
 
 struct DescriptorPoolInfo {
@@ -65,15 +66,30 @@ struct PipelineInfo {
     VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 };
 
+struct DescriptorUpdateTemplateInfo {
+    VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorUpdateTemplate remote_handle = VK_NULL_HANDLE;
+    VkDescriptorUpdateTemplateType template_type = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET;
+    VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    std::vector<VkDescriptorUpdateTemplateEntry> entries;
+    VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
+    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+    uint32_t set_number = 0;
+};
+
 class PipelineState {
 public:
     void add_shader_module(VkDevice device, VkShaderModule local, VkShaderModule remote, size_t code_size);
     void remove_shader_module(VkShaderModule module);
     VkShaderModule get_remote_shader_module(VkShaderModule module) const;
 
-    void add_descriptor_set_layout(VkDevice device, VkDescriptorSetLayout local, VkDescriptorSetLayout remote);
+    void add_descriptor_set_layout(VkDevice device,
+                                   VkDescriptorSetLayout local,
+                                   VkDescriptorSetLayout remote,
+                                   const VkDescriptorSetLayoutCreateInfo* info);
     void remove_descriptor_set_layout(VkDescriptorSetLayout layout);
     VkDescriptorSetLayout get_remote_descriptor_set_layout(VkDescriptorSetLayout layout) const;
+    bool is_push_descriptor_layout(VkDescriptorSetLayout layout) const;
 
     void add_descriptor_pool(VkDevice device,
                              VkDescriptorPool local,
@@ -124,6 +140,15 @@ public:
     VkPipelineCache get_remote_pipeline_cache(VkPipelineCache cache) const;
     VkDevice get_pipeline_cache_device(VkPipelineCache cache) const;
 
+    void add_descriptor_update_template(VkDevice device,
+                                        VkDescriptorUpdateTemplate local,
+                                        VkDescriptorUpdateTemplate remote,
+                                        const VkDescriptorUpdateTemplateCreateInfo* info);
+    void remove_descriptor_update_template(VkDevice device, VkDescriptorUpdateTemplate tmpl);
+    VkDescriptorUpdateTemplate get_remote_descriptor_update_template(VkDescriptorUpdateTemplate tmpl) const;
+    bool get_descriptor_update_template_info(VkDescriptorUpdateTemplate tmpl,
+                                             DescriptorUpdateTemplateInfo* out_info) const;
+
     void remove_device_resources(VkDevice device);
 
 private:
@@ -142,6 +167,7 @@ private:
     std::unordered_map<uint64_t, PipelineLayoutInfo> pipeline_layouts_;
     std::unordered_map<uint64_t, PipelineInfo> pipelines_;
     std::unordered_map<uint64_t, PipelineCacheInfo> pipeline_caches_;
+    std::unordered_map<uint64_t, DescriptorUpdateTemplateInfo> descriptor_update_templates_;
 };
 
 extern PipelineState g_pipeline_state;

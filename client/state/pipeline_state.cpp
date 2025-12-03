@@ -34,12 +34,16 @@ VkShaderModule PipelineState::get_remote_shader_module(VkShaderModule module) co
 
 void PipelineState::add_descriptor_set_layout(VkDevice device,
                                               VkDescriptorSetLayout local,
-                                              VkDescriptorSetLayout remote) {
+                                              VkDescriptorSetLayout remote,
+                                              const VkDescriptorSetLayoutCreateInfo* info) {
     std::lock_guard<std::mutex> lock(mutex_);
-    DescriptorSetLayoutInfo info = {};
-    info.device = device;
-    info.remote_handle = remote;
-    descriptor_set_layouts_[handle_key(local)] = info;
+    DescriptorSetLayoutInfo layout_info = {};
+    layout_info.device = device;
+    layout_info.remote_handle = remote;
+    if (info && (info->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR)) {
+        layout_info.is_push_descriptor = true;
+    }
+    descriptor_set_layouts_[handle_key(local)] = layout_info;
 }
 
 void PipelineState::remove_descriptor_set_layout(VkDescriptorSetLayout layout) {
@@ -54,6 +58,15 @@ VkDescriptorSetLayout PipelineState::get_remote_descriptor_set_layout(VkDescript
         return VK_NULL_HANDLE;
     }
     return it->second.remote_handle;
+}
+
+bool PipelineState::is_push_descriptor_layout(VkDescriptorSetLayout layout) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_set_layouts_.find(handle_key(layout));
+    if (it == descriptor_set_layouts_.end()) {
+        return false;
+    }
+    return it->second.is_push_descriptor;
 }
 
 void PipelineState::add_descriptor_pool(VkDevice device,
@@ -446,6 +459,65 @@ void PipelineState::remove_device_resources(VkDevice device) {
             ++it;
         }
     }
+
+    for (auto it = descriptor_update_templates_.begin(); it != descriptor_update_templates_.end();) {
+        if (it->second.device == device) {
+            it = descriptor_update_templates_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void PipelineState::add_descriptor_update_template(VkDevice device,
+                                                   VkDescriptorUpdateTemplate local,
+                                                   VkDescriptorUpdateTemplate remote,
+                                                   const VkDescriptorUpdateTemplateCreateInfo* create_info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    DescriptorUpdateTemplateInfo info = {};
+    info.device = device;
+    info.remote_handle = remote;
+    if (create_info) {
+        info.template_type = create_info->templateType;
+        info.bind_point = create_info->pipelineBindPoint;
+        info.set_layout = create_info->descriptorSetLayout;
+        info.pipeline_layout = create_info->pipelineLayout;
+        info.set_number = create_info->set;
+        if (create_info->descriptorUpdateEntryCount > 0 && create_info->pDescriptorUpdateEntries) {
+            info.entries.assign(create_info->pDescriptorUpdateEntries,
+                                create_info->pDescriptorUpdateEntries + create_info->descriptorUpdateEntryCount);
+        }
+    }
+    descriptor_update_templates_[handle_key(local)] = info;
+}
+
+void PipelineState::remove_descriptor_update_template(VkDevice device, VkDescriptorUpdateTemplate tmpl) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    descriptor_update_templates_.erase(handle_key(tmpl));
+}
+
+VkDescriptorUpdateTemplate PipelineState::get_remote_descriptor_update_template(
+    VkDescriptorUpdateTemplate tmpl) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_update_templates_.find(handle_key(tmpl));
+    if (it == descriptor_update_templates_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.remote_handle;
+}
+
+bool PipelineState::get_descriptor_update_template_info(VkDescriptorUpdateTemplate tmpl,
+                                                        DescriptorUpdateTemplateInfo* out_info) const {
+    if (!out_info) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = descriptor_update_templates_.find(handle_key(tmpl));
+    if (it == descriptor_update_templates_.end()) {
+        return false;
+    }
+    *out_info = it->second;
+    return true;
 }
 
 } // namespace venus_plus

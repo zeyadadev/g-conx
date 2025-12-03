@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <cstdint>
@@ -117,6 +118,11 @@ public:
 
     // Print comprehensive summary
     void print_summary() const {
+        const char* summary_env = std::getenv("VENUS_PROFILE_SUMMARY");
+        if (!summary_env || summary_env[0] == '\0' || summary_env[0] == '0') {
+            return;  // Disabled via env
+        }
+
         if (!inference_started_) {
             return;  // No data collected
         }

@@ -4,11 +4,15 @@ namespace venus_plus {
 
 DeviceState g_device_state;
 
-void DeviceState::add_device(VkDevice local, VkDevice remote, VkPhysicalDevice phys_dev) {
+void DeviceState::add_device(VkDevice local,
+                             VkDevice remote,
+                             VkPhysicalDevice phys_dev,
+                             uint32_t api_version) {
     DeviceEntry entry;
     entry.local_handle = local;
     entry.remote_handle = remote;
     entry.physical_device = phys_dev;
+    entry.api_version = api_version;
     devices_[local] = entry;
 }
 
@@ -41,6 +45,48 @@ DeviceEntry* DeviceState::get_device(VkDevice local) {
         return &it->second;
     }
     return nullptr;
+}
+
+void DeviceState::set_device_extensions(VkDevice device,
+                                        const char* const* names,
+                                        uint32_t count) {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return;
+    }
+    it->second.enabled_extensions.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        if (names && names[i]) {
+            it->second.enabled_extensions.emplace(names[i]);
+        }
+    }
+}
+
+bool DeviceState::is_extension_enabled(VkDevice device, const char* name) const {
+    if (!name) {
+        return false;
+    }
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return false;
+    }
+    return it->second.enabled_extensions.find(name) != it->second.enabled_extensions.end();
+}
+
+uint32_t DeviceState::get_device_api_version(VkDevice device) const {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return VK_API_VERSION_1_0;
+    }
+    return it->second.api_version;
+}
+
+VkPhysicalDevice DeviceState::get_device_physical_device(VkDevice device) const {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.physical_device;
 }
 
 void DeviceState::add_queue(VkDevice device, VkQueue local, VkQueue remote, uint32_t family, uint32_t index) {

@@ -55,6 +55,7 @@ public:
     bool has_command_buffer(VkCommandBuffer buffer) const;
     VkCommandPool get_buffer_pool(VkCommandBuffer buffer) const;
     VkCommandBuffer get_remote_command_buffer(VkCommandBuffer buffer) const;
+    VkDevice get_buffer_device(VkCommandBuffer buffer) const;
     CommandBufferLifecycleState get_buffer_state(VkCommandBuffer buffer) const;
     void set_buffer_state(VkCommandBuffer buffer, CommandBufferLifecycleState state);
     VkCommandBufferUsageFlags get_usage_flags(VkCommandBuffer buffer) const;

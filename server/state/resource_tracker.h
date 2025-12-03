@@ -12,6 +12,8 @@ namespace venus_plus {
 
 class ResourceTracker {
 public:
+    struct DescriptorUpdateTemplateResource;
+
     ResourceTracker();
 
     VkBuffer create_buffer(VkDevice client_device,
@@ -100,6 +102,14 @@ public:
     bool destroy_descriptor_set_layout(VkDescriptorSetLayout layout);
     VkDescriptorSetLayout get_real_descriptor_set_layout(VkDescriptorSetLayout layout) const;
 
+    VkDescriptorUpdateTemplate create_descriptor_update_template(VkDevice device,
+                                                                 VkDevice real_device,
+                                                                 const VkDescriptorUpdateTemplateCreateInfo& info);
+    void destroy_descriptor_update_template(VkDescriptorUpdateTemplate tmpl);
+    VkDescriptorUpdateTemplate get_real_descriptor_update_template(VkDescriptorUpdateTemplate tmpl) const;
+    bool get_descriptor_update_template_info(VkDescriptorUpdateTemplate tmpl,
+                                             DescriptorUpdateTemplateResource* out_info) const;
+
     VkDescriptorPool create_descriptor_pool(VkDevice device,
                                             VkDevice real_device,
                                             const VkDescriptorPoolCreateInfo& info);
@@ -120,6 +130,7 @@ public:
                                             const VkPipelineLayoutCreateInfo& info);
     bool destroy_pipeline_layout(VkPipelineLayout layout);
     VkPipelineLayout get_real_pipeline_layout(VkPipelineLayout layout) const;
+
 
     VkResult create_compute_pipelines(VkDevice device,
                                       VkDevice real_device,
@@ -151,6 +162,44 @@ public:
     VkDevice get_query_pool_real_device(VkQueryPool pool) const;
     VkQueryType get_query_pool_type(VkQueryPool pool) const;
     uint32_t get_query_pool_count(VkQueryPool pool) const;
+
+    struct DescriptorSetLayoutResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorSetLayout handle;
+        VkDescriptorSetLayout real_handle;
+    };
+
+    struct DescriptorUpdateTemplateResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorUpdateTemplate handle;
+        VkDescriptorUpdateTemplate real_handle;
+        VkDescriptorUpdateTemplateType template_type = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET;
+        VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+        std::vector<VkDescriptorUpdateTemplateEntry> entries;
+        VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
+        VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+        uint32_t set_number = 0;
+    };
+
+    struct DescriptorPoolResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorPool handle;
+        VkDescriptorPool real_handle;
+        VkDescriptorPoolCreateFlags flags;
+        std::vector<VkDescriptorSet> descriptor_sets;
+    };
+
+    struct DescriptorSetResource {
+        VkDevice handle_device;
+        VkDevice real_device;
+        VkDescriptorSet handle;
+        VkDescriptorSet real_handle;
+        VkDescriptorPool pool;
+        VkDescriptorSetLayout layout;
+    };
 
 private:
     struct BufferResource {
@@ -265,31 +314,6 @@ private:
         size_t code_size;
     };
 
-    struct DescriptorSetLayoutResource {
-        VkDevice handle_device;
-        VkDevice real_device;
-        VkDescriptorSetLayout handle;
-        VkDescriptorSetLayout real_handle;
-    };
-
-    struct DescriptorPoolResource {
-        VkDevice handle_device;
-        VkDevice real_device;
-        VkDescriptorPool handle;
-        VkDescriptorPool real_handle;
-        VkDescriptorPoolCreateFlags flags;
-        std::vector<VkDescriptorSet> descriptor_sets;
-    };
-
-    struct DescriptorSetResource {
-        VkDevice handle_device;
-        VkDevice real_device;
-        VkDescriptorSet handle;
-        VkDescriptorSet real_handle;
-        VkDescriptorPool pool;
-        VkDescriptorSetLayout layout;
-    };
-
     struct PipelineLayoutResource {
         VkDevice handle_device;
         VkDevice real_device;
@@ -347,6 +371,7 @@ private:
     std::unordered_map<uint64_t, MemoryResource> memories_;
     std::unordered_map<uint64_t, ShaderModuleResource> shader_modules_;
     std::unordered_map<uint64_t, DescriptorSetLayoutResource> descriptor_set_layouts_;
+    std::unordered_map<uint64_t, DescriptorUpdateTemplateResource> descriptor_update_templates_;
     std::unordered_map<uint64_t, DescriptorPoolResource> descriptor_pools_;
     std::unordered_map<uint64_t, DescriptorSetResource> descriptor_sets_;
     std::unordered_map<uint64_t, PipelineLayoutResource> pipeline_layouts_;
@@ -361,6 +386,7 @@ private:
     uint64_t next_sampler_handle_;
     uint64_t next_shader_module_handle_;
     uint64_t next_descriptor_set_layout_handle_;
+    uint64_t next_descriptor_update_template_handle_;
     uint64_t next_descriptor_pool_handle_;
     uint64_t next_descriptor_set_handle_;
     uint64_t next_pipeline_layout_handle_;
