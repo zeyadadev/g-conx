@@ -162,6 +162,7 @@ public:
     VkDevice get_query_pool_real_device(VkQueryPool pool) const;
     VkQueryType get_query_pool_type(VkQueryPool pool) const;
     uint32_t get_query_pool_count(VkQueryPool pool) const;
+    void reset();
 
     struct DescriptorSetLayoutResource {
         VkDevice handle_device;

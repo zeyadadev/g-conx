@@ -20,6 +20,7 @@
         "cstdarg": "cpp",
         "chrono": "cpp",
         "atomic": "cpp",
-        "thread": "cpp"
+        "thread": "cpp",
+        "utility": "cpp"
     }
 }

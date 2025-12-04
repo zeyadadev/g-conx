@@ -30,6 +30,7 @@ public:
                                       const VkCommandBufferAllocateInfo& info,
                                       std::vector<VkCommandBuffer>* out_buffers);
     void free_command_buffers(VkCommandPool pool, const std::vector<VkCommandBuffer>& buffers);
+    void reset();
 
     VkResult begin(VkCommandBuffer buffer, const VkCommandBufferBeginInfo* info);
     VkResult end(VkCommandBuffer buffer);

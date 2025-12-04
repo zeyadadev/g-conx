@@ -44,6 +44,7 @@ public:
     VkResult create_swapchain(const VenusSwapchainCreateInfo& info,
                               VenusSwapchainCreateReply* reply);
     void destroy_swapchain(uint32_t id);
+    void reset();
     VkResult acquire_image(uint32_t id, uint32_t* image_index);
     VkResult present(uint32_t id,
                      uint32_t image_index,

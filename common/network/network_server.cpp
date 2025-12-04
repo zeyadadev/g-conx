@@ -88,7 +88,7 @@ bool NetworkServer::start(uint16_t port, const std::string& bind_addr) {
     return true;
 }
 
-void NetworkServer::run(ClientHandler handler) {
+void NetworkServer::run(ClientHandler handler, DisconnectHandler disconnect_handler) {
     while (running_) {
         // Accept client
         struct sockaddr_in client_addr;
@@ -117,7 +117,7 @@ void NetworkServer::run(ClientHandler handler) {
         NETWORK_LOG_INFO() << "Client connected from " << client_ip;
 
         // Handle client (inline for Phase 1, will thread later)
-        handle_client(client_fd, handler);
+        handle_client(client_fd, handler, disconnect_handler);
     }
 }
 
@@ -129,7 +129,7 @@ void NetworkServer::stop() {
     }
 }
 
-void NetworkServer::handle_client(int client_fd, ClientHandler handler) {
+void NetworkServer::handle_client(int client_fd, ClientHandler handler, const DisconnectHandler& disconnect_handler) {
     std::vector<uint8_t> buffer;
 
     while (true) {
@@ -158,6 +158,9 @@ void NetworkServer::handle_client(int client_fd, ClientHandler handler) {
     }
 
     NETWORK_LOG_INFO() << "Client disconnected";
+    if (disconnect_handler) {
+        disconnect_handler();
+    }
     close(client_fd);
 }
 

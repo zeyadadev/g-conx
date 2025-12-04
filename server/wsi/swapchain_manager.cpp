@@ -116,6 +116,14 @@ void ServerSwapchainManager::destroy_swapchain(uint32_t id) {
     }
 }
 
+void ServerSwapchainManager::reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& entry : swapchains_) {
+        free_resources(entry.second);
+    }
+    swapchains_.clear();
+}
+
 VkResult ServerSwapchainManager::acquire_image(uint32_t id, uint32_t* image_index) {
     if (!image_index) {
         return VK_ERROR_INITIALIZATION_FAILED;

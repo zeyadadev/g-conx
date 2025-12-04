@@ -12,6 +12,7 @@ namespace venus_plus {
 // Parameters: client_fd, message_data, message_size
 // Returns: true to continue, false to disconnect client
 using ClientHandler = std::function<bool(int, const void*, size_t)>;
+using DisconnectHandler = std::function<void()>;
 
 class NetworkServer {
 public:
@@ -22,7 +23,7 @@ public:
     bool start(uint16_t port, const std::string& bind_addr = "0.0.0.0");
 
     // Run server (blocks until stopped)
-    void run(ClientHandler handler);
+    void run(ClientHandler handler, DisconnectHandler on_disconnect = nullptr);
 
     // Stop server
     void stop();
@@ -31,7 +32,7 @@ public:
     static bool send_to_client(int client_fd, const void* data, size_t size);
 
 private:
-    void handle_client(int client_fd, ClientHandler handler);
+    void handle_client(int client_fd, ClientHandler handler, const DisconnectHandler& disconnect_handler);
 
     int server_fd_;
     bool running_;

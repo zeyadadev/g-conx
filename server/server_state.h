@@ -45,6 +45,7 @@ struct ServerState {
 
     bool initialize_vulkan(bool enable_validation);
     void shutdown_vulkan();
+    void reset_session();
     bool vulkan_ready() const { return real_physical_device != VK_NULL_HANDLE; }
 
     venus_plus::HandleMap<VkInstance> instance_map;

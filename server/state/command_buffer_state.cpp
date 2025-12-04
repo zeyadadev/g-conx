@@ -1,6 +1,7 @@
 #include "command_buffer_state.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace venus_plus {
 
@@ -142,6 +143,43 @@ void CommandBufferState::free_command_buffers(VkCommandPool pool, const std::vec
     }
     for (VkCommandBuffer buffer : buffers) {
         buffers_.erase(handle_key(buffer));
+    }
+}
+
+void CommandBufferState::reset() {
+    std::vector<std::pair<PoolEntry, std::vector<VkCommandBuffer>>> pool_destroy_list;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pool_destroy_list.reserve(pools_.size());
+        for (const auto& kv : pools_) {
+            std::vector<VkCommandBuffer> real_buffers;
+            real_buffers.reserve(kv.second.buffers.size());
+            for (VkCommandBuffer buffer : kv.second.buffers) {
+                auto bit = buffers_.find(handle_key(buffer));
+                if (bit != buffers_.end() && bit->second.real_buffer != VK_NULL_HANDLE) {
+                    real_buffers.push_back(bit->second.real_buffer);
+                }
+            }
+            pool_destroy_list.emplace_back(kv.second, std::move(real_buffers));
+        }
+        pools_.clear();
+        buffers_.clear();
+        next_pool_handle_ = 0x50000000ull;
+        next_buffer_handle_ = 0x60000000ull;
+    }
+
+    for (const auto& entry : pool_destroy_list) {
+        const PoolEntry& pool_entry = entry.first;
+        const auto& real_buffers = entry.second;
+        if (!real_buffers.empty()) {
+            vkFreeCommandBuffers(pool_entry.real_device,
+                                 pool_entry.real_pool,
+                                 static_cast<uint32_t>(real_buffers.size()),
+                                 real_buffers.data());
+        }
+        if (pool_entry.real_pool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(pool_entry.real_device, pool_entry.real_pool, nullptr);
+        }
     }
 }
 

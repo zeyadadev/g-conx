@@ -399,4 +399,48 @@ VkResult SyncManager::reset_event(VkEvent event) {
     return result;
 }
 
+void SyncManager::reset() {
+    std::vector<FenceEntry> fence_entries;
+    std::vector<SemaphoreEntry> semaphore_entries;
+    std::vector<EventEntry> event_entries;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        fence_entries.reserve(fences_.size());
+        for (const auto& kv : fences_) {
+            fence_entries.push_back(kv.second);
+        }
+        semaphore_entries.reserve(semaphores_.size());
+        for (const auto& kv : semaphores_) {
+            semaphore_entries.push_back(kv.second);
+        }
+        event_entries.reserve(events_.size());
+        for (const auto& kv : events_) {
+            event_entries.push_back(kv.second);
+        }
+
+        fences_.clear();
+        semaphores_.clear();
+        events_.clear();
+        next_fence_handle_ = 0x80000000ull;
+        next_semaphore_handle_ = 0x90000000ull;
+        next_event_handle_ = 0xa0000000ull;
+    }
+
+    for (const auto& fence : fence_entries) {
+        if (fence.real_fence != VK_NULL_HANDLE) {
+            vkDestroyFence(fence.real_device, fence.real_fence, nullptr);
+        }
+    }
+    for (const auto& semaphore : semaphore_entries) {
+        if (semaphore.real_semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(semaphore.real_device, semaphore.real_semaphore, nullptr);
+        }
+    }
+    for (const auto& event : event_entries) {
+        if (event.real_event != VK_NULL_HANDLE) {
+            vkDestroyEvent(event.real_device, event.real_event, nullptr);
+        }
+    }
+}
+
 } // namespace venus_plus

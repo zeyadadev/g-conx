@@ -27,6 +27,179 @@ ResourceTracker::ResourceTracker()
       next_pipeline_cache_handle_(0x7c000000ull),
       next_query_pool_handle_(0x7d000000ull) {}
 
+void ResourceTracker::reset() {
+    std::vector<VkFramebuffer> framebuffers;
+    std::vector<VkRenderPass> render_passes;
+    std::vector<VkPipeline> pipelines;
+    std::vector<VkPipelineLayout> pipeline_layouts;
+    std::vector<VkPipelineCache> pipeline_caches;
+    std::vector<VkQueryPool> query_pools;
+    std::vector<VkDescriptorPool> descriptor_pools;
+    std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+    std::vector<VkDescriptorUpdateTemplate> descriptor_templates;
+    std::vector<VkBufferView> buffer_views;
+    std::vector<VkImageView> image_views;
+    std::vector<VkSampler> samplers;
+    std::vector<VkImage> images;
+    std::vector<VkBuffer> buffers;
+    std::vector<VkDeviceMemory> memories;
+    std::vector<VkShaderModule> shader_modules;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        framebuffers.reserve(framebuffers_.size());
+        for (const auto& kv : framebuffers_) {
+            framebuffers.push_back(kv.second.handle);
+        }
+        render_passes.reserve(render_passes_.size());
+        for (const auto& kv : render_passes_) {
+            render_passes.push_back(kv.second.handle);
+        }
+        pipelines.reserve(pipelines_.size());
+        for (const auto& kv : pipelines_) {
+            pipelines.push_back(kv.second.handle);
+        }
+        pipeline_layouts.reserve(pipeline_layouts_.size());
+        for (const auto& kv : pipeline_layouts_) {
+            pipeline_layouts.push_back(kv.second.handle);
+        }
+        pipeline_caches.reserve(pipeline_caches_.size());
+        for (const auto& kv : pipeline_caches_) {
+            pipeline_caches.push_back(kv.second.handle);
+        }
+        query_pools.reserve(query_pools_.size());
+        for (const auto& kv : query_pools_) {
+            query_pools.push_back(kv.second.handle);
+        }
+        descriptor_pools.reserve(descriptor_pools_.size());
+        for (const auto& kv : descriptor_pools_) {
+            descriptor_pools.push_back(kv.second.handle);
+        }
+        descriptor_set_layouts.reserve(descriptor_set_layouts_.size());
+        for (const auto& kv : descriptor_set_layouts_) {
+            descriptor_set_layouts.push_back(kv.second.handle);
+        }
+        descriptor_templates.reserve(descriptor_update_templates_.size());
+        for (const auto& kv : descriptor_update_templates_) {
+            descriptor_templates.push_back(kv.second.handle);
+        }
+        buffer_views.reserve(buffer_views_.size());
+        for (const auto& kv : buffer_views_) {
+            buffer_views.push_back(kv.second.handle);
+        }
+        image_views.reserve(image_views_.size());
+        for (const auto& kv : image_views_) {
+            image_views.push_back(kv.second.handle);
+        }
+        samplers.reserve(samplers_.size());
+        for (const auto& kv : samplers_) {
+            samplers.push_back(kv.second.handle);
+        }
+        images.reserve(images_.size());
+        for (const auto& kv : images_) {
+            images.push_back(kv.second.handle);
+        }
+        buffers.reserve(buffers_.size());
+        for (const auto& kv : buffers_) {
+            buffers.push_back(kv.second.handle);
+        }
+        memories.reserve(memories_.size());
+        for (const auto& kv : memories_) {
+            memories.push_back(kv.second.handle);
+        }
+        shader_modules.reserve(shader_modules_.size());
+        for (const auto& kv : shader_modules_) {
+            shader_modules.push_back(kv.second.handle);
+        }
+    }
+
+    // Tear down resources in rough dependency order.
+    for (VkFramebuffer fb : framebuffers) {
+        destroy_framebuffer(fb);
+    }
+    for (VkRenderPass rp : render_passes) {
+        destroy_render_pass(rp);
+    }
+    for (VkPipeline pipeline : pipelines) {
+        destroy_pipeline(pipeline);
+    }
+    for (VkPipelineLayout layout : pipeline_layouts) {
+        destroy_pipeline_layout(layout);
+    }
+    for (VkPipelineCache cache : pipeline_caches) {
+        destroy_pipeline_cache(cache);
+    }
+    for (VkQueryPool pool : query_pools) {
+        destroy_query_pool(pool);
+    }
+    for (VkDescriptorPool pool : descriptor_pools) {
+        destroy_descriptor_pool(pool);
+    }
+    for (VkDescriptorSetLayout layout : descriptor_set_layouts) {
+        destroy_descriptor_set_layout(layout);
+    }
+    for (VkDescriptorUpdateTemplate tmpl : descriptor_templates) {
+        destroy_descriptor_update_template(tmpl);
+    }
+    for (VkBufferView view : buffer_views) {
+        destroy_buffer_view(view);
+    }
+    for (VkImageView view : image_views) {
+        destroy_image_view(view);
+    }
+    for (VkSampler sampler : samplers) {
+        destroy_sampler(sampler);
+    }
+    for (VkImage image : images) {
+        destroy_image(image);
+    }
+    for (VkBuffer buffer : buffers) {
+        destroy_buffer(buffer);
+    }
+    for (VkDeviceMemory mem : memories) {
+        free_memory(mem);
+    }
+    for (VkShaderModule module : shader_modules) {
+        destroy_shader_module(module);
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    descriptor_sets_.clear();
+    buffers_.clear();
+    images_.clear();
+    image_views_.clear();
+    buffer_views_.clear();
+    samplers_.clear();
+    render_passes_.clear();
+    framebuffers_.clear();
+    memories_.clear();
+    shader_modules_.clear();
+    descriptor_set_layouts_.clear();
+    descriptor_update_templates_.clear();
+    descriptor_pools_.clear();
+    pipeline_layouts_.clear();
+    pipelines_.clear();
+    pipeline_caches_.clear();
+    query_pools_.clear();
+    next_buffer_handle_ = 0x40000000ull;
+    next_image_handle_ = 0x50000000ull;
+    next_memory_handle_ = 0x60000000ull;
+    next_image_view_handle_ = 0x76000000ull;
+    next_buffer_view_handle_ = 0x77000000ull;
+    next_sampler_handle_ = 0x78000000ull;
+    next_shader_module_handle_ = 0x70000000ull;
+    next_descriptor_set_layout_handle_ = 0x71000000ull;
+    next_descriptor_update_template_handle_ = 0x79000000ull;
+    next_descriptor_pool_handle_ = 0x72000000ull;
+    next_descriptor_set_handle_ = 0x73000000ull;
+    next_pipeline_layout_handle_ = 0x74000000ull;
+    next_pipeline_handle_ = 0x75000000ull;
+    next_render_pass_handle_ = 0x7a000000ull;
+    next_framebuffer_handle_ = 0x7b000000ull;
+    next_pipeline_cache_handle_ = 0x7c000000ull;
+    next_query_pool_handle_ = 0x7d000000ull;
+}
+
 VkBuffer ResourceTracker::create_buffer(VkDevice device,
                                         VkDevice real_device,
                                         const VkBufferCreateInfo& info) {

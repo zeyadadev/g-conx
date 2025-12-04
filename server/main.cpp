@@ -263,6 +263,12 @@ bool handle_client_message(int client_fd, const void* data, size_t size) {
     return true;
 }
 
+void reset_after_disconnect() {
+    SERVER_LOG_INFO() << "Resetting server state after client disconnect";
+    g_swapchain_manager.reset();
+    g_server_state.reset_session();
+}
+
 int main(int argc, char** argv) {
     SERVER_LOG_INFO() << "Venus Plus Server v0.1";
     SERVER_LOG_INFO() << "======================";
@@ -303,7 +309,7 @@ int main(int argc, char** argv) {
     SERVER_LOG_INFO() << "Listening on port " << port
                       << (enable_validation ? " (validation enabled)" : "");
 
-    server.run(handle_client_message);
+    server.run(handle_client_message, reset_after_disconnect);
 
     venus_renderer_destroy(g_renderer);
     g_renderer = nullptr;

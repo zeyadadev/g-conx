@@ -86,6 +86,34 @@ void ServerState::shutdown_vulkan() {
     vulkan_context.shutdown();
 }
 
+void ServerState::reset_session() {
+    resource_tracker.reset();
+    command_buffer_state.reset();
+    sync_manager.reset();
+
+    for (const auto& entry : device_info_map) {
+        if (entry.second.real_handle != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(entry.second.real_handle);
+            vkDestroyDevice(entry.second.real_handle, nullptr);
+        }
+    }
+
+    device_map.clear();
+    queue_map.clear();
+    instance_map.clear();
+    physical_device_map.clear();
+    device_info_map.clear();
+    queue_info_map.clear();
+    instance_info_map.clear();
+    physical_device_info_map.clear();
+
+    next_instance_handle = 1;
+    next_physical_device_handle = 0x1000;
+    next_device_handle = 0x2000;
+    next_queue_handle = 0x3000;
+    fake_device_handle = VK_NULL_HANDLE;
+}
+
 namespace venus_plus {
 
 static const VkSemaphoreTypeCreateInfo* find_semaphore_type_info(const void* pNext) {

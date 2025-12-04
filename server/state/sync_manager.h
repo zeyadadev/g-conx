@@ -50,6 +50,7 @@ public:
     VkResult get_event_status(VkEvent event);
     VkResult set_event(VkEvent event);
     VkResult reset_event(VkEvent event);
+    void reset();
 
 private:
     template <typename T>
