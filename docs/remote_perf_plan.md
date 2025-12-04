@@ -7,7 +7,7 @@
 
 ## Goals
 - Reduce effective round-trip cost per token by minimizing message count and in-flight serialization without breaking protocol semantics.
-- Keep defaults compatible; enable latency optimizations via feature flags/envs.
+- Keep defaults compatible; use tracing to validate improvements.
 
 ## Work items
 - **Coalesce protocol messages per submit/wait**: bundle small control messages into a single packet per submit/wait where ordering allows.
@@ -20,9 +20,8 @@
   - Network: `VENUS_TRACE_NET` (logs per-100 message stats), TCP_NODELAY/QUICKACK and larger socket buffers are enabled by default.
   - Submit cadence (llama Vulkan backend): `GGML_VULKAN_NODES_PER_SUBMIT`, `GGML_VULKAN_MULMAT_BYTES_PER_SUBMIT`, `GGML_VULKAN_SUBMIT_ALMOST_READY`.
 
-## Implementation toggles
-- `VENUS_LATENCY_MODE=1` enables coalesced submit/wait messages and the pipelined receive path.
-- `VENUS_PIPELINED_RECV=1` can force the background receive thread without enabling other latency features.
+## Implementation defaults/toggles
+- Latency/coalesced submit/wait and pipelined receive are disabled; only baseline TCP path is used.
 - `VENUS_SOCKET_BUFFER_BYTES=<bytes>` overrides the 4 MiB socket buffers on both client and server.
 
 ## Milestones

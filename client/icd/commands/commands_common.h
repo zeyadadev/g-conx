@@ -66,14 +66,6 @@ inline bool memory_trace_enabled() {
     return enabled;
 }
 
-inline bool latency_mode_enabled() {
-    static const bool enabled = []() {
-        const char* env = std::getenv("VENUS_LATENCY_MODE");
-        return env && env[0] != '0';
-    }();
-    return enabled;
-}
-
 inline bool invalidate_on_wait_enabled() {
     static const bool enabled = []() {
         const char* env = std::getenv("VENUS_INVALIDATE_ON_WAIT");
@@ -89,7 +81,7 @@ inline VkDeviceSize invalidate_max_bytes() {
     static const VkDeviceSize max_bytes = []() -> VkDeviceSize {
         const char* env = std::getenv("VENUS_INVALIDATE_MAX_BYTES");
         if (!env || env[0] == '\0') {
-            return 16 * 1024 * 1024; // default 16 MiB
+            return 512 * 1024; // default 512 KiB to trim readbacks
         }
         char* end = nullptr;
         long long parsed = std::strtoll(env, &end, 10);
@@ -828,6 +820,14 @@ inline VkResult build_invalidate_payload(VkDevice device,
     }
     std::vector<ShadowCoherentRange> ranges;
     g_shadow_buffer_manager.collect_host_coherent_ranges(device, &ranges);
+    VkDeviceSize size_limit = kMaxInvalidateBytes;
+    if (size_limit > 0) {
+        if (ranges.size() > 16) {
+            size_limit = std::max<VkDeviceSize>(size_limit / 4, 64 * 1024);
+        } else if (ranges.size() > 8) {
+            size_limit = std::max<VkDeviceSize>(size_limit / 2, 128 * 1024);
+        }
+    }
     std::vector<ShadowCoherentRange> eligible;
     eligible.reserve(ranges.size());
 
@@ -839,21 +839,23 @@ inline VkResult build_invalidate_payload(VkDevice device,
         if (!range.data || range.size == 0) {
             continue;
         }
-        if (range.size > kMaxInvalidateBytes) {
-            ++out->skipped_large;
-            if (!warned_skip.exchange(true)) {
-                ICD_LOG_WARN() << "[Client ICD] Skipping host-coherent invalidate for large mapped range ("
-                               << range.size << " bytes); data visibility relies on explicit vkInvalidateMappedMemoryRanges\n";
-            }
-            continue;
-        }
         if (g_shadow_buffer_manager.range_has_dirty_pages(range)) {
             ++out->skipped_dirty;
             continue;
         }
         const uint64_t handle_key_val = reinterpret_cast<uint64_t>(range.memory);
-        if (!handle_whitelist.empty() && handle_whitelist.count(handle_key_val) == 0) {
+        const bool whitelisted = !handle_whitelist.empty() && handle_whitelist.count(handle_key_val) > 0;
+        if (!handle_whitelist.empty() && !whitelisted) {
             ++out->skipped_handle;
+            continue;
+        }
+        if (!whitelisted && size_limit > 0 && range.size > size_limit) {
+            ++out->skipped_large;
+            if (!warned_skip.exchange(true)) {
+                ICD_LOG_WARN() << "[Client ICD] Skipping host-coherent invalidate for large mapped range ("
+                               << range.size << " bytes, limit=" << size_limit
+                               << "); data visibility relies on explicit vkInvalidateMappedMemoryRanges\n";
+            }
             continue;
         }
         if (range.size > static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max())) {
@@ -872,7 +874,7 @@ inline VkResult build_invalidate_payload(VkDevice device,
             if (first_time) {
                 VP_LOG_STREAM_INFO(MEMORY) << "[Coherence] auto-invalidate eligible handle=" << range.memory
                                            << " size=" << range.size
-                                           << " threshold=" << kMaxInvalidateBytes;
+                                           << " limit=" << size_limit;
             }
         }
     }
@@ -885,7 +887,8 @@ inline VkResult build_invalidate_payload(VkDevice device,
                                    << " skipped_dirty=" << out->skipped_dirty
                                    << " skipped_large=" << out->skipped_large
                                    << " skipped_handle=" << out->skipped_handle
-                                   << " cap=" << kMaxInvalidateBytes;
+                                   << " limit=" << size_limit
+                                   << " cap_env=" << kMaxInvalidateBytes;
     }
 
     if (eligible.empty()) {

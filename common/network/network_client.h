@@ -5,10 +5,6 @@
 #include <vector>
 #include <cstdint>
 #include <atomic>
-#include <condition_variable>
-#include <deque>
-#include <mutex>
-#include <thread>
 
 namespace venus_plus {
 
@@ -34,17 +30,8 @@ public:
 
 private:
     bool receive_one(std::vector<uint8_t>& buffer);
-    void start_receive_thread();
-    void stop_receive_thread();
 
     int fd_;
-    bool pipeline_enabled_ = false;
-    std::atomic<bool> running_{false};
-    std::atomic<bool> stop_requested_{false};
-    std::thread recv_thread_;
-    std::mutex recv_mutex_;
-    std::condition_variable recv_cv_;
-    std::deque<std::vector<uint8_t>> recv_queue_;
 };
 
 } // namespace venus_plus

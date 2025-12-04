@@ -31,18 +31,6 @@ inline bool trace_net() {
     return enabled;
 }
 
-inline bool pipeline_enabled_env() {
-    static const bool enabled = []() {
-        const char* env = std::getenv("VENUS_PIPELINED_RECV");
-        if (env && env[0] != '\0' && env[0] != '0') {
-            return true;
-        }
-        env = std::getenv("VENUS_LATENCY_MODE");
-        return env && env[0] != '0';
-    }();
-    return enabled;
-}
-
 inline int socket_buffer_bytes() {
     static const int buf = []() {
         const char* env = std::getenv("VENUS_SOCKET_BUFFER_BYTES");
@@ -141,13 +129,6 @@ bool NetworkClient::connect(const std::string& host, uint16_t port) {
     set_tcp_opts(fd_);
 
     NETWORK_LOG_INFO() << "Connected to " << host << ":" << port;
-    pipeline_enabled_ = pipeline_enabled_env();
-    stop_requested_.store(false, std::memory_order_relaxed);
-    running_.store(true, std::memory_order_relaxed);
-    recv_queue_.clear();
-    if (pipeline_enabled_) {
-        start_receive_thread();
-    }
     return true;
 }
 
@@ -217,30 +198,14 @@ bool NetworkClient::send(const void* data, size_t size) {
 }
 
 bool NetworkClient::receive(std::vector<uint8_t>& buffer) {
-    if (!pipeline_enabled_) {
-        return receive_one(buffer);
-    }
-
-    std::unique_lock<std::mutex> lock(recv_mutex_);
-    recv_cv_.wait(lock, [this]() {
-        return !recv_queue_.empty() || !running_.load(std::memory_order_relaxed);
-    });
-
-    if (!recv_queue_.empty()) {
-        buffer = std::move(recv_queue_.front());
-        recv_queue_.pop_front();
-        return true;
-    }
-    return false;
+    return receive_one(buffer);
 }
 
 void NetworkClient::disconnect() {
-    stop_receive_thread();
     if (fd_ >= 0) {
         close(fd_);
         fd_ = -1;
     }
-    running_.store(false, std::memory_order_relaxed);
 }
 
 bool NetworkClient::receive_one(std::vector<uint8_t>& buffer) {
@@ -278,43 +243,6 @@ bool NetworkClient::receive_one(std::vector<uint8_t>& buffer) {
     }
 
     return true;
-}
-
-void NetworkClient::start_receive_thread() {
-    if (recv_thread_.joinable()) {
-        return;
-    }
-    recv_thread_ = std::thread([this]() {
-        while (!stop_requested_.load(std::memory_order_relaxed)) {
-            std::vector<uint8_t> buffer;
-            if (!receive_one(buffer)) {
-                running_.store(false, std::memory_order_relaxed);
-                break;
-            }
-            {
-                std::lock_guard<std::mutex> lock(recv_mutex_);
-                recv_queue_.push_back(std::move(buffer));
-            }
-            recv_cv_.notify_one();
-        }
-        recv_cv_.notify_all();
-    });
-}
-
-void NetworkClient::stop_receive_thread() {
-    stop_requested_.store(true, std::memory_order_relaxed);
-    running_.store(false, std::memory_order_relaxed);
-    recv_cv_.notify_all();
-    if (fd_ >= 0) {
-        shutdown(fd_, SHUT_RDWR);
-    }
-    if (recv_thread_.joinable()) {
-        recv_thread_.join();
-    }
-    {
-        std::lock_guard<std::mutex> lock(recv_mutex_);
-        recv_queue_.clear();
-    }
 }
 
 } // namespace venus_plus
