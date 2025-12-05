@@ -271,6 +271,35 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
     vn_call_vkGetPhysicalDeviceFormatProperties(&g_ring, remote_device, format, pFormatProperties);
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(
+    VkPhysicalDevice physicalDevice,
+    VkFormat format,
+    VkFormatProperties2* pFormatProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetPhysicalDeviceFormatProperties2 called\n";
+
+    if (!pFormatProperties) {
+        ICD_LOG_ERROR() << "[Client ICD] pFormatProperties is NULL\n";
+        return;
+    }
+
+    VkPhysicalDevice remote_device =
+        get_remote_physical_device_handle(physicalDevice, "vkGetPhysicalDeviceFormatProperties2");
+    if (remote_device == VK_NULL_HANDLE) {
+        memset(pFormatProperties, 0, sizeof(VkFormatProperties2));
+        return;
+    }
+
+    vn_call_vkGetPhysicalDeviceFormatProperties2(&g_ring, remote_device, format, pFormatProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkFormat format,
+    VkFormatProperties2* pFormatProperties) {
+    vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(
     VkPhysicalDevice physicalDevice,
     VkFormat format,

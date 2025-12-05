@@ -58,6 +58,27 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     VkPhysicalDeviceProperties phys_props = {};
     vkGetPhysicalDeviceProperties(physicalDevice, &phys_props);
 
+    // Query Vulkan 1.4/line rasterization capabilities for later validation.
+    VkPhysicalDeviceLineRasterizationFeaturesEXT line_feats = {};
+    line_feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT;
+    VkPhysicalDeviceVulkan14Features vk14_feats = {};
+    vk14_feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+    vk14_feats.pNext = &line_feats;
+    VkPhysicalDeviceFeatures2 features2 = {};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &vk14_feats;
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+    VkPhysicalDeviceLineRasterizationPropertiesEXT line_props = {};
+    line_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES_EXT;
+    VkPhysicalDeviceVulkan14Properties vk14_props = {};
+    vk14_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES;
+    vk14_props.pNext = &line_props;
+    VkPhysicalDeviceProperties2 props2 = {};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &vk14_props;
+    vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+
     // Call server to create device
     VkResult result = vn_call_vkCreateDevice(&g_ring, remote_physical_device, pCreateInfo, pAllocator, &icd_device->remote_handle);
 
@@ -71,12 +92,17 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     *pDevice = icd_device_to_handle(icd_device);
 
     // Store device mapping and enabled extensions
-    g_device_state.add_device(*pDevice, icd_device->remote_handle, physicalDevice, phys_props.apiVersion);
+    g_device_state.add_device(*pDevice,
+                              icd_device->remote_handle,
+                              physicalDevice,
+                              remote_physical_device,
+                              phys_props.apiVersion);
     if (pCreateInfo->enabledExtensionCount > 0) {
         g_device_state.set_device_extensions(*pDevice,
                                              pCreateInfo->ppEnabledExtensionNames,
                                              pCreateInfo->enabledExtensionCount);
     }
+    g_device_state.set_vulkan14_info(*pDevice, vk14_feats, vk14_props, line_feats, line_props);
 
     ICD_LOG_INFO() << "[Client ICD] Device created successfully (local=" << *pDevice
               << ", remote=" << icd_device->remote_handle << ")\n";

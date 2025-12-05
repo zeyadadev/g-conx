@@ -35,6 +35,7 @@ public:
     bool destroy_image(VkImage image);
     bool get_image_requirements(VkImage image, VkMemoryRequirements* requirements);
     bool get_image_subresource_layout(VkImage image, const VkImageSubresource& subresource, VkSubresourceLayout* layout) const;
+    bool get_image_info(VkImage image, VkFormat* format, VkImageTiling* tiling) const;
     VkImage get_real_image(VkImage image) const;
     VkImageView create_image_view(VkDevice client_device,
                                   VkDevice real_device,
@@ -78,6 +79,13 @@ public:
                                    const VkMemoryAllocateInfo& info);
     bool free_memory(VkDeviceMemory memory);
     VkDeviceMemory get_real_memory(VkDeviceMemory memory) const;
+    bool get_memory_size(VkDeviceMemory memory, VkDeviceSize* out_size) const;
+    VkResult map_memory(VkDeviceMemory memory,
+                        VkDeviceSize offset,
+                        VkDeviceSize size,
+                        VkMemoryMapFlags flags,
+                        void** mapped_ptr);
+    VkResult unmap_memory(VkDeviceMemory memory);
     bool get_memory_info(VkDeviceMemory memory,
                          VkDeviceMemory* real_memory,
                          VkDevice* real_device,

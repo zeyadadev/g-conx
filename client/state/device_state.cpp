@@ -6,12 +6,14 @@ DeviceState g_device_state;
 
 void DeviceState::add_device(VkDevice local,
                              VkDevice remote,
-                             VkPhysicalDevice phys_dev,
+                             VkPhysicalDevice local_phys_dev,
+                             VkPhysicalDevice remote_phys_dev,
                              uint32_t api_version) {
     DeviceEntry entry;
     entry.local_handle = local;
     entry.remote_handle = remote;
-    entry.physical_device = phys_dev;
+    entry.physical_device = local_phys_dev;
+    entry.remote_physical_device = remote_phys_dev;
     entry.api_version = api_version;
     devices_[local] = entry;
 }
@@ -86,7 +88,39 @@ VkPhysicalDevice DeviceState::get_device_physical_device(VkDevice device) const 
     if (it == devices_.end()) {
         return VK_NULL_HANDLE;
     }
-    return it->second.physical_device;
+    return it->second.remote_physical_device;
+}
+
+void DeviceState::set_vulkan14_info(
+    VkDevice device,
+    const VkPhysicalDeviceVulkan14Features& features,
+    const VkPhysicalDeviceVulkan14Properties& properties,
+    const VkPhysicalDeviceLineRasterizationFeaturesEXT& line_feats,
+    const VkPhysicalDeviceLineRasterizationPropertiesEXT& line_props) {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return;
+    }
+    it->second.vk14_features = features;
+    it->second.vk14_properties = properties;
+    it->second.line_features = line_feats;
+    it->second.line_properties = line_props;
+}
+
+const VkPhysicalDeviceVulkan14Features* DeviceState::get_vk14_features(VkDevice device) const {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return nullptr;
+    }
+    return &it->second.vk14_features;
+}
+
+const VkPhysicalDeviceLineRasterizationFeaturesEXT* DeviceState::get_line_features(VkDevice device) const {
+    auto it = devices_.find(device);
+    if (it == devices_.end()) {
+        return nullptr;
+    }
+    return &it->second.line_features;
 }
 
 void DeviceState::add_queue(VkDevice device, VkQueue local, VkQueue remote, uint32_t family, uint32_t index) {

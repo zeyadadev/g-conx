@@ -11,11 +11,11 @@ extern "C" {
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t* pApiVersion) {
     ICD_LOG_INFO() << "[Client ICD] vkEnumerateInstanceVersion called\n";
 
-    // Return our supported Vulkan API version (1.3)
+    // Return our supported Vulkan API version (now 1.4)
     // This is a static value, no server communication needed
-    *pApiVersion = VK_API_VERSION_1_3;
+    *pApiVersion = VK_API_VERSION_1_4;
 
-    ICD_LOG_INFO() << "[Client ICD] Returning version: 1.3.0\n";
+    ICD_LOG_INFO() << "[Client ICD] Returning version: 1.4.0\n";
     return VK_SUCCESS;
 }
 
@@ -464,6 +464,40 @@ VKAPI_ATTR void VKAPI_CALL vkGetRenderAreaGranularity(
     IcdDevice* icd_device = icd_device_from_handle(device);
     vn_call_vkGetRenderAreaGranularity(&g_ring, icd_device->remote_handle, remote_render_pass, pGranularity);
     ICD_LOG_INFO() << "[Client ICD] Granularity: " << pGranularity->width << "x" << pGranularity->height << "\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetRenderingAreaGranularity(
+    VkDevice device,
+    const VkRenderingAreaInfo* pRenderingAreaInfo,
+    VkExtent2D* pGranularity) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetRenderingAreaGranularity called\n";
+
+    if (!pRenderingAreaInfo || !pGranularity) {
+        ICD_LOG_ERROR() << "[Client ICD] Missing parameters in vkGetRenderingAreaGranularity\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetRenderingAreaGranularity\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetRenderingAreaGranularity(&g_ring, icd_device->remote_handle, pRenderingAreaInfo, pGranularity);
+    ICD_LOG_INFO() << "[Client ICD] Rendering granularity: " << pGranularity->width << "x" << pGranularity->height << "\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetRenderingAreaGranularityKHR(
+    VkDevice device,
+    const VkRenderingAreaInfo* pRenderingAreaInfo,
+    VkExtent2D* pGranularity) {
+    vkGetRenderingAreaGranularity(device, pRenderingAreaInfo, pGranularity);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(

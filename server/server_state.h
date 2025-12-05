@@ -115,9 +115,18 @@ bool server_state_destroy_image(ServerState* state, VkImage image);
 bool server_state_get_image_memory_requirements(ServerState* state, VkImage image, VkMemoryRequirements* requirements);
 VkResult server_state_bind_image_memory(ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
 bool server_state_get_image_subresource_layout(ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
+bool server_state_get_image_info(ServerState* state, VkImage image, VkFormat* format, VkImageTiling* tiling);
 VkBuffer server_state_get_real_buffer(const ServerState* state, VkBuffer buffer);
 VkImage server_state_get_real_image(const ServerState* state, VkImage image);
 VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMemory memory);
+bool server_state_get_memory_size(const ServerState* state, VkDeviceMemory memory, VkDeviceSize* out_size);
+VkResult server_state_map_memory(ServerState* state,
+                                 VkDeviceMemory memory,
+                                 VkDeviceSize offset,
+                                 VkDeviceSize size,
+                                 VkMemoryMapFlags flags,
+                                 void** mapped_ptr);
+VkResult server_state_unmap_memory(ServerState* state, VkDeviceMemory memory);
 VkShaderModule server_state_create_shader_module(ServerState* state, VkDevice device, const VkShaderModuleCreateInfo* info);
 bool server_state_destroy_shader_module(ServerState* state, VkShaderModule module);
 VkShaderModule server_state_get_real_shader_module(const ServerState* state, VkShaderModule module);
@@ -176,6 +185,7 @@ VkResult server_state_reset_command_buffer(ServerState* state, VkCommandBuffer c
 bool server_state_command_buffer_is_recording(const ServerState* state, VkCommandBuffer commandBuffer);
 void server_state_mark_command_buffer_invalid(ServerState* state, VkCommandBuffer commandBuffer);
 VkCommandBuffer server_state_get_real_command_buffer(const ServerState* state, VkCommandBuffer commandBuffer);
+VkDevice server_state_get_command_buffer_real_device(const ServerState* state, VkCommandBuffer commandBuffer);
 bool server_state_validate_cmd_copy_buffer(ServerState* state, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* regions);
 bool server_state_validate_cmd_copy_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageCopy* regions);
 bool server_state_validate_cmd_blit_image(ServerState* state, VkImage srcImage, VkImage dstImage, uint32_t regionCount, const VkImageBlit* regions);

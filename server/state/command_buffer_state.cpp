@@ -335,4 +335,22 @@ VkDevice CommandBufferState::get_pool_real_device(VkCommandPool pool) const {
     return pit->second.real_device;
 }
 
+VkDevice CommandBufferState::get_buffer_device(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return bit->second.device;
+}
+
+VkDevice CommandBufferState::get_buffer_real_device(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return bit->second.real_device;
+}
+
 } // namespace venus_plus

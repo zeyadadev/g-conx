@@ -10,6 +10,9 @@
 #include "phase09_1/phase09_1_test.h"
 #include "phase10/phase10_test.h"
 #include "phase11/phase11_test.h"
+#include "phase12/phase12_test.h"
+#include "phase13/phase13_test.h"
+#include "phase14/phase14_test.h"
 #include "logging.h"
 #include <cstring>
 
@@ -71,6 +74,12 @@ int main(int argc, char** argv) {
             return run_phase10_test() ? 0 : 1;
         case 11:
             return run_phase11_test() ? 0 : 1;
+        case 12:
+            return run_phase12_test() ? 0 : 1;
+        case 13:
+            return run_phase13_test() ? 0 : 1;
+        case 14:
+            return run_phase14_test() ? 0 : 1;
         default:
             TEST_LOG_ERROR() << "Error: Phase " << phase << " not implemented yet";
             return 1;
@@ -95,6 +104,9 @@ int main(int argc, char** argv) {
         if (!run_phase09_1_test()) return 1;
         if (!run_phase10_test()) return 1;
         if (!run_phase11_test()) return 1;
+        if (!run_phase12_test()) return 1;
+        if (!run_phase13_test()) return 1;
+        if (!run_phase14_test()) return 1;
 
         TEST_LOG_INFO() << "";
         TEST_LOG_INFO() << "=================================================";

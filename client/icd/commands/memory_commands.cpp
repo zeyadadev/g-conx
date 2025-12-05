@@ -9,6 +9,52 @@
 VkResult send_transfer_memory_data(VkDeviceMemory memory,
                                    VkDeviceSize offset,
                                    VkDeviceSize size,
+                                   const void* data);
+
+namespace {
+
+VkResult unmap_memory_internal(VkDevice device, VkDeviceMemory memory) {
+    if (memory == VK_NULL_HANDLE) {
+        return VK_SUCCESS;
+    }
+
+    ShadowBufferMapping mapping = {};
+    if (!g_shadow_buffer_manager.remove_mapping(memory, &mapping)) {
+        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory: memory was not mapped\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkResult result = VK_SUCCESS;
+    if (mapping.device != device) {
+        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory: device mismatch\n";
+        result = VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Lost connection before flushing vkUnmapMemory\n";
+        g_shadow_buffer_manager.free_mapping_resources(&mapping);
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    if (mapping.size > 0 && mapping.data) {
+        VkResult transfer = send_transfer_memory_data(memory, mapping.offset, mapping.size, mapping.data);
+        if (transfer != VK_SUCCESS) {
+            ICD_LOG_ERROR() << "[Client ICD] Failed to transfer memory on unmap: " << transfer << "\n";
+            result = transfer;
+        } else {
+            ICD_LOG_INFO() << "[Client ICD] Transferred " << mapping.size << " bytes on unmap\n";
+        }
+    }
+
+    g_shadow_buffer_manager.free_mapping_resources(&mapping);
+    return result;
+}
+
+} // namespace
+
+VkResult send_transfer_memory_data(VkDeviceMemory memory,
+                                   VkDeviceSize offset,
+                                   VkDeviceSize size,
                                    const void* data) {
     VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
     if (remote_memory == VK_NULL_HANDLE) {
@@ -404,42 +450,75 @@ VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(
     return VK_SUCCESS;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory2(
+    VkDevice device,
+    const VkMemoryMapInfo* pMemoryMapInfo,
+    void** ppData) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkMapMemory2 called\n";
+
+    if (!pMemoryMapInfo || !ppData) {
+        ICD_LOG_ERROR() << "[Client ICD] vkMapMemory2: missing map info or ppData\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    if (pMemoryMapInfo->pNext) {
+        ICD_LOG_ERROR() << "[Client ICD] vkMapMemory2: unsupported pNext chain\n";
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    return vkMapMemory(device,
+                       pMemoryMapInfo->memory,
+                       pMemoryMapInfo->offset,
+                       pMemoryMapInfo->size,
+                       pMemoryMapInfo->flags,
+                       ppData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory2KHR(
+    VkDevice device,
+    const VkMemoryMapInfo* pMemoryMapInfo,
+    void** ppData) {
+    return vkMapMemory2(device, pMemoryMapInfo, ppData);
+}
+
 VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(
     VkDevice device,
     VkDeviceMemory memory) {
 
     ICD_LOG_INFO() << "[Client ICD] vkUnmapMemory called\n";
 
-    if (memory == VK_NULL_HANDLE) {
-        return;
+    (void)unmap_memory_internal(device, memory);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkUnmapMemory2(
+    VkDevice device,
+    const VkMemoryUnmapInfo* pMemoryUnmapInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkUnmapMemory2 called\n";
+
+    if (!pMemoryUnmapInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory2: pMemoryUnmapInfo is NULL\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    ShadowBufferMapping mapping = {};
-    if (!g_shadow_buffer_manager.remove_mapping(memory, &mapping)) {
-        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory: memory was not mapped\n";
-        return;
+    if (pMemoryUnmapInfo->pNext) {
+        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory2: unsupported pNext chain\n";
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     }
 
-    if (mapping.device != device) {
-        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory: device mismatch\n";
+    if (pMemoryUnmapInfo->flags != 0) {
+        ICD_LOG_ERROR() << "[Client ICD] vkUnmapMemory2: flags must be zero\n";
+        return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    if (!ensure_connected()) {
-        ICD_LOG_ERROR() << "[Client ICD] Lost connection before flushing vkUnmapMemory\n";
-        g_shadow_buffer_manager.free_mapping_resources(&mapping);
-        return;
-    }
+    return unmap_memory_internal(device, pMemoryUnmapInfo->memory);
+}
 
-    if (mapping.size > 0 && mapping.data) {
-        VkResult result = send_transfer_memory_data(memory, mapping.offset, mapping.size, mapping.data);
-        if (result != VK_SUCCESS) {
-            ICD_LOG_ERROR() << "[Client ICD] Failed to transfer memory on unmap: " << result << "\n";
-        } else {
-            ICD_LOG_INFO() << "[Client ICD] Transferred " << mapping.size << " bytes on unmap\n";
-        }
-    }
-
-    g_shadow_buffer_manager.free_mapping_resources(&mapping);
+VKAPI_ATTR VkResult VKAPI_CALL vkUnmapMemory2KHR(
+    VkDevice device,
+    const VkMemoryUnmapInfo* pMemoryUnmapInfo) {
+    return vkUnmapMemory2(device, pMemoryUnmapInfo);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges(

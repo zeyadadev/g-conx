@@ -50,7 +50,11 @@ bool device_supports_push_descriptors(VkDevice device) {
     if (device == VK_NULL_HANDLE) {
         return true;
     }
-    return g_device_state.is_extension_enabled(device, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    if (g_device_state.is_extension_enabled(device, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+        return true;
+    }
+    const auto* vk14_features = g_device_state.get_vk14_features(device);
+    return vk14_features && vk14_features->pushDescriptor;
 }
 
 size_t compute_template_data_size(const std::vector<VkDescriptorUpdateTemplateEntry>& entries) {
@@ -186,6 +190,11 @@ bool build_writes_from_template_data(const DescriptorUpdateTemplateInfo& tmpl_in
         out_writes->push_back(std::move(prepared));
     }
     return true;
+}
+
+VkPipelineBindPoint infer_bind_point_from_stages(VkShaderStageFlags stage_flags) {
+    return (stage_flags & VK_SHADER_STAGE_COMPUTE_BIT) ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                                       : VK_PIPELINE_BIND_POINT_GRAPHICS;
 }
 
 } // namespace
@@ -1219,7 +1228,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplate(
     }
 (void)remote_template;
 
-    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET) {
+    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET &&
+        tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR &&
+        tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS) {
         ICD_LOG_ERROR() << "[Client ICD] Unsupported template type for push descriptors\n";
         return;
     }
@@ -1282,6 +1293,58 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplateKHR(
                                        layout,
                                        set,
                                        pData);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSet2(
+    VkCommandBuffer commandBuffer,
+    const VkPushDescriptorSetInfo* pPushDescriptorSetInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdPushDescriptorSet2 called\n";
+
+    if (!pPushDescriptorSetInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] Missing VkPushDescriptorSetInfo\n";
+        return;
+    }
+
+    VkPipelineBindPoint bind_point =
+        infer_bind_point_from_stages(pPushDescriptorSetInfo->stageFlags);
+
+    vkCmdPushDescriptorSet(commandBuffer,
+                           bind_point,
+                           pPushDescriptorSetInfo->layout,
+                           pPushDescriptorSetInfo->set,
+                           pPushDescriptorSetInfo->descriptorWriteCount,
+                           pPushDescriptorSetInfo->pDescriptorWrites);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSet2KHR(
+    VkCommandBuffer commandBuffer,
+    const VkPushDescriptorSetInfo* pPushDescriptorSetInfo) {
+    vkCmdPushDescriptorSet2(commandBuffer, pPushDescriptorSetInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplate2(
+    VkCommandBuffer commandBuffer,
+    const VkPushDescriptorSetWithTemplateInfo* pPushDescriptorSetWithTemplateInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdPushDescriptorSetWithTemplate2 called\n";
+
+    if (!pPushDescriptorSetWithTemplateInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] Missing VkPushDescriptorSetWithTemplateInfo\n";
+        return;
+    }
+
+    vkCmdPushDescriptorSetWithTemplate(commandBuffer,
+                                       pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate,
+                                       pPushDescriptorSetWithTemplateInfo->layout,
+                                       pPushDescriptorSetWithTemplateInfo->set,
+                                       pPushDescriptorSetWithTemplateInfo->pData);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPushDescriptorSetWithTemplate2KHR(
+    VkCommandBuffer commandBuffer,
+    const VkPushDescriptorSetWithTemplateInfo* pPushDescriptorSetWithTemplateInfo) {
+    vkCmdPushDescriptorSetWithTemplate2(commandBuffer, pPushDescriptorSetWithTemplateInfo);
 }
 
 } // extern "C"

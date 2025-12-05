@@ -38,6 +38,8 @@ public:
 
     bool is_recording(VkCommandBuffer buffer) const;
     bool buffer_exists(VkCommandBuffer buffer) const;
+    VkDevice get_buffer_device(VkCommandBuffer buffer) const;
+    VkDevice get_buffer_real_device(VkCommandBuffer buffer) const;
     void invalidate(VkCommandBuffer buffer);
     ServerCommandBufferState get_state(VkCommandBuffer buffer) const;
     VkCommandBufferLevel get_level(VkCommandBuffer buffer) const;

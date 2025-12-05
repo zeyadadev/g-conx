@@ -419,6 +419,10 @@ bool server_state_get_image_subresource_layout(ServerState* state,
     return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
 }
 
+bool server_state_get_image_info(ServerState* state, VkImage image, VkFormat* format, VkImageTiling* tiling) {
+    return state->resource_tracker.get_image_info(image, format, tiling);
+}
+
 void server_state_get_device_memory_commitment(ServerState* state,
                                                VkDevice device,
                                                VkDeviceMemory memory,
@@ -529,6 +533,29 @@ VkImage server_state_get_real_image(const ServerState* state, VkImage image) {
 
 VkDeviceMemory server_state_get_real_memory(const ServerState* state, VkDeviceMemory memory) {
     return state->resource_tracker.get_real_memory(memory);
+}
+
+bool server_state_get_memory_size(const ServerState* state, VkDeviceMemory memory, VkDeviceSize* out_size) {
+    return state ? state->resource_tracker.get_memory_size(memory, out_size) : false;
+}
+
+VkResult server_state_map_memory(ServerState* state,
+                                 VkDeviceMemory memory,
+                                 VkDeviceSize offset,
+                                 VkDeviceSize size,
+                                 VkMemoryMapFlags flags,
+                                 void** mapped_ptr) {
+    if (!state) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    return state->resource_tracker.map_memory(memory, offset, size, flags, mapped_ptr);
+}
+
+VkResult server_state_unmap_memory(ServerState* state, VkDeviceMemory memory) {
+    if (!state) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    return state->resource_tracker.unmap_memory(memory);
 }
 
 VkShaderModule server_state_create_shader_module(ServerState* state,
@@ -1040,6 +1067,10 @@ VkCommandBuffer server_state_get_real_command_buffer(const ServerState* state, V
     return state->command_buffer_state.get_real_buffer(commandBuffer);
 }
 
+VkDevice server_state_get_command_buffer_real_device(const ServerState* state, VkCommandBuffer commandBuffer) {
+    return state ? state->command_buffer_state.get_buffer_real_device(commandBuffer) : VK_NULL_HANDLE;
+}
+
 static bool log_validation_result(bool result, const std::string& error_message) {
     if (!result && !error_message.empty()) {
         SERVER_LOG_ERROR() << "Validation error: " << error_message;
@@ -1532,9 +1563,31 @@ VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* sta
     return venus_plus::server_state_get_real_memory(state, memory);
 }
 
+bool server_state_bridge_get_memory_size(struct ServerState* state, VkDeviceMemory memory, VkDeviceSize* out_size) {
+    return venus_plus::server_state_get_memory_size(state, memory, out_size);
+}
+
+VkResult server_state_bridge_map_memory(struct ServerState* state,
+                                        VkDeviceMemory memory,
+                                        VkDeviceSize offset,
+                                        VkDeviceSize size,
+                                        VkMemoryMapFlags flags,
+                                        void** mapped_ptr) {
+    return venus_plus::server_state_map_memory(state, memory, offset, size, flags, mapped_ptr);
+}
+
+VkResult server_state_bridge_unmap_memory(struct ServerState* state, VkDeviceMemory memory) {
+    return venus_plus::server_state_unmap_memory(state, memory);
+}
+
 VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
                                                             VkCommandBuffer commandBuffer) {
     return venus_plus::server_state_get_real_command_buffer(state, commandBuffer);
+}
+
+VkDevice server_state_bridge_get_command_buffer_real_device(const struct ServerState* state,
+                                                            VkCommandBuffer commandBuffer) {
+    return venus_plus::server_state_get_command_buffer_real_device(state, commandBuffer);
 }
 
 VkShaderModule server_state_bridge_create_shader_module(struct ServerState* state,
@@ -1873,6 +1926,10 @@ bool server_state_bridge_get_image_subresource_layout(struct ServerState* state,
                                                       const VkImageSubresource* subresource,
                                                       VkSubresourceLayout* layout) {
     return venus_plus::server_state_get_image_subresource_layout(state, image, subresource, layout);
+}
+
+bool server_state_bridge_get_image_info(struct ServerState* state, VkImage image, VkFormat* format, VkImageTiling* tiling) {
+    return venus_plus::server_state_get_image_info(state, image, format, tiling);
 }
 
 void server_state_bridge_get_device_memory_commitment(struct ServerState* state,

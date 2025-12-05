@@ -104,6 +104,7 @@ public:
     bool has_image_view(VkImageView view) const;
     VkImageView get_remote_image_view(VkImageView view) const;
     VkImage get_image_from_view(VkImageView view) const;
+    bool get_image_info(VkImage image, ImageState* out_state) const;
 
     void add_buffer_view(VkDevice device,
                          VkBufferView local,

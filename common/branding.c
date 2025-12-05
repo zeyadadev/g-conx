@@ -3,7 +3,7 @@
 #include <string.h>
 
 static const VPBrandingInfo kBrandingInfo = {
-    .api_version = VK_API_VERSION_1_3,
+    .api_version = VK_API_VERSION_1_4,
     .driver_version = VK_MAKE_VERSION(1, 0, 0),
     .vendor_id = 0x1AF4,
     .device_id = 0x1050,

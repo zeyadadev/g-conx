@@ -3,10 +3,32 @@
 #include "binding_validator.h"
 #include "utils/logging.h"
 #include <algorithm>
+#include <vulkan/vulkan.h>
 
 #define RESOURCE_LOG_ERROR() VP_LOG_STREAM_ERROR(SERVER)
+#define RESOURCE_LOG_WARN() VP_LOG_STREAM_WARN(SERVER)
 
 namespace venus_plus {
+
+namespace {
+
+VkPipelineCreateFlags fold_pipeline_flags2(const void* pNext) {
+    VkPipelineCreateFlags folded = 0;
+    const VkBaseInStructure* header = static_cast<const VkBaseInStructure*>(pNext);
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO ||
+            header->sType == VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR) {
+            const VkPipelineCreateFlags2CreateInfo* flags2 =
+                reinterpret_cast<const VkPipelineCreateFlags2CreateInfo*>(header);
+            folded |= static_cast<VkPipelineCreateFlags>(flags2->flags & 0xffffffffu);
+            break;
+        }
+        header = header->pNext;
+    }
+    return folded;
+}
+
+} // namespace
 
 ResourceTracker::ResourceTracker()
     : next_buffer_handle_(0x40000000ull),
@@ -206,8 +228,24 @@ VkBuffer ResourceTracker::create_buffer(VkDevice device,
     if (real_device == VK_NULL_HANDLE) {
         return VK_NULL_HANDLE;
     }
+    VkBufferCreateInfo real_info = info;
+    // Fold VkBufferUsageFlags2CreateInfo into legacy usage bits for compatibility.
+    for (const VkBaseInStructure* header = reinterpret_cast<const VkBaseInStructure*>(info.pNext);
+         header;
+         header = header->pNext) {
+        if (header->sType == VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO ||
+            header->sType == VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO_KHR) {
+            const VkBufferUsageFlags2CreateInfo* usage2 =
+                reinterpret_cast<const VkBufferUsageFlags2CreateInfo*>(header);
+            real_info.usage |= static_cast<VkBufferUsageFlags>(usage2->usage & 0xffffffffu);
+            if (usage2->usage >> 32) {
+                RESOURCE_LOG_WARN() << "vkCreateBuffer ignoring upper 32 bits of usage2";
+            }
+        }
+    }
+
     VkBuffer real_handle = VK_NULL_HANDLE;
-    VkResult result = vkCreateBuffer(real_device, &info, nullptr, &real_handle);
+    VkResult result = vkCreateBuffer(real_device, &real_info, nullptr, &real_handle);
     if (result != VK_SUCCESS) {
         RESOURCE_LOG_ERROR() << "vkCreateBuffer failed: " << result;
         return VK_NULL_HANDLE;
@@ -220,8 +258,8 @@ VkBuffer ResourceTracker::create_buffer(VkDevice device,
     resource.real_device = real_device;
     resource.handle = handle;
     resource.real_handle = real_handle;
-    resource.size = info.size;
-    resource.usage = info.usage;
+    resource.size = real_info.size;
+    resource.usage = real_info.usage;
     buffers_[handle_key(handle)] = resource;
     return handle;
 }
@@ -369,8 +407,28 @@ bool ResourceTracker::get_image_requirements(VkImage image, VkMemoryRequirements
         return false;
     }
     vkGetImageMemoryRequirements(it->second.real_device, it->second.real_handle, requirements);
+    if (requirements->memoryTypeBits == 0) {
+        requirements->memoryTypeBits = 0xffffffffu;
+        VP_LOG_STREAM_WARN(SERVER) << "vkGetImageMemoryRequirements returned memoryTypeBits=0, "
+                                      "falling back to all types";
+    }
     it->second.requirements = *requirements;
     it->second.requirements_valid = true;
+    return true;
+}
+
+bool ResourceTracker::get_image_info(VkImage image, VkFormat* format, VkImageTiling* tiling) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = images_.find(handle_key(image));
+    if (it == images_.end()) {
+        return false;
+    }
+    if (format) {
+        *format = it->second.format;
+    }
+    if (tiling) {
+        *tiling = it->second.tiling;
+    }
     return true;
 }
 
@@ -896,6 +954,18 @@ VkDeviceMemory ResourceTracker::get_real_memory(VkDeviceMemory memory) const {
     return it->second.real_handle;
 }
 
+bool ResourceTracker::get_memory_size(VkDeviceMemory memory, VkDeviceSize* out_size) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return false;
+    }
+    if (out_size) {
+        *out_size = it->second.size;
+    }
+    return true;
+}
+
 bool ResourceTracker::get_memory_info(VkDeviceMemory memory,
                                       VkDeviceMemory* real_memory,
                                       VkDevice* real_device,
@@ -950,6 +1020,62 @@ VkResult ResourceTracker::get_memory_mapping(VkDeviceMemory memory,
     if (size) {
         *size = mem.mapped_size;
     }
+    return VK_SUCCESS;
+}
+
+VkResult ResourceTracker::map_memory(VkDeviceMemory memory,
+                                     VkDeviceSize offset,
+                                     VkDeviceSize size,
+                                     VkMemoryMapFlags flags,
+                                     void** mapped_ptr) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    MemoryResource& mem = it->second;
+    if (mem.mapped_ptr) {
+        if (mapped_ptr) {
+            *mapped_ptr = mem.mapped_ptr;
+        }
+        return VK_SUCCESS;
+    }
+
+    if (offset >= mem.size) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    VkDeviceSize map_size = size == VK_WHOLE_SIZE ? (mem.size - offset) : size;
+    if (offset + map_size > mem.size) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkResult res = vkMapMemory(mem.real_device, mem.real_handle, offset, map_size, flags, &mem.mapped_ptr);
+    if (res != VK_SUCCESS) {
+        mem.mapped_ptr = nullptr;
+        mem.mapped_size = 0;
+        return res;
+    }
+    mem.mapped_size = map_size;
+    if (mapped_ptr) {
+        *mapped_ptr = mem.mapped_ptr;
+    }
+    return VK_SUCCESS;
+}
+
+VkResult ResourceTracker::unmap_memory(VkDeviceMemory memory) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = memories_.find(handle_key(memory));
+    if (it == memories_.end()) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    MemoryResource& mem = it->second;
+    if (!mem.mapped_ptr) {
+        return VK_SUCCESS;
+    }
+    vkUnmapMemory(mem.real_device, mem.real_handle);
+    mem.mapped_ptr = nullptr;
+    mem.mapped_size = 0;
     return VK_SUCCESS;
 }
 
@@ -1463,6 +1589,8 @@ VkResult ResourceTracker::create_compute_pipelines(
             }
             real_infos[i].layout = layout_it->second.real_handle;
 
+            real_infos[i].flags |= fold_pipeline_flags2(infos[i].pNext);
+
             if (infos[i].basePipelineHandle != VK_NULL_HANDLE) {
                 auto base_it = pipelines_.find(handle_key(infos[i].basePipelineHandle));
                 if (base_it == pipelines_.end()) {
@@ -1553,6 +1681,8 @@ VkResult ResourceTracker::create_graphics_pipelines(
                 }
                 real_infos[i].renderPass = rp_it->second.real_handle;
             }
+
+            real_infos[i].flags |= fold_pipeline_flags2(infos[i].pNext);
 
             if (infos[i].basePipelineHandle != VK_NULL_HANDLE) {
                 auto base_it = pipelines_.find(handle_key(infos[i].basePipelineHandle));

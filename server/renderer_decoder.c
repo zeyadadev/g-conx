@@ -4,7 +4,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-
 #include "server_state_bridge.h"
 #include "branding.h"
 #include "vn_protocol_renderer.h"
@@ -57,6 +56,11 @@ static VkBuffer get_real_buffer(struct ServerState* state, VkBuffer buffer, cons
         VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Failed to translate buffer for %s", name);
     }
     return real;
+}
+
+static VkPipelineBindPoint infer_bind_point_from_stages(VkShaderStageFlags stage_flags) {
+    return (stage_flags & VK_SHADER_STAGE_COMPUTE_BIT) ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                                       : VK_PIPELINE_BIND_POINT_GRAPHICS;
 }
 
 static VkImage get_real_image(struct ServerState* state, VkImage image, const char* name) {
@@ -454,8 +458,8 @@ static void server_dispatch_vkEnumerateInstanceVersion(struct vn_dispatch_contex
     (void)ctx;
     args->ret = VK_SUCCESS;
     if (args->pApiVersion) {
-        *args->pApiVersion = VK_API_VERSION_1_3;
-        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning API version: 1.3");
+        *args->pApiVersion = VK_API_VERSION_1_4;
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning API version: 1.4");
     }
 }
 
@@ -683,6 +687,27 @@ static void server_dispatch_vkGetPhysicalDeviceFormatProperties(
     VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real format properties");
 }
 
+static void server_dispatch_vkGetPhysicalDeviceFormatProperties2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetPhysicalDeviceFormatProperties2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetPhysicalDeviceFormatProperties2 (format: %d)", args->format);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pFormatProperties) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pFormatProperties is NULL");
+        return;
+    }
+
+    VkPhysicalDevice real_device =
+        server_state_bridge_get_real_physical_device(state, args->physicalDevice);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown physical device");
+        return;
+    }
+
+    vkGetPhysicalDeviceFormatProperties2(real_device, args->format, args->pFormatProperties);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned real format properties2");
+}
+
 static void server_dispatch_vkGetPhysicalDeviceImageFormatProperties(
     struct vn_dispatch_context* ctx,
     struct vn_command_vkGetPhysicalDeviceImageFormatProperties* args) {
@@ -761,6 +786,25 @@ static void server_dispatch_vkGetPhysicalDeviceProperties2(
         return;
     }
     vkGetPhysicalDeviceProperties2(real_device, args->pProperties);
+
+    // Ensure Vulkan 1.4 properties report at least GENERAL layout for host copy if caller provided storage.
+    VkBaseOutStructure* next = (VkBaseOutStructure*)args->pProperties->pNext;
+    while (next) {
+        if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES) {
+            VkPhysicalDeviceVulkan14Properties* vk14 =
+                (VkPhysicalDeviceVulkan14Properties*)next;
+            if (vk14->pCopySrcLayouts && vk14->copySrcLayoutCount == 0) {
+                vk14->copySrcLayoutCount = 1;
+                vk14->pCopySrcLayouts[0] = VK_IMAGE_LAYOUT_GENERAL;
+            }
+            if (vk14->pCopyDstLayouts && vk14->copyDstLayoutCount == 0) {
+                vk14->copyDstLayoutCount = 1;
+                vk14->pCopyDstLayouts[0] = VK_IMAGE_LAYOUT_GENERAL;
+            }
+            break;
+        }
+        next = next->pNext;
+    }
     vp_branding_apply_properties2(args->pProperties);
 }
 
@@ -780,6 +824,39 @@ static void server_dispatch_vkGetPhysicalDeviceFeatures2(
         return;
     }
     vkGetPhysicalDeviceFeatures2(real_device, args->pFeatures);
+
+    // Surface host image copy and push descriptor capability through Vulkan 1.4 feature struct.
+    VkBaseOutStructure* next = (VkBaseOutStructure*)args->pFeatures->pNext;
+    while (next) {
+        if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES) {
+            VkPhysicalDeviceVulkan14Features* vk14 =
+                (VkPhysicalDeviceVulkan14Features*)next;
+            vk14->hostImageCopy = VK_TRUE;
+            vk14->maintenance6 = VK_TRUE;
+            vk14->pushDescriptor = VK_TRUE;
+            vk14->maintenance5 = VK_TRUE;
+            vk14->pipelineRobustness = VK_TRUE;
+            vk14->pipelineProtectedAccess = VK_TRUE;
+            vk14->dynamicRenderingLocalRead = VK_TRUE;
+            vk14->indexTypeUint8 = VK_TRUE;
+            vk14->vertexAttributeInstanceRateDivisor = VK_TRUE;
+            vk14->vertexAttributeInstanceRateZeroDivisor = VK_TRUE;
+            vk14->shaderSubgroupRotate = VK_TRUE;
+            vk14->shaderSubgroupRotateClustered = VK_TRUE;
+            vk14->shaderFloatControls2 = VK_TRUE;
+            vk14->shaderExpectAssume = VK_TRUE;
+            break;
+        } else if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES) {
+            VkPhysicalDeviceGlobalPriorityQueryFeatures* gpq =
+                (VkPhysicalDeviceGlobalPriorityQueryFeatures*)next;
+            gpq->globalPriorityQuery = VK_TRUE;
+        } else if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES) {
+            VkPhysicalDeviceDynamicRenderingLocalReadFeatures* dr =
+                (VkPhysicalDeviceDynamicRenderingLocalReadFeatures*)next;
+            dr->dynamicRenderingLocalRead = VK_TRUE;
+        }
+        next = next->pNext;
+    }
 }
 
 static void server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties2(
@@ -800,6 +877,27 @@ static void server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties2(
     vkGetPhysicalDeviceQueueFamilyProperties2(real_device,
                                               args->pQueueFamilyPropertyCount,
                                               args->pQueueFamilyProperties);
+
+    if (args->pQueueFamilyProperties && args->pQueueFamilyPropertyCount) {
+        for (uint32_t i = 0; i < *args->pQueueFamilyPropertyCount; ++i) {
+            VkBaseOutStructure* next =
+                (VkBaseOutStructure*)args->pQueueFamilyProperties[i].pNext;
+            while (next) {
+                if (next->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES) {
+                    VkQueueFamilyGlobalPriorityProperties* gp =
+                        (VkQueueFamilyGlobalPriorityProperties*)next;
+                    if (gp->priorityCount == 0) {
+                        static const VkQueueGlobalPriority defaults[] = {
+                            VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
+                        };
+                        gp->priorityCount = 1;
+                        gp->priorities[0] = defaults[0];
+                    }
+                }
+                next = next->pNext;
+            }
+        }
+    }
 }
 
 static void server_dispatch_vkGetPhysicalDeviceMemoryProperties2(
@@ -1112,6 +1210,86 @@ static void server_dispatch_vkGetDeviceMemoryCommitment(
                 (unsigned long long)*args->pCommittedMemoryInBytes);
 }
 
+static void server_dispatch_vkMapMemory(struct vn_dispatch_context* ctx,
+                                        struct vn_command_vkMapMemory* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkMapMemory");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->ppData) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: ppData is NULL");
+        args->ret = VK_ERROR_MEMORY_MAP_FAILED;
+        return;
+    }
+
+    VkDeviceMemory real_memory = server_state_bridge_get_real_memory(state, args->memory);
+    if (real_memory == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown memory in vkMapMemory");
+        args->ret = VK_ERROR_MEMORY_MAP_FAILED;
+        return;
+    }
+
+    VkDeviceSize total_size = 0;
+    server_state_bridge_get_memory_size(state, args->memory, &total_size);
+    VkDeviceSize map_size = args->size == VK_WHOLE_SIZE ? (total_size > args->offset ? total_size - args->offset : 0) : args->size;
+    if (args->offset + map_size > total_size) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Map range exceeds allocation");
+        args->ret = VK_ERROR_MEMORY_MAP_FAILED;
+        return;
+    }
+
+    args->ret = server_state_bridge_map_memory(state, args->memory, args->offset, map_size, args->flags, args->ppData);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkMapMemory failed: %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkUnmapMemory(struct vn_dispatch_context* ctx,
+                                          struct vn_command_vkUnmapMemory* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkUnmapMemory");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    server_state_bridge_unmap_memory(state, args->memory);
+}
+
+static void server_dispatch_vkMapMemory2(struct vn_dispatch_context* ctx,
+                                         struct vn_command_vkMapMemory2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkMapMemory2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pMemoryMapInfo || !args->ppData) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing map info or ppData");
+        args->ret = VK_ERROR_MEMORY_MAP_FAILED;
+        return;
+    }
+
+    VkMemoryMapInfo info = *args->pMemoryMapInfo;
+    VkDeviceSize total_size = 0;
+    server_state_bridge_get_memory_size(state, info.memory, &total_size);
+    VkDeviceSize map_size = info.size == VK_WHOLE_SIZE ? (total_size > info.offset ? total_size - info.offset : 0) : info.size;
+    if (info.offset + map_size > total_size) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Map range exceeds allocation");
+        args->ret = VK_ERROR_MEMORY_MAP_FAILED;
+        return;
+    }
+
+    args->ret = server_state_bridge_map_memory(state, info.memory, info.offset, map_size, info.flags, args->ppData);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkMapMemory2 failed: %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkUnmapMemory2(struct vn_dispatch_context* ctx,
+                                           struct vn_command_vkUnmapMemory2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkUnmapMemory2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pMemoryUnmapInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing pMemoryUnmapInfo");
+        return;
+    }
+    server_state_bridge_unmap_memory(state, args->pMemoryUnmapInfo->memory);
+}
+
 static void server_dispatch_vkCreateBuffer(struct vn_dispatch_context* ctx,
                                            struct vn_command_vkCreateBuffer* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateBuffer (device: %p)", (void*)args->device);
@@ -1154,9 +1332,10 @@ static void server_dispatch_vkGetBufferMemoryRequirements(struct vn_dispatch_con
         memset(args->pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
         VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Buffer not found");
     } else {
-        VP_LOG_INFO(SERVER, "[Venus Server]   -> Requirements: size=%llu alignment=%llu",
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Requirements: size=%llu alignment=%llu memoryTypeBits=0x%x",
                (unsigned long long)args->pMemoryRequirements->size,
-               (unsigned long long)args->pMemoryRequirements->alignment);
+               (unsigned long long)args->pMemoryRequirements->alignment,
+               args->pMemoryRequirements->memoryTypeBits);
     }
 }
 
@@ -1907,12 +2086,23 @@ static void server_dispatch_vkCmdPushDescriptorSet(struct vn_dispatch_context* c
         }
     }
 
-    vkCmdPushDescriptorSet(real_cmd,
-                           args->pipelineBindPoint,
-                           real_layout,
-                           args->set,
-                           args->descriptorWriteCount,
-                           writes);
+    VkDevice real_device = server_state_bridge_get_command_buffer_real_device(state, args->commandBuffer);
+    PFN_vkCmdPushDescriptorSet fp =
+        (PFN_vkCmdPushDescriptorSet)vkGetDeviceProcAddr(real_device, "vkCmdPushDescriptorSet");
+    if (!fp) {
+        fp = (PFN_vkCmdPushDescriptorSet)vkGetDeviceProcAddr(real_device, "vkCmdPushDescriptorSetKHR");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCmdPushDescriptorSet not supported on device");
+        goto cleanup;
+    }
+
+    fp(real_cmd,
+       args->pipelineBindPoint,
+       real_layout,
+       args->set,
+       args->descriptorWriteCount,
+       writes);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> Push descriptors recorded");
 
 cleanup:
@@ -1955,7 +2145,9 @@ static void server_dispatch_vkCmdPushDescriptorSetWithTemplate(
         return;
     }
 
-    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET) {
+    if (tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET &&
+        tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS &&
+        tmpl_info.template_type != VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
         VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unsupported template type for push descriptors");
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
         return;
@@ -2161,6 +2353,49 @@ cleanup:
         server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
     }
     free(tmpl_info.entries);
+}
+
+static void server_dispatch_vkCmdPushDescriptorSet2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdPushDescriptorSet2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushDescriptorSet2");
+    if (!args->pPushDescriptorSetInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing push descriptor info");
+        return;
+    }
+
+    VkPipelineBindPoint bind_point =
+        infer_bind_point_from_stages(args->pPushDescriptorSetInfo->stageFlags);
+
+    struct vn_command_vkCmdPushDescriptorSet compat = {
+        .commandBuffer = args->commandBuffer,
+        .pipelineBindPoint = bind_point,
+        .layout = args->pPushDescriptorSetInfo->layout,
+        .set = args->pPushDescriptorSetInfo->set,
+        .descriptorWriteCount = args->pPushDescriptorSetInfo->descriptorWriteCount,
+        .pDescriptorWrites = args->pPushDescriptorSetInfo->pDescriptorWrites,
+    };
+    server_dispatch_vkCmdPushDescriptorSet(ctx, &compat);
+}
+
+static void server_dispatch_vkCmdPushDescriptorSetWithTemplate2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdPushDescriptorSetWithTemplate2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushDescriptorSetWithTemplate2");
+    if (!args->pPushDescriptorSetWithTemplateInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing push descriptor template info");
+        return;
+    }
+
+    struct vn_command_vkCmdPushDescriptorSetWithTemplate compat = {
+        .commandBuffer = args->commandBuffer,
+        .descriptorUpdateTemplate =
+            args->pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate,
+        .layout = args->pPushDescriptorSetWithTemplateInfo->layout,
+        .set = args->pPushDescriptorSetWithTemplateInfo->set,
+        .pData = args->pPushDescriptorSetWithTemplateInfo->pData,
+    };
+    server_dispatch_vkCmdPushDescriptorSetWithTemplate(ctx, &compat);
 }
 
 static void server_dispatch_vkCreatePipelineLayout(struct vn_dispatch_context* ctx,
@@ -2379,6 +2614,24 @@ static void server_dispatch_vkGetRenderAreaGranularity(struct vn_dispatch_contex
                 args->pGranularity->height);
 }
 
+static void server_dispatch_vkGetRenderingAreaGranularity(struct vn_dispatch_context* ctx,
+                                                          struct vn_command_vkGetRenderingAreaGranularity* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetRenderingAreaGranularity");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pRenderingAreaInfo || !args->pGranularity) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: missing rendering area info or granularity");
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device in vkGetRenderingAreaGranularity");
+        return;
+    }
+
+    vkGetRenderingAreaGranularity(real_device, args->pRenderingAreaInfo, args->pGranularity);
+}
+
 static void server_dispatch_vkCreateFramebuffer(struct vn_dispatch_context* ctx,
                                                 struct vn_command_vkCreateFramebuffer* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateFramebuffer");
@@ -2541,6 +2794,329 @@ static void server_dispatch_vkGetImageSubresourceLayout(struct vn_dispatch_conte
     } else {
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned subresource layout (offset=%llu)",
                (unsigned long long)args->pLayout->offset);
+    }
+}
+
+static void server_dispatch_vkGetImageSubresourceLayout2(struct vn_dispatch_context* ctx,
+                                                         struct vn_command_vkGetImageSubresourceLayout2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetImageSubresourceLayout2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pLayout || !args->pSubresource) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pLayout or pSubresource is NULL");
+        return;
+    }
+
+    VkSubresourceLayout base_layout = {};
+    if (!server_state_bridge_get_image_subresource_layout(state,
+                                                          args->image,
+                                                          &args->pSubresource->imageSubresource,
+                                                          &base_layout)) {
+        memset(&args->pLayout->subresourceLayout, 0, sizeof(args->pLayout->subresourceLayout));
+        VP_LOG_WARN(SERVER, "[Venus Server]   -> Warning: Image not found or invalid subresource");
+        return;
+    }
+
+    args->pLayout->subresourceLayout = base_layout;
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned subresource layout2 (offset=%llu)",
+           (unsigned long long)args->pLayout->subresourceLayout.offset);
+}
+
+static void server_dispatch_vkGetDeviceImageSubresourceLayout(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetDeviceImageSubresourceLayout* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetDeviceImageSubresourceLayout");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pInfo || !args->pLayout || !args->pInfo->pCreateInfo || !args->pInfo->pSubresource) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkGetDeviceImageSubresourceLayout");
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        return;
+    }
+
+    vkGetDeviceImageSubresourceLayout(real_device, args->pInfo, args->pLayout);
+}
+
+static void server_dispatch_vkCopyMemoryToImage(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCopyMemoryToImage* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCopyMemoryToImage (unsupported)");
+    args->ret = VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+static void server_dispatch_vkCopyImageToMemory(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCopyImageToMemory* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCopyImageToMemory (unsupported)");
+    args->ret = VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+static void server_dispatch_vkCopyImageToImage(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCopyImageToImage* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCopyImageToImage");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCopyImageToImageInfo || !args->pCopyImageToImageInfo->pRegions ||
+        args->pCopyImageToImageInfo->regionCount == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkCopyImageToImage");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkCopyImageToImageInfo info = *args->pCopyImageToImageInfo;
+    info.srcImage = server_state_bridge_get_real_image(state, info.srcImage);
+    info.dstImage = server_state_bridge_get_real_image(state, info.dstImage);
+    if (info.srcImage == VK_NULL_HANDLE || info.dstImage == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown images in vkCopyImageToImage");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    PFN_vkCopyImageToImage fp =
+        (PFN_vkCopyImageToImage)vkGetDeviceProcAddr(real_device, "vkCopyImageToImage");
+    if (!fp) {
+        fp = (PFN_vkCopyImageToImage)vkGetDeviceProcAddr(real_device, "vkCopyImageToImageEXT");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCopyImageToImage not supported on device");
+        args->ret = VK_ERROR_EXTENSION_NOT_PRESENT;
+        return;
+    }
+
+    args->ret = fp(real_device, &info);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkCopyImageToImage returned %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkTransitionImageLayout(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkTransitionImageLayout* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkTransitionImageLayout");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (args->transitionCount == 0 || !args->pTransitions) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing transitions");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkHostImageLayoutTransitionInfo* transitions =
+        calloc(args->transitionCount, sizeof(VkHostImageLayoutTransitionInfo));
+    if (!transitions) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for transitions");
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+
+    for (uint32_t i = 0; i < args->transitionCount; ++i) {
+        transitions[i] = args->pTransitions[i];
+        transitions[i].image =
+            server_state_bridge_get_real_image(state, args->pTransitions[i].image);
+        if (transitions[i].image == VK_NULL_HANDLE) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown image in transition %u", i);
+            free(transitions);
+            args->ret = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+    }
+
+    PFN_vkTransitionImageLayout fp =
+        (PFN_vkTransitionImageLayout)vkGetDeviceProcAddr(real_device, "vkTransitionImageLayout");
+    if (!fp) {
+        fp = (PFN_vkTransitionImageLayout)vkGetDeviceProcAddr(real_device, "vkTransitionImageLayoutEXT");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkTransitionImageLayout not supported on device");
+        free(transitions);
+        args->ret = VK_ERROR_EXTENSION_NOT_PRESENT;
+        return;
+    }
+
+    args->ret = fp(real_device, args->transitionCount, transitions);
+    free(transitions);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkTransitionImageLayout returned %d", args->ret);
+    }
+}
+
+static void server_dispatch_vkCopyImageToMemoryMESA(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkCopyImageToMemoryMESA* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCopyImageToMemoryMESA");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCopyImageToMemoryInfo || !args->pData) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing copy info or data buffer");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkImage real_image = server_state_bridge_get_real_image(state, args->pCopyImageToMemoryInfo->srcImage);
+    if (real_image == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown image in vkCopyImageToMemoryMESA");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    if (args->dataSize == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: dataSize is zero");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    void* region_data = malloc(args->dataSize);
+    if (!region_data) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory");
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+
+    VkImageToMemoryCopy region = {};
+    region.sType = VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY;
+    region.pNext = args->pCopyImageToMemoryInfo->pNext;
+    region.pHostPointer = region_data;
+    region.memoryRowLength = args->pCopyImageToMemoryInfo->memoryRowLength;
+    region.memoryImageHeight = args->pCopyImageToMemoryInfo->memoryImageHeight;
+    region.imageSubresource = args->pCopyImageToMemoryInfo->imageSubresource;
+    region.imageOffset = args->pCopyImageToMemoryInfo->imageOffset;
+    region.imageExtent = args->pCopyImageToMemoryInfo->imageExtent;
+
+    VkCopyImageToMemoryInfo info = {};
+    info.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO;
+    info.pNext = args->pCopyImageToMemoryInfo->pNext;
+    info.flags = args->pCopyImageToMemoryInfo->flags;
+    info.srcImage = real_image;
+    info.srcImageLayout = args->pCopyImageToMemoryInfo->srcImageLayout;
+    info.regionCount = 1;
+    info.pRegions = &region;
+
+    PFN_vkCopyImageToMemory fp =
+        (PFN_vkCopyImageToMemory)vkGetDeviceProcAddr(real_device, "vkCopyImageToMemory");
+    if (!fp) {
+        fp = (PFN_vkCopyImageToMemory)vkGetDeviceProcAddr(real_device, "vkCopyImageToMemoryEXT");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCopyImageToMemory not supported on device");
+        free(region_data);
+        args->ret = VK_ERROR_EXTENSION_NOT_PRESENT;
+        return;
+    }
+
+    args->ret = fp(real_device, &info);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkCopyImageToMemory returned %d", args->ret);
+        free(region_data);
+        return;
+    }
+
+    memcpy(args->pData, region_data, args->dataSize);
+    free(region_data);
+}
+
+static void server_dispatch_vkCopyMemoryToImageMESA(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkCopyMemoryToImageMESA* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCopyMemoryToImageMESA");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pCopyMemoryToImageInfo || !args->pCopyMemoryToImageInfo->pRegions ||
+        args->pCopyMemoryToImageInfo->regionCount == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid copy info");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkImage real_image = server_state_bridge_get_real_image(state, args->pCopyMemoryToImageInfo->dstImage);
+    if (real_image == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown image in vkCopyMemoryToImageMESA");
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkMemoryToImageCopy* regions = calloc(args->pCopyMemoryToImageInfo->regionCount,
+                                          sizeof(VkMemoryToImageCopy));
+    if (!regions) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for regions");
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+    for (uint32_t i = 0; i < args->pCopyMemoryToImageInfo->regionCount; ++i) {
+        const VkMemoryToImageCopyMESA* mesa_region = &args->pCopyMemoryToImageInfo->pRegions[i];
+        if (!mesa_region->pData && mesa_region->dataSize > 0) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Region %u missing data pointer", i);
+            free(regions);
+            args->ret = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+
+        VkMemoryToImageCopy region = {};
+        region.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY;
+        region.pNext = mesa_region->pNext;
+        region.pHostPointer = mesa_region->pData;
+        region.memoryRowLength = mesa_region->memoryRowLength;
+        region.memoryImageHeight = mesa_region->memoryImageHeight;
+        region.imageSubresource = mesa_region->imageSubresource;
+        region.imageOffset = mesa_region->imageOffset;
+        region.imageExtent = mesa_region->imageExtent;
+        regions[i] = region;
+    }
+
+    VkCopyMemoryToImageInfo info = {};
+    info.sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO;
+    info.pNext = args->pCopyMemoryToImageInfo->pNext;
+    info.flags = args->pCopyMemoryToImageInfo->flags;
+    info.dstImage = real_image;
+    info.dstImageLayout = args->pCopyMemoryToImageInfo->dstImageLayout;
+    info.regionCount = args->pCopyMemoryToImageInfo->regionCount;
+    info.pRegions = regions;
+
+    PFN_vkCopyMemoryToImage fp =
+        (PFN_vkCopyMemoryToImage)vkGetDeviceProcAddr(real_device, "vkCopyMemoryToImage");
+    if (!fp) {
+        fp = (PFN_vkCopyMemoryToImage)vkGetDeviceProcAddr(real_device, "vkCopyMemoryToImageEXT");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCopyMemoryToImage not supported on device");
+        free(regions);
+        args->ret = VK_ERROR_EXTENSION_NOT_PRESENT;
+        return;
+    }
+
+    args->ret = fp(real_device, &info);
+    free(regions);
+    if (args->ret != VK_SUCCESS) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkCopyMemoryToImage returned %d", args->ret);
     }
 }
 
@@ -3425,6 +4001,69 @@ static void server_dispatch_vkCmdEndRendering(struct vn_dispatch_context* ctx,
     vkCmdEndRendering(real_cb);
 }
 
+static void server_dispatch_vkCmdSetRenderingAttachmentLocations(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdSetRenderingAttachmentLocations* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetRenderingAttachmentLocations");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetRenderingAttachmentLocations")) {
+        return;
+    }
+    if (!args->pLocationInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing location info");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    if (args->pLocationInfo->colorAttachmentCount > 0 &&
+        !args->pLocationInfo->pColorAttachmentLocations) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: colorAttachmentCount set without locations");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkCommandBuffer real_cb = get_real_command_buffer(state, args->commandBuffer, "vkCmdSetRenderingAttachmentLocations");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    VkDevice real_device = server_state_bridge_get_command_buffer_real_device(state, args->commandBuffer);
+    PFN_vkCmdSetRenderingAttachmentLocations fp =
+        (PFN_vkCmdSetRenderingAttachmentLocations)vkGetDeviceProcAddr(real_device, "vkCmdSetRenderingAttachmentLocations");
+    if (!fp) {
+        fp = (PFN_vkCmdSetRenderingAttachmentLocations)vkGetDeviceProcAddr(real_device, "vkCmdSetRenderingAttachmentLocationsKHR");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCmdSetRenderingAttachmentLocations not supported on device");
+        return;
+    }
+    fp(real_cb, args->pLocationInfo);
+}
+
+static void server_dispatch_vkCmdSetRenderingInputAttachmentIndices(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdSetRenderingInputAttachmentIndices* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetRenderingInputAttachmentIndices");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetRenderingInputAttachmentIndices")) {
+        return;
+    }
+    if (!args->pInputAttachmentIndexInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing input attachment indices");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    if (args->pInputAttachmentIndexInfo->colorAttachmentCount > 0 &&
+        !args->pInputAttachmentIndexInfo->pColorAttachmentInputIndices) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: colorAttachmentCount set without indices");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetRenderingInputAttachmentIndices");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdSetRenderingInputAttachmentIndices(real_cb, args->pInputAttachmentIndexInfo);
+}
+
 static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
                                               struct vn_command_vkCmdBindPipeline* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindPipeline");
@@ -3459,6 +4098,35 @@ static void server_dispatch_vkCmdBindIndexBuffer(struct vn_dispatch_context* ctx
     }
     vkCmdBindIndexBuffer(real_cb, real_buffer, args->offset, args->indexType);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindIndexBuffer recorded");
+}
+
+static void server_dispatch_vkCmdBindIndexBuffer2(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkCmdBindIndexBuffer2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindIndexBuffer2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindIndexBuffer2")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBindIndexBuffer2");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdBindIndexBuffer2");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_command_buffer_real_device(state, args->commandBuffer);
+    PFN_vkCmdBindIndexBuffer2 fp =
+        (PFN_vkCmdBindIndexBuffer2)vkGetDeviceProcAddr(real_device, "vkCmdBindIndexBuffer2");
+    if (!fp) {
+        fp = (PFN_vkCmdBindIndexBuffer2)vkGetDeviceProcAddr(real_device, "vkCmdBindIndexBuffer2KHR");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCmdBindIndexBuffer2 not supported on device");
+        return;
+    }
+
+    fp(real_cb, real_buffer, args->offset, args->size, args->indexType);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindIndexBuffer2 recorded");
 }
 
 static void server_dispatch_vkCmdBindVertexBuffers(struct vn_dispatch_context* ctx,
@@ -3593,6 +4261,33 @@ static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* 
     free(real_sets);
 }
 
+static void server_dispatch_vkCmdBindDescriptorSets2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkCmdBindDescriptorSets2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindDescriptorSets2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pBindDescriptorSetsInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing bind descriptor info");
+        return;
+    }
+
+    VkPipelineBindPoint bind_point =
+        infer_bind_point_from_stages(args->pBindDescriptorSetsInfo->stageFlags);
+
+    struct vn_command_vkCmdBindDescriptorSets compat = {
+        .commandBuffer = args->commandBuffer,
+        .pipelineBindPoint = bind_point,
+        .layout = args->pBindDescriptorSetsInfo->layout,
+        .firstSet = args->pBindDescriptorSetsInfo->firstSet,
+        .descriptorSetCount = args->pBindDescriptorSetsInfo->descriptorSetCount,
+        .pDescriptorSets = args->pBindDescriptorSetsInfo->pDescriptorSets,
+        .dynamicOffsetCount = args->pBindDescriptorSetsInfo->dynamicOffsetCount,
+        .pDynamicOffsets = args->pBindDescriptorSetsInfo->pDynamicOffsets,
+    };
+
+    server_dispatch_vkCmdBindDescriptorSets(ctx, &compat);
+}
+
 static void server_dispatch_vkCmdPushConstants(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkCmdPushConstants* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushConstants");
@@ -3613,6 +4308,24 @@ static void server_dispatch_vkCmdPushConstants(struct vn_dispatch_context* ctx,
                        args->offset,
                        args->size,
                        args->pValues);
+}
+
+static void server_dispatch_vkCmdPushConstants2(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdPushConstants2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdPushConstants2");
+    if (!args->pPushConstantsInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing push constants info");
+        return;
+    }
+    struct vn_command_vkCmdPushConstants compat = {
+        .commandBuffer = args->commandBuffer,
+        .layout = args->pPushConstantsInfo->layout,
+        .stageFlags = args->pPushConstantsInfo->stageFlags,
+        .offset = args->pPushConstantsInfo->offset,
+        .size = args->pPushConstantsInfo->size,
+        .pValues = args->pPushConstantsInfo->pValues,
+    };
+    server_dispatch_vkCmdPushConstants(ctx, &compat);
 }
 
 static void server_dispatch_vkCmdDispatch(struct vn_dispatch_context* ctx,
@@ -3780,6 +4493,34 @@ static void server_dispatch_vkCmdSetLineWidth(struct vn_dispatch_context* ctx,
         return;
     }
     vkCmdSetLineWidth(real_cb, args->lineWidth);
+}
+
+static void server_dispatch_vkCmdSetLineStipple(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdSetLineStipple* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetLineStipple");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetLineStipple")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetLineStipple");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    VkDevice real_device = server_state_bridge_get_command_buffer_real_device(state, args->commandBuffer);
+    PFN_vkCmdSetLineStipple fp =
+        (PFN_vkCmdSetLineStipple)vkGetDeviceProcAddr(real_device, "vkCmdSetLineStipple");
+    if (!fp) {
+        fp = (PFN_vkCmdSetLineStipple)vkGetDeviceProcAddr(real_device, "vkCmdSetLineStippleKHR");
+    }
+    if (!fp) {
+        fp = (PFN_vkCmdSetLineStipple)vkGetDeviceProcAddr(real_device, "vkCmdSetLineStippleEXT");
+    }
+    if (!fp) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkCmdSetLineStipple not supported on device");
+        return;
+    }
+    fp(real_cb, args->lineStippleFactor, args->lineStipplePattern);
 }
 
 static void server_dispatch_vkCmdSetDepthBias(struct vn_dispatch_context* ctx,
@@ -5201,6 +5942,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetPhysicalDeviceQueueFamilyProperties = server_dispatch_vkGetPhysicalDeviceQueueFamilyProperties;
     renderer->ctx.dispatch_vkGetPhysicalDeviceMemoryProperties = server_dispatch_vkGetPhysicalDeviceMemoryProperties;
     renderer->ctx.dispatch_vkGetPhysicalDeviceFormatProperties = server_dispatch_vkGetPhysicalDeviceFormatProperties;
+    renderer->ctx.dispatch_vkGetPhysicalDeviceFormatProperties2 = server_dispatch_vkGetPhysicalDeviceFormatProperties2;
     renderer->ctx.dispatch_vkGetPhysicalDeviceImageFormatProperties = server_dispatch_vkGetPhysicalDeviceImageFormatProperties;
     renderer->ctx.dispatch_vkGetPhysicalDeviceImageFormatProperties2 = server_dispatch_vkGetPhysicalDeviceImageFormatProperties2;
     renderer->ctx.dispatch_vkGetPhysicalDeviceProperties2 = server_dispatch_vkGetPhysicalDeviceProperties2;
@@ -5220,6 +5962,10 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
 
     // Phase 4 handlers: Memory and resources
     renderer->ctx.dispatch_vkAllocateMemory = server_dispatch_vkAllocateMemory;
+    renderer->ctx.dispatch_vkMapMemory = server_dispatch_vkMapMemory;
+    renderer->ctx.dispatch_vkUnmapMemory = server_dispatch_vkUnmapMemory;
+    renderer->ctx.dispatch_vkMapMemory2 = server_dispatch_vkMapMemory2;
+    renderer->ctx.dispatch_vkUnmapMemory2 = server_dispatch_vkUnmapMemory2;
     renderer->ctx.dispatch_vkFreeMemory = server_dispatch_vkFreeMemory;
     renderer->ctx.dispatch_vkGetDeviceMemoryCommitment = server_dispatch_vkGetDeviceMemoryCommitment;
     renderer->ctx.dispatch_vkCreateBuffer = server_dispatch_vkCreateBuffer;
@@ -5245,6 +5991,15 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
     renderer->ctx.dispatch_vkBindImageMemory2 = server_dispatch_vkBindImageMemory2;
     renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
+    renderer->ctx.dispatch_vkGetImageSubresourceLayout2 = server_dispatch_vkGetImageSubresourceLayout2;
+    renderer->ctx.dispatch_vkGetDeviceImageSubresourceLayout =
+        server_dispatch_vkGetDeviceImageSubresourceLayout;
+    renderer->ctx.dispatch_vkCopyMemoryToImage = server_dispatch_vkCopyMemoryToImage;
+    renderer->ctx.dispatch_vkCopyImageToMemory = server_dispatch_vkCopyImageToMemory;
+    renderer->ctx.dispatch_vkCopyImageToMemoryMESA = server_dispatch_vkCopyImageToMemoryMESA;
+    renderer->ctx.dispatch_vkCopyMemoryToImageMESA = server_dispatch_vkCopyMemoryToImageMESA;
+    renderer->ctx.dispatch_vkCopyImageToImage = server_dispatch_vkCopyImageToImage;
+    renderer->ctx.dispatch_vkTransitionImageLayout = server_dispatch_vkTransitionImageLayout;
     renderer->ctx.dispatch_vkCreateImageView = server_dispatch_vkCreateImageView;
     renderer->ctx.dispatch_vkDestroyImageView = server_dispatch_vkDestroyImageView;
     renderer->ctx.dispatch_vkCreateBufferView = server_dispatch_vkCreateBufferView;
@@ -5264,6 +6019,12 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdPushDescriptorSet = server_dispatch_vkCmdPushDescriptorSet;
     renderer->ctx.dispatch_vkCmdPushDescriptorSetWithTemplate =
         server_dispatch_vkCmdPushDescriptorSetWithTemplate;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSet2 = server_dispatch_vkCmdPushDescriptorSet2;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSetWithTemplate2 =
+        server_dispatch_vkCmdPushDescriptorSetWithTemplate2;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSet2 = server_dispatch_vkCmdPushDescriptorSet2;
+    renderer->ctx.dispatch_vkCmdPushDescriptorSetWithTemplate2 =
+        server_dispatch_vkCmdPushDescriptorSetWithTemplate2;
     renderer->ctx.dispatch_vkCreateDescriptorUpdateTemplate = server_dispatch_vkCreateDescriptorUpdateTemplate;
     renderer->ctx.dispatch_vkDestroyDescriptorUpdateTemplate = server_dispatch_vkDestroyDescriptorUpdateTemplate;
     renderer->ctx.dispatch_vkCreatePipelineLayout = server_dispatch_vkCreatePipelineLayout;
@@ -5276,6 +6037,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCreateRenderPass2 = server_dispatch_vkCreateRenderPass2;
     renderer->ctx.dispatch_vkDestroyRenderPass = server_dispatch_vkDestroyRenderPass;
     renderer->ctx.dispatch_vkGetRenderAreaGranularity = server_dispatch_vkGetRenderAreaGranularity;
+    renderer->ctx.dispatch_vkGetRenderingAreaGranularity = server_dispatch_vkGetRenderingAreaGranularity;
     renderer->ctx.dispatch_vkCreateFramebuffer = server_dispatch_vkCreateFramebuffer;
     renderer->ctx.dispatch_vkDestroyFramebuffer = server_dispatch_vkDestroyFramebuffer;
     renderer->ctx.dispatch_vkCreateComputePipelines = server_dispatch_vkCreateComputePipelines;
@@ -5313,17 +6075,25 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdEndRenderPass2 = server_dispatch_vkCmdEndRenderPass2;
     renderer->ctx.dispatch_vkCmdBeginRendering = server_dispatch_vkCmdBeginRendering;
     renderer->ctx.dispatch_vkCmdEndRendering = server_dispatch_vkCmdEndRendering;
+    renderer->ctx.dispatch_vkCmdSetRenderingAttachmentLocations =
+        server_dispatch_vkCmdSetRenderingAttachmentLocations;
+    renderer->ctx.dispatch_vkCmdSetRenderingInputAttachmentIndices =
+        server_dispatch_vkCmdSetRenderingInputAttachmentIndices;
     renderer->ctx.dispatch_vkCmdBindPipeline = server_dispatch_vkCmdBindPipeline;
     renderer->ctx.dispatch_vkCmdBindIndexBuffer = server_dispatch_vkCmdBindIndexBuffer;
+    renderer->ctx.dispatch_vkCmdBindIndexBuffer2 = server_dispatch_vkCmdBindIndexBuffer2;
     renderer->ctx.dispatch_vkCmdBindVertexBuffers = server_dispatch_vkCmdBindVertexBuffers;
     renderer->ctx.dispatch_vkCmdBindVertexBuffers2 = server_dispatch_vkCmdBindVertexBuffers2;
     renderer->ctx.dispatch_vkCmdBindDescriptorSets = server_dispatch_vkCmdBindDescriptorSets;
+    renderer->ctx.dispatch_vkCmdBindDescriptorSets2 = server_dispatch_vkCmdBindDescriptorSets2;
     renderer->ctx.dispatch_vkCmdPushConstants = server_dispatch_vkCmdPushConstants;
+    renderer->ctx.dispatch_vkCmdPushConstants2 = server_dispatch_vkCmdPushConstants2;
     renderer->ctx.dispatch_vkCmdDispatch = server_dispatch_vkCmdDispatch;
     renderer->ctx.dispatch_vkCmdDispatchIndirect = server_dispatch_vkCmdDispatchIndirect;
     renderer->ctx.dispatch_vkCmdDispatchBase = server_dispatch_vkCmdDispatchBase;
     renderer->ctx.dispatch_vkCmdSetBlendConstants = server_dispatch_vkCmdSetBlendConstants;
     renderer->ctx.dispatch_vkCmdSetLineWidth = server_dispatch_vkCmdSetLineWidth;
+    renderer->ctx.dispatch_vkCmdSetLineStipple = server_dispatch_vkCmdSetLineStipple;
     renderer->ctx.dispatch_vkCmdSetDepthBias = server_dispatch_vkCmdSetDepthBias;
     renderer->ctx.dispatch_vkCmdSetDepthBounds = server_dispatch_vkCmdSetDepthBounds;
     renderer->ctx.dispatch_vkCmdSetStencilCompareMask = server_dispatch_vkCmdSetStencilCompareMask;

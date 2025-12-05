@@ -172,6 +172,18 @@ VkImage ResourceState::get_remote_image(VkImage image) const {
     return it->second.remote_handle;
 }
 
+bool ResourceState::get_image_info(VkImage image, ImageState* out_state) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = images_.find(handle_key(image));
+    if (it == images_.end()) {
+        return false;
+    }
+    if (out_state) {
+        *out_state = it->second;
+    }
+    return true;
+}
+
 bool ResourceState::cache_image_requirements(VkImage image, const VkMemoryRequirements& requirements) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = images_.find(handle_key(image));

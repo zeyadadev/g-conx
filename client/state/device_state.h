@@ -19,10 +19,15 @@ struct QueueEntry {
 struct DeviceEntry {
     VkDevice local_handle;
     VkDevice remote_handle;
-    VkPhysicalDevice physical_device;  // The local physical device handle
+    VkPhysicalDevice physical_device;           // Local physical device handle
+    VkPhysicalDevice remote_physical_device;    // Remote physical device handle
     std::vector<QueueEntry> queues;
     std::unordered_set<std::string> enabled_extensions;
     uint32_t api_version = VK_API_VERSION_1_0;
+    VkPhysicalDeviceVulkan14Features vk14_features{};
+    VkPhysicalDeviceVulkan14Properties vk14_properties{};
+    VkPhysicalDeviceLineRasterizationFeaturesEXT line_features{};
+    VkPhysicalDeviceLineRasterizationPropertiesEXT line_properties{};
 };
 
 class DeviceState {
@@ -33,7 +38,8 @@ public:
     // Add a new device
     void add_device(VkDevice local,
                     VkDevice remote,
-                    VkPhysicalDevice phys_dev,
+                    VkPhysicalDevice local_phys_dev,
+                    VkPhysicalDevice remote_phys_dev,
                     uint32_t api_version = VK_API_VERSION_1_0);
 
     // Remove a device and all its queues
@@ -53,6 +59,13 @@ public:
     bool is_extension_enabled(VkDevice device, const char* name) const;
     uint32_t get_device_api_version(VkDevice device) const;
     VkPhysicalDevice get_device_physical_device(VkDevice device) const;
+    void set_vulkan14_info(VkDevice device,
+                           const VkPhysicalDeviceVulkan14Features& features,
+                           const VkPhysicalDeviceVulkan14Properties& properties,
+                           const VkPhysicalDeviceLineRasterizationFeaturesEXT& line_feats,
+                           const VkPhysicalDeviceLineRasterizationPropertiesEXT& line_props);
+    const VkPhysicalDeviceVulkan14Features* get_vk14_features(VkDevice device) const;
+    const VkPhysicalDeviceLineRasterizationFeaturesEXT* get_line_features(VkDevice device) const;
 
     // Add a queue to a device
     void add_queue(VkDevice device, VkQueue local, VkQueue remote, uint32_t family, uint32_t index);

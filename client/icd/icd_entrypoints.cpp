@@ -71,6 +71,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceFormatProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceFormatProperties;
     }
+    if (strcmp(pName, "vkGetPhysicalDeviceFormatProperties2") == 0 ||
+        strcmp(pName, "vkGetPhysicalDeviceFormatProperties2KHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceFormatProperties2\n";
+        return (PFN_vkVoidFunction)vkGetPhysicalDeviceFormatProperties2;
+    }
     if (strcmp(pName, "vkGetPhysicalDeviceImageFormatProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceImageFormatProperties\n";
         return (PFN_vkVoidFunction)vkGetPhysicalDeviceImageFormatProperties;
@@ -370,9 +375,25 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkMapMemory\n";
         return (PFN_vkVoidFunction)vkMapMemory;
     }
+    if (strcmp(pName, "vkMapMemory2") == 0) {
+        ICD_LOG_INFO() << " -> vkMapMemory2\n";
+        return (PFN_vkVoidFunction)vkMapMemory2;
+    }
+    if (strcmp(pName, "vkMapMemory2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkMapMemory2KHR\n";
+        return (PFN_vkVoidFunction)vkMapMemory2KHR;
+    }
     if (strcmp(pName, "vkUnmapMemory") == 0) {
         ICD_LOG_INFO() << " -> vkUnmapMemory\n";
         return (PFN_vkVoidFunction)vkUnmapMemory;
+    }
+    if (strcmp(pName, "vkUnmapMemory2") == 0) {
+        ICD_LOG_INFO() << " -> vkUnmapMemory2\n";
+        return (PFN_vkVoidFunction)vkUnmapMemory2;
+    }
+    if (strcmp(pName, "vkUnmapMemory2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkUnmapMemory2KHR\n";
+        return (PFN_vkVoidFunction)vkUnmapMemory2KHR;
     }
     if (strcmp(pName, "vkFlushMappedMemoryRanges") == 0) {
         ICD_LOG_INFO() << " -> vkFlushMappedMemoryRanges\n";
@@ -600,6 +621,16 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdPushDescriptorSetWithTemplate\n";
         return (PFN_vkVoidFunction)vkCmdPushDescriptorSetWithTemplate;
     }
+    if (strcmp(pName, "vkCmdPushDescriptorSet2") == 0 ||
+        strcmp(pName, "vkCmdPushDescriptorSet2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdPushDescriptorSet2\n";
+        return (PFN_vkVoidFunction)vkCmdPushDescriptorSet2;
+    }
+    if (strcmp(pName, "vkCmdPushDescriptorSetWithTemplate2") == 0 ||
+        strcmp(pName, "vkCmdPushDescriptorSetWithTemplate2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdPushDescriptorSetWithTemplate2\n";
+        return (PFN_vkVoidFunction)vkCmdPushDescriptorSetWithTemplate2;
+    }
     if (strcmp(pName, "vkCreatePipelineLayout") == 0) {
         ICD_LOG_INFO() << " -> vkCreatePipelineLayout\n";
         return (PFN_vkVoidFunction)vkCreatePipelineLayout;
@@ -680,6 +711,14 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkGetRenderAreaGranularity\n";
         return (PFN_vkVoidFunction)vkGetRenderAreaGranularity;
     }
+    if (strcmp(pName, "vkGetRenderingAreaGranularity") == 0) {
+        ICD_LOG_INFO() << " -> vkGetRenderingAreaGranularity\n";
+        return (PFN_vkVoidFunction)vkGetRenderingAreaGranularity;
+    }
+    if (strcmp(pName, "vkGetRenderingAreaGranularityKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkGetRenderingAreaGranularityKHR\n";
+        return (PFN_vkVoidFunction)vkGetRenderingAreaGranularityKHR;
+    }
     if (strcmp(pName, "vkCreateFramebuffer") == 0) {
         ICD_LOG_INFO() << " -> vkCreateFramebuffer\n";
         return (PFN_vkVoidFunction)vkCreateFramebuffer;
@@ -715,6 +754,45 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkGetImageSubresourceLayout") == 0) {
         ICD_LOG_INFO() << " -> vkGetImageSubresourceLayout\n";
         return (PFN_vkVoidFunction)vkGetImageSubresourceLayout;
+    }
+    if (strcmp(pName, "vkGetDeviceImageSubresourceLayout") == 0) {
+        ICD_LOG_INFO() << " -> vkGetDeviceImageSubresourceLayout\n";
+        return (PFN_vkVoidFunction)vkGetDeviceImageSubresourceLayout;
+    }
+    if (strcmp(pName, "vkGetDeviceImageSubresourceLayoutKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkGetDeviceImageSubresourceLayoutKHR\n";
+        return (PFN_vkVoidFunction)vkGetDeviceImageSubresourceLayoutKHR;
+    }
+    if (strcmp(pName, "vkGetImageSubresourceLayout2") == 0) {
+        ICD_LOG_INFO() << " -> vkGetImageSubresourceLayout2\n";
+        return (PFN_vkVoidFunction)vkGetImageSubresourceLayout2;
+    }
+    if (strcmp(pName, "vkGetImageSubresourceLayout2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkGetImageSubresourceLayout2KHR\n";
+        return (PFN_vkVoidFunction)vkGetImageSubresourceLayout2KHR;
+    }
+    if (strcmp(pName, "vkGetImageSubresourceLayout2EXT") == 0) {
+        ICD_LOG_INFO() << " -> vkGetImageSubresourceLayout2EXT\n";
+        return (PFN_vkVoidFunction)vkGetImageSubresourceLayout2EXT;
+    }
+    if (strcmp(pName, "vkCopyMemoryToImage") == 0 ||
+        strcmp(pName, "vkCopyMemoryToImageEXT") == 0) {
+        ICD_LOG_INFO() << " -> vkCopyMemoryToImage\n";
+        return (PFN_vkVoidFunction)vkCopyMemoryToImage;
+    }
+    if (strcmp(pName, "vkCopyImageToMemory") == 0 ||
+        strcmp(pName, "vkCopyImageToMemoryEXT") == 0) {
+        ICD_LOG_INFO() << " -> vkCopyImageToMemory\n";
+        return (PFN_vkVoidFunction)vkCopyImageToMemory;
+    }
+    if (strcmp(pName, "vkCopyImageToImage") == 0 ||
+        strcmp(pName, "vkCopyImageToImageEXT") == 0) {
+        ICD_LOG_INFO() << " -> vkCopyImageToImage\n";
+        return (PFN_vkVoidFunction)vkCopyImageToImage;
+    }
+    if (strcmp(pName, "vkTransitionImageLayout") == 0) {
+        ICD_LOG_INFO() << " -> vkTransitionImageLayout\n";
+        return (PFN_vkVoidFunction)vkTransitionImageLayout;
     }
     if (strcmp(pName, "vkCreateCommandPool") == 0) {
         ICD_LOG_INFO() << " -> vkCreateCommandPool\n";
@@ -900,6 +978,16 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdBeginRenderingKHR\n";
         return (PFN_vkVoidFunction)vkCmdBeginRenderingKHR;
     }
+    if (strcmp(pName, "vkCmdSetRenderingAttachmentLocations") == 0 ||
+        strcmp(pName, "vkCmdSetRenderingAttachmentLocationsKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetRenderingAttachmentLocations\n";
+        return (PFN_vkVoidFunction)vkCmdSetRenderingAttachmentLocations;
+    }
+    if (strcmp(pName, "vkCmdSetRenderingInputAttachmentIndices") == 0 ||
+        strcmp(pName, "vkCmdSetRenderingInputAttachmentIndicesKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetRenderingInputAttachmentIndices\n";
+        return (PFN_vkVoidFunction)vkCmdSetRenderingInputAttachmentIndices;
+    }
     if (strcmp(pName, "vkCmdEndRenderPass") == 0) {
         ICD_LOG_INFO() << " -> vkCmdEndRenderPass\n";
         return (PFN_vkVoidFunction)vkCmdEndRenderPass;
@@ -927,6 +1015,20 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkCmdBindIndexBuffer") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindIndexBuffer\n";
         return (PFN_vkVoidFunction)vkCmdBindIndexBuffer;
+    }
+    if (strcmp(pName, "vkCmdBindIndexBuffer2") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindIndexBuffer2\n";
+        return (PFN_vkVoidFunction)vkCmdBindIndexBuffer2;
+    }
+    if (strcmp(pName, "vkCmdBindIndexBuffer2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindIndexBuffer2KHR\n";
+        return (PFN_vkVoidFunction)vkCmdBindIndexBuffer2KHR;
+    }
+    if (strcmp(pName, "vkCmdSetLineStipple") == 0 ||
+        strcmp(pName, "vkCmdSetLineStippleKHR") == 0 ||
+        strcmp(pName, "vkCmdSetLineStippleEXT") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetLineStipple\n";
+        return (PFN_vkVoidFunction)vkCmdSetLineStipple;
     }
     if (strcmp(pName, "vkCmdBindVertexBuffers2") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindVertexBuffers2\n";
@@ -1104,6 +1206,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdBindDescriptorSets\n";
         return (PFN_vkVoidFunction)vkCmdBindDescriptorSets;
     }
+    if (strcmp(pName, "vkCmdBindDescriptorSets2") == 0 ||
+        strcmp(pName, "vkCmdBindDescriptorSets2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindDescriptorSets2\n";
+        return (PFN_vkVoidFunction)vkCmdBindDescriptorSets2;
+    }
     if (strcmp(pName, "vkCmdDispatch") == 0) {
         ICD_LOG_INFO() << " -> vkCmdDispatch\n";
         return (PFN_vkVoidFunction)vkCmdDispatch;
@@ -1123,6 +1230,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkCmdPushConstants") == 0) {
         ICD_LOG_INFO() << " -> vkCmdPushConstants\n";
         return (PFN_vkVoidFunction)vkCmdPushConstants;
+    }
+    if (strcmp(pName, "vkCmdPushConstants2") == 0 ||
+        strcmp(pName, "vkCmdPushConstants2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdPushConstants2\n";
+        return (PFN_vkVoidFunction)vkCmdPushConstants2;
     }
     if (strcmp(pName, "vkCmdPipelineBarrier") == 0) {
         ICD_LOG_INFO() << " -> vkCmdPipelineBarrier\n";

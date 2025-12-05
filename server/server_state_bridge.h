@@ -46,6 +46,8 @@ VkBufferView server_state_bridge_get_real_buffer_view(const struct ServerState* 
 VkDeviceMemory server_state_bridge_get_real_memory(const struct ServerState* state, VkDeviceMemory memory);
 VkCommandBuffer server_state_bridge_get_real_command_buffer(const struct ServerState* state,
                                                             VkCommandBuffer commandBuffer);
+VkDevice server_state_bridge_get_command_buffer_real_device(const struct ServerState* state,
+                                                            VkCommandBuffer commandBuffer);
 VkShaderModule server_state_bridge_create_shader_module(struct ServerState* state,
                                                         VkDevice device,
                                                         const VkShaderModuleCreateInfo* info);
@@ -161,7 +163,16 @@ VkResult server_state_bridge_bind_image_memory2(struct ServerState* state,
                                                 VkDevice device,
                                                 uint32_t bindInfoCount,
                                                 const VkBindImageMemoryInfo* pBindInfos);
+bool server_state_bridge_get_memory_size(struct ServerState* state, VkDeviceMemory memory, VkDeviceSize* out_size);
+VkResult server_state_bridge_map_memory(struct ServerState* state,
+                                        VkDeviceMemory memory,
+                                        VkDeviceSize offset,
+                                        VkDeviceSize size,
+                                        VkMemoryMapFlags flags,
+                                        void** mapped_ptr);
+VkResult server_state_bridge_unmap_memory(struct ServerState* state, VkDeviceMemory memory);
 bool server_state_bridge_get_image_subresource_layout(struct ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
+bool server_state_bridge_get_image_info(struct ServerState* state, VkImage image, VkFormat* format, VkImageTiling* tiling);
 void server_state_bridge_get_device_memory_commitment(struct ServerState* state,
                                                       VkDevice device,
                                                       VkDeviceMemory memory,
