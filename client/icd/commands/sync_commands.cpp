@@ -172,6 +172,292 @@ extern "C" {
 
 // Vulkan function implementations
 
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueBindSparse(
+    VkQueue queue,
+    uint32_t bindInfoCount,
+    const VkBindSparseInfo* pBindInfo,
+    VkFence fence) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueBindSparse called (bindInfoCount=" << bindInfoCount << ")\n";
+
+    if (bindInfoCount > 0 && !pBindInfo) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkQueue remote_queue = VK_NULL_HANDLE;
+    if (!ensure_queue_tracked(queue, &remote_queue)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    VkFence remote_fence = VK_NULL_HANDLE;
+    if (fence != VK_NULL_HANDLE) {
+        remote_fence = g_sync_state.get_remote_fence(fence);
+        if (remote_fence == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: fence not tracked\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    struct SparseBindStorage {
+        VkBindSparseInfo info{};
+        std::vector<VkSemaphore> wait_semaphores;
+        std::vector<VkSemaphore> signal_semaphores;
+        std::vector<VkSparseBufferMemoryBindInfo> buffer_infos;
+        std::vector<std::vector<VkSparseMemoryBind>> buffer_binds;
+        std::vector<VkSparseImageOpaqueMemoryBindInfo> image_opaque_infos;
+        std::vector<std::vector<VkSparseMemoryBind>> opaque_binds;
+        std::vector<VkSparseImageMemoryBindInfo> image_infos;
+        std::vector<std::vector<VkSparseImageMemoryBind>> image_binds;
+        VkTimelineSemaphoreSubmitInfo timeline_info{};
+        std::vector<uint64_t> wait_values;
+        std::vector<uint64_t> signal_values;
+        bool has_timeline = false;
+    };
+
+    std::vector<VkBindSparseInfo> remote_infos(bindInfoCount);
+    std::vector<SparseBindStorage> storage(bindInfoCount);
+
+    for (uint32_t i = 0; i < bindInfoCount; ++i) {
+        const VkBindSparseInfo& src = pBindInfo[i];
+        VkBindSparseInfo& dst = remote_infos[i];
+        SparseBindStorage& slot = storage[i];
+        dst = src;
+
+        if (src.waitSemaphoreCount > 0) {
+            if (!src.pWaitSemaphores) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: wait semaphores missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.wait_semaphores.resize(src.waitSemaphoreCount);
+            for (uint32_t j = 0; j < src.waitSemaphoreCount; ++j) {
+                VkSemaphore local_wait = src.pWaitSemaphores[j];
+                if (!g_sync_state.has_semaphore(local_wait)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: wait semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                VkSemaphore remote_wait = g_sync_state.get_remote_semaphore(local_wait);
+                if (remote_wait == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.wait_semaphores[j] = remote_wait;
+            }
+            dst.pWaitSemaphores = slot.wait_semaphores.data();
+        } else {
+            dst.pWaitSemaphores = nullptr;
+        }
+
+        if (src.bufferBindCount > 0) {
+            if (!src.pBufferBinds) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: buffer binds missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.buffer_infos.resize(src.bufferBindCount);
+            slot.buffer_binds.resize(src.bufferBindCount);
+            for (uint32_t j = 0; j < src.bufferBindCount; ++j) {
+                const VkSparseBufferMemoryBindInfo& buf = src.pBufferBinds[j];
+                VkSparseBufferMemoryBindInfo& dst_buf = slot.buffer_infos[j];
+                dst_buf = buf;
+                dst_buf.buffer = g_resource_state.get_remote_buffer(buf.buffer);
+                if (dst_buf.buffer == VK_NULL_HANDLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: buffer not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (buf.bindCount > 0) {
+                    if (!buf.pBinds) {
+                        ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: buffer binds array missing\n";
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                    }
+                    slot.buffer_binds[j].assign(buf.pBinds, buf.pBinds + buf.bindCount);
+                    for (auto& bind : slot.buffer_binds[j]) {
+                        if (bind.memory != VK_NULL_HANDLE) {
+                            bind.memory = g_resource_state.get_remote_memory(bind.memory);
+                            if (bind.memory == VK_NULL_HANDLE) {
+                                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: memory not tracked for buffer bind\n";
+                                return VK_ERROR_INITIALIZATION_FAILED;
+                            }
+                        }
+                    }
+                    dst_buf.pBinds = slot.buffer_binds[j].data();
+                } else {
+                    dst_buf.pBinds = nullptr;
+                }
+            }
+            dst.pBufferBinds = slot.buffer_infos.data();
+        } else {
+            dst.pBufferBinds = nullptr;
+        }
+
+        if (src.imageOpaqueBindCount > 0) {
+            if (!src.pImageOpaqueBinds) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: image opaque binds missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.image_opaque_infos.resize(src.imageOpaqueBindCount);
+            slot.opaque_binds.resize(src.imageOpaqueBindCount);
+            for (uint32_t j = 0; j < src.imageOpaqueBindCount; ++j) {
+                const VkSparseImageOpaqueMemoryBindInfo& info = src.pImageOpaqueBinds[j];
+                VkSparseImageOpaqueMemoryBindInfo& dst_info = slot.image_opaque_infos[j];
+                dst_info = info;
+                dst_info.image = g_resource_state.get_remote_image(info.image);
+                if (dst_info.image == VK_NULL_HANDLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: image not tracked (opaque)\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (info.bindCount > 0) {
+                    if (!info.pBinds) {
+                        ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: opaque bind array missing\n";
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                    }
+                    slot.opaque_binds[j].assign(info.pBinds, info.pBinds + info.bindCount);
+                    for (auto& bind : slot.opaque_binds[j]) {
+                        if (bind.memory != VK_NULL_HANDLE) {
+                            bind.memory = g_resource_state.get_remote_memory(bind.memory);
+                            if (bind.memory == VK_NULL_HANDLE) {
+                                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: memory not tracked for opaque bind\n";
+                                return VK_ERROR_INITIALIZATION_FAILED;
+                            }
+                        }
+                    }
+                    dst_info.pBinds = slot.opaque_binds[j].data();
+                } else {
+                    dst_info.pBinds = nullptr;
+                }
+            }
+            dst.pImageOpaqueBinds = slot.image_opaque_infos.data();
+        } else {
+            dst.pImageOpaqueBinds = nullptr;
+        }
+
+        if (src.imageBindCount > 0) {
+            if (!src.pImageBinds) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: image binds missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.image_infos.resize(src.imageBindCount);
+            slot.image_binds.resize(src.imageBindCount);
+            for (uint32_t j = 0; j < src.imageBindCount; ++j) {
+                const VkSparseImageMemoryBindInfo& info = src.pImageBinds[j];
+                VkSparseImageMemoryBindInfo& dst_info = slot.image_infos[j];
+                dst_info = info;
+                dst_info.image = g_resource_state.get_remote_image(info.image);
+                if (dst_info.image == VK_NULL_HANDLE) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: image not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (info.bindCount > 0) {
+                    if (!info.pBinds) {
+                        ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: image bind array missing\n";
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                    }
+                    slot.image_binds[j].assign(info.pBinds, info.pBinds + info.bindCount);
+                    for (auto& bind : slot.image_binds[j]) {
+                        if (bind.memory != VK_NULL_HANDLE) {
+                            bind.memory = g_resource_state.get_remote_memory(bind.memory);
+                            if (bind.memory == VK_NULL_HANDLE) {
+                                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: memory not tracked for image bind\n";
+                                return VK_ERROR_INITIALIZATION_FAILED;
+                            }
+                        }
+                    }
+                    dst_info.pBinds = slot.image_binds[j].data();
+                } else {
+                    dst_info.pBinds = nullptr;
+                }
+            }
+            dst.pImageBinds = slot.image_infos.data();
+        } else {
+            dst.pImageBinds = nullptr;
+        }
+
+        if (src.signalSemaphoreCount > 0) {
+            if (!src.pSignalSemaphores) {
+                ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: signal semaphores missing\n";
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            slot.signal_semaphores.resize(src.signalSemaphoreCount);
+            for (uint32_t j = 0; j < src.signalSemaphoreCount; ++j) {
+                VkSemaphore local_signal = src.pSignalSemaphores[j];
+                if (!g_sync_state.has_semaphore(local_signal)) {
+                    ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse: signal semaphore not tracked\n";
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                VkSemaphore remote_signal = g_sync_state.get_remote_semaphore(local_signal);
+                if (remote_signal == VK_NULL_HANDLE) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                slot.signal_semaphores[j] = remote_signal;
+            }
+            dst.pSignalSemaphores = slot.signal_semaphores.data();
+        } else {
+            dst.pSignalSemaphores = nullptr;
+        }
+
+        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(src.pNext);
+        if (timeline) {
+            slot.timeline_info = *timeline;
+            if (timeline->waitSemaphoreValueCount) {
+                slot.wait_values.assign(timeline->pWaitSemaphoreValues,
+                                        timeline->pWaitSemaphoreValues + timeline->waitSemaphoreValueCount);
+                slot.timeline_info.pWaitSemaphoreValues = slot.wait_values.data();
+            }
+            if (timeline->signalSemaphoreValueCount) {
+                slot.signal_values.assign(timeline->pSignalSemaphoreValues,
+                                          timeline->pSignalSemaphoreValues + timeline->signalSemaphoreValueCount);
+                slot.timeline_info.pSignalSemaphoreValues = slot.signal_values.data();
+            }
+            dst.pNext = &slot.timeline_info;
+            slot.has_timeline = true;
+        } else {
+            dst.pNext = nullptr;
+            slot.has_timeline = false;
+        }
+    }
+
+    IcdQueue* icd_queue = icd_queue_from_handle(queue);
+    VkDevice queue_device = icd_queue ? icd_queue->parent_device : VK_NULL_HANDLE;
+    VkResult flush_result = flush_host_coherent_mappings(queue_device);
+    if (flush_result != VK_SUCCESS) {
+        return flush_result;
+    }
+
+    VkResult result =
+        vn_call_vkQueueBindSparse(&g_ring, remote_queue, bindInfoCount, remote_infos.data(), remote_fence);
+    if (result != VK_SUCCESS) {
+        ICD_LOG_ERROR() << "[Client ICD] vkQueueBindSparse failed: " << result << "\n";
+        return result;
+    }
+
+    if (fence != VK_NULL_HANDLE) {
+        g_sync_state.set_fence_signaled(fence, true);
+    }
+    for (uint32_t i = 0; i < bindInfoCount; ++i) {
+        const SparseBindStorage& slot = storage[i];
+        for (size_t j = 0; j < slot.wait_semaphores.size(); ++j) {
+            VkSemaphore sem = pBindInfo[i].pWaitSemaphores ? pBindInfo[i].pWaitSemaphores[j] : VK_NULL_HANDLE;
+            if (sem != VK_NULL_HANDLE && g_sync_state.get_semaphore_type(sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(sem, false);
+            } else if (slot.has_timeline && j < slot.wait_values.size() && sem != VK_NULL_HANDLE) {
+                g_sync_state.set_timeline_value(sem, slot.wait_values[j]);
+            }
+        }
+        for (size_t j = 0; j < slot.signal_semaphores.size(); ++j) {
+            VkSemaphore sem = pBindInfo[i].pSignalSemaphores ? pBindInfo[i].pSignalSemaphores[j] : VK_NULL_HANDLE;
+            if (sem != VK_NULL_HANDLE && g_sync_state.get_semaphore_type(sem) == VK_SEMAPHORE_TYPE_BINARY) {
+                g_sync_state.set_binary_semaphore_signaled(sem, true);
+            } else if (slot.has_timeline && j < slot.signal_values.size() && sem != VK_NULL_HANDLE) {
+                g_sync_state.set_timeline_value(sem, slot.signal_values[j]);
+            }
+        }
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] vkQueueBindSparse completed\n";
+    return VK_SUCCESS;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateEvent(
     VkDevice device,
     const VkEventCreateInfo* pCreateInfo,

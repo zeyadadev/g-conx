@@ -514,6 +514,50 @@ VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(
     ICD_LOG_INFO() << "[Client ICD] vkCmdCopyImageToBuffer recorded\n";
 }
 
+VKAPI_ATTR void VKAPI_CALL vkCmdResolveImage(
+    VkCommandBuffer commandBuffer,
+    VkImage srcImage,
+    VkImageLayout srcImageLayout,
+    VkImage dstImage,
+    VkImageLayout dstImageLayout,
+    uint32_t regionCount,
+    const VkImageResolve* pRegions) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdResolveImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdResolveImage") ||
+        !validate_buffer_regions(regionCount, pRegions, "vkCmdResolveImage")) {
+        return;
+    }
+
+    VkImage remote_src = VK_NULL_HANDLE;
+    VkImage remote_dst = VK_NULL_HANDLE;
+    if (!ensure_remote_image(srcImage, &remote_src, "vkCmdResolveImage") ||
+        !ensure_remote_image(dstImage, &remote_dst, "vkCmdResolveImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdResolveImage\n";
+        return;
+    }
+
+    vn_async_vkCmdResolveImage(&g_ring,
+                               remote_cb,
+                               remote_src,
+                               srcImageLayout,
+                               remote_dst,
+                               dstImageLayout,
+                               regionCount,
+                               pRegions);
+}
+
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyBuffer2(
     VkCommandBuffer commandBuffer,
     const VkCopyBufferInfo2* pCopyBufferInfo) {
@@ -958,6 +1002,83 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(
                                   rangeCount,
                                   pRanges);
     ICD_LOG_INFO() << "[Client ICD] vkCmdClearColorImage recorded\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdClearDepthStencilImage(
+    VkCommandBuffer commandBuffer,
+    VkImage image,
+    VkImageLayout imageLayout,
+    const VkClearDepthStencilValue* pDepthStencil,
+    uint32_t rangeCount,
+    const VkImageSubresourceRange* pRanges) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdClearDepthStencilImage called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdClearDepthStencilImage") ||
+        !pDepthStencil ||
+        !validate_buffer_regions(rangeCount, pRanges, "vkCmdClearDepthStencilImage")) {
+        return;
+    }
+
+    VkImage remote_image = VK_NULL_HANDLE;
+    if (!ensure_remote_image(image, &remote_image, "vkCmdClearDepthStencilImage")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdClearDepthStencilImage\n";
+        return;
+    }
+
+    vn_async_vkCmdClearDepthStencilImage(&g_ring,
+                                         remote_cb,
+                                         remote_image,
+                                         imageLayout,
+                                         pDepthStencil,
+                                         rangeCount,
+                                         pRanges);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdClearAttachments(
+    VkCommandBuffer commandBuffer,
+    uint32_t attachmentCount,
+    const VkClearAttachment* pAttachments,
+    uint32_t rectCount,
+    const VkClearRect* pRects) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdClearAttachments called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdClearAttachments")) {
+        return;
+    }
+    if (attachmentCount == 0 || rectCount == 0 || !pAttachments || !pRects) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters in vkCmdClearAttachments\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdClearAttachments\n";
+        return;
+    }
+
+    vn_async_vkCmdClearAttachments(&g_ring,
+                                   remote_cb,
+                                   attachmentCount,
+                                   pAttachments,
+                                   rectCount,
+                                   pRects);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
@@ -1879,6 +2000,708 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(
                                     remote_buffers.data(),
                                     pOffsets);
     ICD_LOG_INFO() << "[Client ICD] vkCmdBindVertexBuffers recorded\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetBlendConstants(
+    VkCommandBuffer commandBuffer,
+    const float blendConstants[4]) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetBlendConstants called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetBlendConstants")) {
+        return;
+    }
+
+    if (!blendConstants) {
+        ICD_LOG_ERROR() << "[Client ICD] blendConstants is NULL in vkCmdSetBlendConstants\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetBlendConstants\n";
+        return;
+    }
+
+    vn_async_vkCmdSetBlendConstants(&g_ring, remote_cb, blendConstants);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetLineWidth(
+    VkCommandBuffer commandBuffer,
+    float lineWidth) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetLineWidth called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetLineWidth")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetLineWidth\n";
+        return;
+    }
+
+    vn_async_vkCmdSetLineWidth(&g_ring, remote_cb, lineWidth);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBias(
+    VkCommandBuffer commandBuffer,
+    float depthBiasConstantFactor,
+    float depthBiasClamp,
+    float depthBiasSlopeFactor) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetDepthBias called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetDepthBias")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetDepthBias\n";
+        return;
+    }
+
+    vn_async_vkCmdSetDepthBias(&g_ring,
+                               remote_cb,
+                               depthBiasConstantFactor,
+                               depthBiasClamp,
+                               depthBiasSlopeFactor);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBounds(
+    VkCommandBuffer commandBuffer,
+    float minDepthBounds,
+    float maxDepthBounds) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetDepthBounds called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetDepthBounds")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetDepthBounds\n";
+        return;
+    }
+
+    vn_async_vkCmdSetDepthBounds(&g_ring, remote_cb, minDepthBounds, maxDepthBounds);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilCompareMask(
+    VkCommandBuffer commandBuffer,
+    VkStencilFaceFlags faceMask,
+    uint32_t compareMask) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetStencilCompareMask called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetStencilCompareMask")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetStencilCompareMask\n";
+        return;
+    }
+
+    vn_async_vkCmdSetStencilCompareMask(&g_ring, remote_cb, faceMask, compareMask);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilWriteMask(
+    VkCommandBuffer commandBuffer,
+    VkStencilFaceFlags faceMask,
+    uint32_t writeMask) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetStencilWriteMask called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetStencilWriteMask")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetStencilWriteMask\n";
+        return;
+    }
+
+    vn_async_vkCmdSetStencilWriteMask(&g_ring, remote_cb, faceMask, writeMask);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilReference(
+    VkCommandBuffer commandBuffer,
+    VkStencilFaceFlags faceMask,
+    uint32_t reference) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetStencilReference called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetStencilReference")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetStencilReference\n";
+        return;
+    }
+
+    vn_async_vkCmdSetStencilReference(&g_ring, remote_cb, faceMask, reference);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDeviceMask(
+    VkCommandBuffer commandBuffer,
+    uint32_t deviceMask) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdSetDeviceMask called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdSetDeviceMask")) {
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdSetDeviceMask\n";
+        return;
+    }
+
+    vn_async_vkCmdSetDeviceMask(&g_ring, remote_cb, deviceMask);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDeviceMaskKHR(
+    VkCommandBuffer commandBuffer,
+    uint32_t deviceMask) {
+    vkCmdSetDeviceMask(commandBuffer, deviceMask);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkIndexType indexType) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBindIndexBuffer called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBindIndexBuffer")) {
+        return;
+    }
+    if (!g_resource_state.has_buffer(buffer)) {
+        ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked in vkCmdBindIndexBuffer\n";
+        return;
+    }
+
+    VkBuffer remote_buffer = VK_NULL_HANDLE;
+    VkDeviceSize buffer_size = 0;
+    if (!ensure_remote_buffer_and_size(buffer, &remote_buffer, &buffer_size, "vkCmdBindIndexBuffer")) {
+        return;
+    }
+
+    if (offset >= buffer_size) {
+        ICD_LOG_ERROR() << "[Client ICD] Offset beyond buffer size in vkCmdBindIndexBuffer\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdBindIndexBuffer\n";
+        return;
+    }
+
+    vn_async_vkCmdBindIndexBuffer(&g_ring, remote_cb, remote_buffer, offset, indexType);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers2(
+    VkCommandBuffer commandBuffer,
+    uint32_t firstBinding,
+    uint32_t bindingCount,
+    const VkBuffer* pBuffers,
+    const VkDeviceSize* pOffsets,
+    const VkDeviceSize* pSizes,
+    const VkDeviceSize* pStrides) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBindVertexBuffers2 called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBindVertexBuffers2")) {
+        return;
+    }
+
+    if (bindingCount == 0 || !pBuffers || !pOffsets) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCmdBindVertexBuffers2\n";
+        return;
+    }
+
+    std::vector<VkBuffer> remote_buffers(bindingCount, VK_NULL_HANDLE);
+    std::vector<VkDeviceSize> remote_sizes(bindingCount, 0);
+    for (uint32_t i = 0; i < bindingCount; ++i) {
+        if (pBuffers[i] == VK_NULL_HANDLE) {
+            continue;
+        }
+        if (!g_resource_state.has_buffer(pBuffers[i])) {
+            ICD_LOG_ERROR() << "[Client ICD] Buffer not tracked for vkCmdBindVertexBuffers2\n";
+            return;
+        }
+        if (!ensure_remote_buffer_and_size(pBuffers[i],
+                                           &remote_buffers[i],
+                                           &remote_sizes[i],
+                                           "vkCmdBindVertexBuffers2")) {
+            return;
+        }
+        if (pOffsets[i] >= remote_sizes[i]) {
+            ICD_LOG_ERROR() << "[Client ICD] Offset beyond buffer size in vkCmdBindVertexBuffers2\n";
+            return;
+        }
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdBindVertexBuffers2\n";
+        return;
+    }
+
+    vn_async_vkCmdBindVertexBuffers2(&g_ring,
+                                     remote_cb,
+                                     firstBinding,
+                                     bindingCount,
+                                     remote_buffers.data(),
+                                     pOffsets,
+                                     pSizes,
+                                     pStrides);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers2EXT(
+    VkCommandBuffer commandBuffer,
+    uint32_t firstBinding,
+    uint32_t bindingCount,
+    const VkBuffer* pBuffers,
+    const VkDeviceSize* pOffsets,
+    const VkDeviceSize* pSizes,
+    const VkDeviceSize* pStrides) {
+    vkCmdBindVertexBuffers2(commandBuffer,
+                            firstBinding,
+                            bindingCount,
+                            pBuffers,
+                            pOffsets,
+                            pSizes,
+                            pStrides);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass2(
+    VkCommandBuffer commandBuffer,
+    const VkRenderPassBeginInfo* pRenderPassBegin,
+    const VkSubpassBeginInfo* pSubpassBeginInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdBeginRenderPass2 called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdBeginRenderPass2")) {
+        return;
+    }
+    if (!pRenderPassBegin || !pSubpassBeginInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCmdBeginRenderPass2\n";
+        return;
+    }
+
+    if (!g_resource_state.has_render_pass(pRenderPassBegin->renderPass) ||
+        !g_resource_state.has_framebuffer(pRenderPassBegin->framebuffer)) {
+        ICD_LOG_ERROR() << "[Client ICD] Render pass or framebuffer not tracked in vkCmdBeginRenderPass2\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    VkRenderPass remote_rp = g_resource_state.get_remote_render_pass(pRenderPassBegin->renderPass);
+    VkFramebuffer remote_fb = g_resource_state.get_remote_framebuffer(pRenderPassBegin->framebuffer);
+    if (remote_rp == VK_NULL_HANDLE || remote_fb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote render pass/framebuffer missing in vkCmdBeginRenderPass2\n";
+        return;
+    }
+
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdBeginRenderPass2\n";
+        return;
+    }
+
+    VkRenderPassBeginInfo remote_begin = *pRenderPassBegin;
+    remote_begin.renderPass = remote_rp;
+    remote_begin.framebuffer = remote_fb;
+
+    vn_async_vkCmdBeginRenderPass2(&g_ring, remote_cb, &remote_begin, pSubpassBeginInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdNextSubpass(
+    VkCommandBuffer commandBuffer,
+    VkSubpassContents contents) {
+    ICD_LOG_INFO() << "[Client ICD] vkCmdNextSubpass called\n";
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdNextSubpass")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdNextSubpass\n";
+        return;
+    }
+    vn_async_vkCmdNextSubpass(&g_ring, remote_cb, contents);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdNextSubpass2(
+    VkCommandBuffer commandBuffer,
+    const VkSubpassBeginInfo* pSubpassBeginInfo,
+    const VkSubpassEndInfo* pSubpassEndInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdNextSubpass2 called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdNextSubpass2")) {
+        return;
+    }
+    if (!pSubpassBeginInfo || !pSubpassEndInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCmdNextSubpass2\n";
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdNextSubpass2\n";
+        return;
+    }
+    vn_async_vkCmdNextSubpass2(&g_ring, remote_cb, pSubpassBeginInfo, pSubpassEndInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass2(
+    VkCommandBuffer commandBuffer,
+    const VkSubpassEndInfo* pSubpassEndInfo) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdEndRenderPass2 called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdEndRenderPass2")) {
+        return;
+    }
+    if (!pSubpassEndInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] pSubpassEndInfo is NULL in vkCmdEndRenderPass2\n";
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdEndRenderPass2\n";
+        return;
+    }
+    vn_async_vkCmdEndRenderPass2(&g_ring, remote_cb, pSubpassEndInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdExecuteCommands(
+    VkCommandBuffer commandBuffer,
+    uint32_t commandBufferCount,
+    const VkCommandBuffer* pCommandBuffers) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdExecuteCommands called (count=" << commandBufferCount << ")\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdExecuteCommands")) {
+        return;
+    }
+    if (commandBufferCount == 0 || !pCommandBuffers) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkCmdExecuteCommands\n";
+        return;
+    }
+
+    std::vector<VkCommandBuffer> remote_secondary;
+    remote_secondary.reserve(commandBufferCount);
+
+    for (uint32_t i = 0; i < commandBufferCount; ++i) {
+        VkCommandBuffer secondary = pCommandBuffers[i];
+        if (!g_command_buffer_state.has_command_buffer(secondary)) {
+            ICD_LOG_ERROR() << "[Client ICD] Unknown secondary command buffer in vkCmdExecuteCommands\n";
+            return;
+        }
+        if (g_command_buffer_state.get_buffer_level(secondary) != VK_COMMAND_BUFFER_LEVEL_SECONDARY) {
+            ICD_LOG_ERROR() << "[Client ICD] vkCmdExecuteCommands requires secondary buffers\n";
+            return;
+        }
+        VkCommandBuffer remote = get_remote_command_buffer_handle(secondary);
+        if (remote == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Remote secondary handle missing in vkCmdExecuteCommands\n";
+            return;
+        }
+        remote_secondary.push_back(remote);
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_primary = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_primary == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote primary command buffer missing in vkCmdExecuteCommands\n";
+        return;
+    }
+
+    vn_async_vkCmdExecuteCommands(&g_ring,
+                                  remote_primary,
+                                  commandBufferCount,
+                                  remote_secondary.data());
+    ICD_LOG_INFO() << "[Client ICD] vkCmdExecuteCommands recorded\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(
+    VkCommandBuffer commandBuffer,
+    uint32_t indexCount,
+    uint32_t instanceCount,
+    uint32_t firstIndex,
+    int32_t vertexOffset,
+    uint32_t firstInstance) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDrawIndexed called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDrawIndexed")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDrawIndexed\n";
+        return;
+    }
+    vn_async_vkCmdDrawIndexed(&g_ring,
+                              remote_cb,
+                              indexCount,
+                              instanceCount,
+                              firstIndex,
+                              vertexOffset,
+                              firstInstance);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirect(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    uint32_t drawCount,
+    uint32_t stride) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDrawIndirect called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDrawIndirect")) {
+        return;
+    }
+    VkBuffer remote_buf = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(buffer, &remote_buf, "vkCmdDrawIndirect")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDrawIndirect\n";
+        return;
+    }
+    vn_async_vkCmdDrawIndirect(&g_ring, remote_cb, remote_buf, offset, drawCount, stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirectCount(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkBuffer countBuffer,
+    VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount,
+    uint32_t stride) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDrawIndirectCount called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDrawIndirectCount")) {
+        return;
+    }
+    VkBuffer remote_buf = VK_NULL_HANDLE;
+    VkBuffer remote_count = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(buffer, &remote_buf, "vkCmdDrawIndirectCount") ||
+        !ensure_remote_buffer(countBuffer, &remote_count, "vkCmdDrawIndirectCount")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDrawIndirectCount\n";
+        return;
+    }
+    vn_async_vkCmdDrawIndirectCount(&g_ring,
+                                    remote_cb,
+                                    remote_buf,
+                                    offset,
+                                    remote_count,
+                                    countBufferOffset,
+                                    maxDrawCount,
+                                    stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirectCountKHR(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkBuffer countBuffer,
+    VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount,
+    uint32_t stride) {
+    vkCmdDrawIndirectCount(commandBuffer,
+                           buffer,
+                           offset,
+                           countBuffer,
+                           countBufferOffset,
+                           maxDrawCount,
+                           stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirect(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    uint32_t drawCount,
+    uint32_t stride) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDrawIndexedIndirect called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDrawIndexedIndirect")) {
+        return;
+    }
+    VkBuffer remote_buf = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(buffer, &remote_buf, "vkCmdDrawIndexedIndirect")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDrawIndexedIndirect\n";
+        return;
+    }
+    vn_async_vkCmdDrawIndexedIndirect(&g_ring, remote_cb, remote_buf, offset, drawCount, stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirectCount(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkBuffer countBuffer,
+    VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount,
+    uint32_t stride) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkCmdDrawIndexedIndirectCount called\n";
+
+    if (!ensure_command_buffer_recording(commandBuffer, "vkCmdDrawIndexedIndirectCount")) {
+        return;
+    }
+    VkBuffer remote_buf = VK_NULL_HANDLE;
+    VkBuffer remote_count = VK_NULL_HANDLE;
+    if (!ensure_remote_buffer(buffer, &remote_buf, "vkCmdDrawIndexedIndirectCount") ||
+        !ensure_remote_buffer(countBuffer, &remote_count, "vkCmdDrawIndexedIndirectCount")) {
+        return;
+    }
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+    VkCommandBuffer remote_cb = get_remote_command_buffer_handle(commandBuffer);
+    if (remote_cb == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command buffer missing in vkCmdDrawIndexedIndirectCount\n";
+        return;
+    }
+    vn_async_vkCmdDrawIndexedIndirectCount(&g_ring,
+                                           remote_cb,
+                                           remote_buf,
+                                           offset,
+                                           remote_count,
+                                           countBufferOffset,
+                                           maxDrawCount,
+                                           stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirectCountKHR(
+    VkCommandBuffer commandBuffer,
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkBuffer countBuffer,
+    VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount,
+    uint32_t stride) {
+    vkCmdDrawIndexedIndirectCount(commandBuffer,
+                                  buffer,
+                                  offset,
+                                  countBuffer,
+                                  countBufferOffset,
+                                  maxDrawCount,
+                                  stride);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(

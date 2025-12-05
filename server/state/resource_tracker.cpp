@@ -597,6 +597,15 @@ VkRenderPass ResourceTracker::get_real_render_pass(VkRenderPass render_pass) con
     return it->second.real_handle;
 }
 
+VkDevice ResourceTracker::get_render_pass_real_device(VkRenderPass render_pass) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = render_passes_.find(handle_key(render_pass));
+    if (it == render_passes_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.real_device;
+}
+
 VkFramebuffer ResourceTracker::create_framebuffer(VkDevice device,
                                                   VkDevice real_device,
                                                   const VkFramebufferCreateInfo& info) {

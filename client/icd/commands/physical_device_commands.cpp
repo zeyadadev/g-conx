@@ -92,6 +92,89 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
     return VK_SUCCESS;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDeviceGroups(
+    VkInstance instance,
+    uint32_t* pPhysicalDeviceGroupCount,
+    VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkEnumeratePhysicalDeviceGroups called\n";
+
+    if (!pPhysicalDeviceGroupCount) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    IcdInstance* icd_instance = icd_instance_from_handle(instance);
+    InstanceState* state = g_instance_state.get_instance(instance);
+    if (!icd_instance || !state) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid instance state\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    uint32_t requested = pPhysicalDeviceGroupProperties ? *pPhysicalDeviceGroupCount : 0;
+    std::vector<VkPhysicalDeviceGroupProperties> remote_groups;
+    if (pPhysicalDeviceGroupProperties && requested > 0) {
+        remote_groups.resize(requested);
+        for (auto& g : remote_groups) {
+            g.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES;
+            g.pNext = nullptr;
+        }
+    }
+
+    VkResult wire_result = vn_call_vkEnumeratePhysicalDeviceGroups(
+        &g_ring,
+        icd_instance->remote_handle,
+        pPhysicalDeviceGroupCount,
+        pPhysicalDeviceGroupProperties && requested > 0 ? remote_groups.data() : nullptr);
+    if (wire_result != VK_SUCCESS && wire_result != VK_INCOMPLETE) {
+        return wire_result;
+    }
+
+    if (!pPhysicalDeviceGroupProperties || remote_groups.empty()) {
+        return wire_result;
+    }
+
+    const uint32_t groups_returned =
+        std::min<uint32_t>(remote_groups.size(), *pPhysicalDeviceGroupCount);
+    for (uint32_t i = 0; i < groups_returned; ++i) {
+        VkPhysicalDeviceGroupProperties local_group = remote_groups[i];
+        uint32_t dev_count = local_group.physicalDeviceCount;
+        for (uint32_t j = 0; j < dev_count; ++j) {
+            VkPhysicalDevice remote_dev = remote_groups[i].physicalDevices[j];
+            auto existing = std::find_if(
+                state->physical_devices.begin(),
+                state->physical_devices.end(),
+                [remote_dev](const PhysicalDeviceEntry& entry) {
+                    return entry.remote_handle == remote_dev;
+                });
+            VkPhysicalDevice local_dev = VK_NULL_HANDLE;
+            if (existing != state->physical_devices.end()) {
+                local_dev = existing->local_handle;
+            } else {
+                local_dev = g_handle_allocator.allocate<VkPhysicalDevice>();
+                state->physical_devices.emplace_back(local_dev, remote_dev);
+            }
+            local_group.physicalDevices[j] = local_dev;
+        }
+        pPhysicalDeviceGroupProperties[i] = local_group;
+    }
+
+    return wire_result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDeviceGroupsKHR(
+    VkInstance instance,
+    uint32_t* pPhysicalDeviceGroupCount,
+    VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties) {
+    return vkEnumeratePhysicalDeviceGroups(instance,
+                                           pPhysicalDeviceGroupCount,
+                                           pPhysicalDeviceGroupProperties);
+}
+
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
     VkPhysicalDevice physicalDevice,
     VkPhysicalDeviceFeatures* pFeatures) {

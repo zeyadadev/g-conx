@@ -86,6 +86,7 @@ public:
     void remove_buffer(VkBuffer buffer);
     bool has_buffer(VkBuffer buffer) const;
     VkBuffer get_remote_buffer(VkBuffer buffer) const;
+    VkDeviceSize get_buffer_size(VkBuffer buffer) const;
     bool cache_buffer_requirements(VkBuffer buffer, const VkMemoryRequirements& requirements);
     bool get_cached_buffer_requirements(VkBuffer buffer, VkMemoryRequirements* out) const;
     bool bind_buffer(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset);

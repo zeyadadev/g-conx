@@ -299,6 +299,15 @@ VkCommandBuffer CommandBufferState::get_real_buffer(VkCommandBuffer buffer) cons
     return bit->second.real_buffer;
 }
 
+VkCommandBufferLevel CommandBufferState::get_level(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    }
+    return bit->second.level;
+}
+
 VkCommandPool CommandBufferState::get_real_pool(VkCommandPool pool) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto pit = pools_.find(handle_key(pool));
@@ -306,6 +315,24 @@ VkCommandPool CommandBufferState::get_real_pool(VkCommandPool pool) const {
         return VK_NULL_HANDLE;
     }
     return pit->second.real_pool;
+}
+
+VkDevice CommandBufferState::get_pool_device(VkCommandPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto pit = pools_.find(handle_key(pool));
+    if (pit == pools_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return pit->second.device;
+}
+
+VkDevice CommandBufferState::get_pool_real_device(VkCommandPool pool) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto pit = pools_.find(handle_key(pool));
+    if (pit == pools_.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return pit->second.real_device;
 }
 
 } // namespace venus_plus

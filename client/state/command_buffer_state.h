@@ -58,6 +58,7 @@ public:
     VkDevice get_buffer_device(VkCommandBuffer buffer) const;
     CommandBufferLifecycleState get_buffer_state(VkCommandBuffer buffer) const;
     void set_buffer_state(VkCommandBuffer buffer, CommandBufferLifecycleState state);
+    VkCommandBufferLevel get_buffer_level(VkCommandBuffer buffer) const;
     VkCommandBufferUsageFlags get_usage_flags(VkCommandBuffer buffer) const;
     void set_usage_flags(VkCommandBuffer buffer, VkCommandBufferUsageFlags flags);
 

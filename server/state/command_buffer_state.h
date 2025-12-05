@@ -40,8 +40,11 @@ public:
     bool buffer_exists(VkCommandBuffer buffer) const;
     void invalidate(VkCommandBuffer buffer);
     ServerCommandBufferState get_state(VkCommandBuffer buffer) const;
+    VkCommandBufferLevel get_level(VkCommandBuffer buffer) const;
     VkCommandBuffer get_real_buffer(VkCommandBuffer buffer) const;
     VkCommandPool get_real_pool(VkCommandPool pool) const;
+    VkDevice get_pool_device(VkCommandPool pool) const;
+    VkDevice get_pool_real_device(VkCommandPool pool) const;
 
 private:
     struct PoolEntry {

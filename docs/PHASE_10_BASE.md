@@ -60,6 +60,18 @@ Platform-specific WSI implementations are in:
 
 ---
 
+## Remaining Vulkan 1.3 Core Coverage Plan
+
+See the standalone checklist in `docs/VULKAN_1_3_COMPLETION_PLAN.md` for the full list of remaining 1.3 core gaps, protocol wiring, and tests.
+
+---
+
+## Vulkan 1.4 Readiness Plan
+
+See `docs/VULKAN_1_4_READINESS_PLAN.md` for the Vulkan 1.4-specific deltas, feature/property propagation, tests, and export/visibility work required before advertising 1.4.
+
+---
+
 ## Part B: Protocol Extensions
 
 ### New Wire Commands

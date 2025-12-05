@@ -173,6 +173,15 @@ void CommandBufferState::set_buffer_state(VkCommandBuffer buffer, CommandBufferL
     }
 }
 
+VkCommandBufferLevel CommandBufferState::get_buffer_level(VkCommandBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto bit = buffers_.find(handle_key(buffer));
+    if (bit == buffers_.end()) {
+        return VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    }
+    return bit->second.level;
+}
+
 VkCommandBufferUsageFlags CommandBufferState::get_usage_flags(VkCommandBuffer buffer) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto bit = buffers_.find(handle_key(buffer));

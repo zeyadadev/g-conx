@@ -19,6 +19,25 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t* pApiVersion)
     return VK_SUCCESS;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount,
+                                                                  VkLayerProperties* pProperties) {
+    ICD_LOG_INFO() << "[Client ICD] vkEnumerateInstanceLayerProperties called\n";
+
+    if (!pPropertyCount) {
+        ICD_LOG_ERROR() << "[Client ICD] pPropertyCount is NULL\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // Venus Plus does not expose any instance layers.
+    *pPropertyCount = 0;
+    if (pProperties && *pPropertyCount > 0) {
+        std::memset(pProperties, 0, sizeof(VkLayerProperties) * (*pPropertyCount));
+    }
+
+    ICD_LOG_INFO() << "[Client ICD] Returning 0 instance layers\n";
+    return VK_SUCCESS;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     const char* pLayerName,
     uint32_t* pPropertyCount,
@@ -409,6 +428,44 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyRenderPass(
     ICD_LOG_INFO() << "[Client ICD] Render pass destroyed (local=" << renderPass << ")\n";
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetRenderAreaGranularity(
+    VkDevice device,
+    VkRenderPass renderPass,
+    VkExtent2D* pGranularity) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetRenderAreaGranularity called\n";
+
+    if (!pGranularity) {
+        ICD_LOG_ERROR() << "[Client ICD] pGranularity is NULL in vkGetRenderAreaGranularity\n";
+        return;
+    }
+
+    if (!g_resource_state.has_render_pass(renderPass)) {
+        ICD_LOG_ERROR() << "[Client ICD] Render pass not tracked in vkGetRenderAreaGranularity\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetRenderAreaGranularity\n";
+        return;
+    }
+
+    VkRenderPass remote_render_pass = g_resource_state.get_remote_render_pass(renderPass);
+    if (remote_render_pass == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote render pass missing in vkGetRenderAreaGranularity\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetRenderAreaGranularity(&g_ring, icd_device->remote_handle, remote_render_pass, pGranularity);
+    ICD_LOG_INFO() << "[Client ICD] Granularity: " << pGranularity->width << "x" << pGranularity->height << "\n";
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(
     VkDevice device,
     const VkFramebufferCreateInfo* pCreateInfo,
@@ -752,6 +809,51 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandPool(
         ICD_LOG_ERROR() << "[Client ICD] vkResetCommandPool failed: " << result << "\n";
     }
     return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkTrimCommandPool(
+    VkDevice device,
+    VkCommandPool commandPool,
+    VkCommandPoolTrimFlags flags) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkTrimCommandPool called\n";
+
+    if (!g_command_buffer_state.has_pool(commandPool)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown command pool in vkTrimCommandPool\n";
+        return;
+    }
+
+    if (g_command_buffer_state.get_pool_device(commandPool) != device) {
+        ICD_LOG_ERROR() << "[Client ICD] Command pool not owned by device in vkTrimCommandPool\n";
+        return;
+    }
+
+    VkCommandPool remote_pool = g_command_buffer_state.get_remote_pool(commandPool);
+    if (remote_pool == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote command pool missing in vkTrimCommandPool\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkTrimCommandPool\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_async_vkTrimCommandPool(&g_ring, icd_device->remote_handle, remote_pool, flags);
+    ICD_LOG_INFO() << "[Client ICD] Command pool trimmed\n";
+}
+
+VKAPI_ATTR void VKAPI_CALL vkTrimCommandPoolKHR(
+    VkDevice device,
+    VkCommandPool commandPool,
+    VkCommandPoolTrimFlags flags) {
+    vkTrimCommandPool(device, commandPool, flags);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreCounterValue(

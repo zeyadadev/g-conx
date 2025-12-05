@@ -11,6 +11,7 @@ add_executable(venus-test-app
     phase09/phase09_test.cpp
     phase10/phase10_test.cpp
     phase09_1/phase09_1_test.cpp
+    phase11/phase11_test.cpp
 )
 
 target_include_directories(venus-test-app PRIVATE

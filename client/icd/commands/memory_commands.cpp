@@ -239,6 +239,48 @@ VKAPI_ATTR void VKAPI_CALL vkFreeMemory(
     ICD_LOG_INFO() << "[Client ICD] Memory freed (local=" << memory << ", remote=" << remote_memory << ")\n";
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceMemoryCommitment(
+    VkDevice device,
+    VkDeviceMemory memory,
+    VkDeviceSize* pCommittedMemoryInBytes) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetDeviceMemoryCommitment called\n";
+
+    if (!pCommittedMemoryInBytes) {
+        ICD_LOG_ERROR() << "[Client ICD] pCommittedMemoryInBytes is NULL\n";
+        return;
+    }
+    *pCommittedMemoryInBytes = 0;
+
+    if (!g_resource_state.has_memory(memory)) {
+        ICD_LOG_ERROR() << "[Client ICD] Memory not tracked in vkGetDeviceMemoryCommitment\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetDeviceMemoryCommitment\n";
+        return;
+    }
+
+    VkDeviceMemory remote_memory = g_resource_state.get_remote_memory(memory);
+    if (remote_memory == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Remote memory handle missing in vkGetDeviceMemoryCommitment\n";
+        return;
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    vn_call_vkGetDeviceMemoryCommitment(&g_ring,
+                                        icd_device->remote_handle,
+                                        remote_memory,
+                                        pCommittedMemoryInBytes);
+    ICD_LOG_INFO() << "[Client ICD] Committed size: " << *pCommittedMemoryInBytes << "\n";
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(
     VkDevice device,
     VkDeviceMemory memory,

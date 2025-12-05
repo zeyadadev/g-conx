@@ -29,6 +29,17 @@ static bool command_buffer_recording_guard(struct ServerState* state,
     return true;
 }
 
+static const VkTimelineSemaphoreSubmitInfo* find_timeline_submit_info(const void* pNext) {
+    const VkBaseInStructure* header = (const VkBaseInStructure*)pNext;
+    while (header) {
+        if (header->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO) {
+            return (const VkTimelineSemaphoreSubmitInfo*)header;
+        }
+        header = header->pNext;
+    }
+    return NULL;
+}
+
 static VkCommandBuffer get_real_command_buffer(struct ServerState* state,
                                                VkCommandBuffer command_buffer,
                                                const char* name) {
@@ -488,15 +499,11 @@ static void server_dispatch_vkEnumerateInstanceLayerProperties(
         return;
     }
 
-    args->ret = vkEnumerateInstanceLayerProperties(args->pPropertyCount, args->pProperties);
-    if (args->ret == VK_SUCCESS || args->ret == VK_INCOMPLETE) {
-        VP_LOG_INFO(SERVER,
-                    "[Venus Server]   -> Returned %u instance layers%s",
-                    args->pPropertyCount ? *args->pPropertyCount : 0,
-                    args->ret == VK_INCOMPLETE ? " (VK_INCOMPLETE)" : "");
-    } else {
-        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkEnumerateInstanceLayerProperties failed: %d", args->ret);
+    *args->pPropertyCount = 0;
+    if (args->pProperties && *args->pPropertyCount > 0) {
+        memset(args->pProperties, 0, sizeof(VkLayerProperties) * (*args->pPropertyCount));
     }
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning zero instance layers");
 }
 
 static void server_dispatch_vkEnumeratePhysicalDevices(struct vn_dispatch_context* ctx,
@@ -527,6 +534,47 @@ static void server_dispatch_vkEnumeratePhysicalDevices(struct vn_dispatch_contex
     *args->pPhysicalDeviceCount = to_write;
 
     if (max_out < available_devices) {
+        args->ret = VK_INCOMPLETE;
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning VK_INCOMPLETE");
+    }
+}
+
+static void server_dispatch_vkEnumeratePhysicalDeviceGroups(struct vn_dispatch_context* ctx,
+                                                           struct vn_command_vkEnumeratePhysicalDeviceGroups* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkEnumeratePhysicalDeviceGroups");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (!args->pPhysicalDeviceGroupCount) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPhysicalDeviceGroupCount is NULL");
+        return;
+    }
+
+    const uint32_t available_groups = 1;
+    if (!args->pPhysicalDeviceGroupProperties) {
+        *args->pPhysicalDeviceGroupCount = available_groups;
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning group count: %u", available_groups);
+        return;
+    }
+
+    const uint32_t max_out = *args->pPhysicalDeviceGroupCount;
+    const uint32_t to_write = available_groups < max_out ? available_groups : max_out;
+    for (uint32_t i = 0; i < to_write; ++i) {
+        VkPhysicalDeviceGroupProperties* group = &args->pPhysicalDeviceGroupProperties[i];
+        group->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES;
+        group->pNext = NULL;
+        group->physicalDeviceCount = 1;
+        group->physicalDevices[0] = server_state_bridge_get_fake_device(state);
+        group->subsetAllocation = VK_FALSE;
+        for (uint32_t j = 1; j < VK_MAX_DEVICE_GROUP_SIZE; ++j) {
+            group->physicalDevices[j] = VK_NULL_HANDLE;
+        }
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Group %u: device=%p", i, (void*)group->physicalDevices[0]);
+    }
+    *args->pPhysicalDeviceGroupCount = to_write;
+
+    if (max_out < available_groups) {
         args->ret = VK_INCOMPLETE;
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Returning VK_INCOMPLETE");
     }
@@ -940,6 +988,71 @@ static void server_dispatch_vkGetDeviceQueue(
     }
 }
 
+static void server_dispatch_vkGetDeviceQueue2(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetDeviceQueue2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetDeviceQueue2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+
+    if (!args->pQueue || !args->pQueueInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkGetDeviceQueue2");
+        return;
+    }
+
+    uint32_t family_index = args->pQueueInfo->queueFamilyIndex;
+    uint32_t queue_index = args->pQueueInfo->queueIndex;
+
+    VkQueue existing = server_state_bridge_find_queue(state, args->device, family_index, queue_index);
+    if (existing != VK_NULL_HANDLE) {
+        *args->pQueue = existing;
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Returned existing queue: %p", (void*)existing);
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        return;
+    }
+
+    VkDeviceQueueInfo2 info = *args->pQueueInfo;
+    VkQueue real_queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue2(real_device, &info, &real_queue);
+    if (real_queue == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: vkGetDeviceQueue2 failed");
+        return;
+    }
+
+    *args->pQueue = server_state_bridge_alloc_queue(
+        state, args->device, family_index, queue_index, real_queue);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Created new queue2: %p", (void*)*args->pQueue);
+}
+
+static void server_dispatch_vkGetDeviceGroupPeerMemoryFeatures(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetDeviceGroupPeerMemoryFeatures* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetDeviceGroupPeerMemoryFeatures");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+
+    if (!args->pPeerMemoryFeatures) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pPeerMemoryFeatures is NULL");
+        return;
+    }
+
+    VkDevice real_device = server_state_bridge_get_real_device(state, args->device);
+    if (real_device == VK_NULL_HANDLE) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Unknown device");
+        *args->pPeerMemoryFeatures = 0;
+        return;
+    }
+
+    vkGetDeviceGroupPeerMemoryFeatures(real_device,
+                                       args->heapIndex,
+                                       args->localDeviceIndex,
+                                       args->remoteDeviceIndex,
+                                       args->pPeerMemoryFeatures);
+}
+
 // Phase 4: Resource and memory management
 static void server_dispatch_vkAllocateMemory(struct vn_dispatch_context* ctx,
                                              struct vn_command_vkAllocateMemory* args) {
@@ -978,6 +1091,25 @@ static void server_dispatch_vkFreeMemory(struct vn_dispatch_context* ctx,
     } else {
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Memory freed");
     }
+}
+
+static void server_dispatch_vkGetDeviceMemoryCommitment(
+    struct vn_dispatch_context* ctx,
+    struct vn_command_vkGetDeviceMemoryCommitment* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetDeviceMemoryCommitment");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pCommittedMemoryInBytes) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pCommittedMemoryInBytes is NULL");
+        return;
+    }
+
+    server_state_bridge_get_device_memory_commitment(state,
+                                                     args->device,
+                                                     args->memory,
+                                                     args->pCommittedMemoryInBytes);
+    VP_LOG_INFO(SERVER,
+                "[Venus Server]   -> Committed bytes: %llu",
+                (unsigned long long)*args->pCommittedMemoryInBytes);
 }
 
 static void server_dispatch_vkCreateBuffer(struct vn_dispatch_context* ctx,
@@ -1060,6 +1192,23 @@ static void server_dispatch_vkBindBufferMemory(struct vn_dispatch_context* ctx,
                (void*)args->memory, (unsigned long long)args->memoryOffset);
     } else {
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to bind buffer (result=%d)", args->ret);
+    }
+}
+
+static void server_dispatch_vkBindBufferMemory2(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkBindBufferMemory2* args) {
+    VP_LOG_INFO(SERVER,
+                "[Venus Server] Dispatching vkBindBufferMemory2 (count=%u)",
+                args->bindInfoCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_bind_buffer_memory2(state,
+                                                        args->device,
+                                                        args->bindInfoCount,
+                                                        args->pBindInfos);
+    if (args->ret == VK_SUCCESS) {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Bound %u buffer(s)", args->bindInfoCount);
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkBindBufferMemory2 failed: %d", args->ret);
     }
 }
 
@@ -2212,6 +2361,24 @@ static void server_dispatch_vkDestroyRenderPass(struct vn_dispatch_context* ctx,
     }
 }
 
+static void server_dispatch_vkGetRenderAreaGranularity(struct vn_dispatch_context* ctx,
+                                                       struct vn_command_vkGetRenderAreaGranularity* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetRenderAreaGranularity");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!args->pGranularity) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: pGranularity is NULL");
+        return;
+    }
+    server_state_bridge_get_render_area_granularity(state,
+                                                    args->device,
+                                                    args->renderPass,
+                                                    args->pGranularity);
+    VP_LOG_INFO(SERVER,
+                "[Venus Server]   -> Granularity %ux%u",
+                args->pGranularity->width,
+                args->pGranularity->height);
+}
+
 static void server_dispatch_vkCreateFramebuffer(struct vn_dispatch_context* ctx,
                                                 struct vn_command_vkCreateFramebuffer* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCreateFramebuffer");
@@ -2342,6 +2509,23 @@ static void server_dispatch_vkBindImageMemory(struct vn_dispatch_context* ctx,
     }
 }
 
+static void server_dispatch_vkBindImageMemory2(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkBindImageMemory2* args) {
+    VP_LOG_INFO(SERVER,
+                "[Venus Server] Dispatching vkBindImageMemory2 (count=%u)",
+                args->bindInfoCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = server_state_bridge_bind_image_memory2(state,
+                                                       args->device,
+                                                       args->bindInfoCount,
+                                                       args->pBindInfos);
+    if (args->ret == VK_SUCCESS) {
+        VP_LOG_INFO(SERVER, "[Venus Server]   -> Bound %u image(s)", args->bindInfoCount);
+    } else {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> vkBindImageMemory2 failed: %d", args->ret);
+    }
+}
+
 static void server_dispatch_vkGetImageSubresourceLayout(struct vn_dispatch_context* ctx,
                                                         struct vn_command_vkGetImageSubresourceLayout* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkGetImageSubresourceLayout");
@@ -2403,6 +2587,14 @@ static void server_dispatch_vkResetCommandPool(struct vn_dispatch_context* ctx,
     } else {
         VP_LOG_INFO(SERVER, "[Venus Server]   -> Failed to reset command pool (result=%d)", args->ret);
     }
+}
+
+static void server_dispatch_vkTrimCommandPool(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkTrimCommandPool* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkTrimCommandPool");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    server_state_bridge_trim_command_pool(state, args->device, args->commandPool, args->flags);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> Command pool trimmed");
 }
 
 static void server_dispatch_vkAllocateCommandBuffers(struct vn_dispatch_context* ctx,
@@ -2839,6 +3031,36 @@ static void server_dispatch_vkCmdCopyImageToBuffer2(struct vn_dispatch_context* 
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdCopyImageToBuffer2 recorded");
 }
 
+static void server_dispatch_vkCmdResolveImage(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdResolveImage* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdResolveImage");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdResolveImage")) {
+        return;
+    }
+    if (args->regionCount == 0 || !args->pRegions) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid regions for vkCmdResolveImage");
+        return;
+    }
+
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdResolveImage");
+    VkImage real_src = get_real_image(state, args->srcImage, "vkCmdResolveImage");
+    VkImage real_dst = get_real_image(state, args->dstImage, "vkCmdResolveImage");
+    if (real_cb == VK_NULL_HANDLE || real_src == VK_NULL_HANDLE || real_dst == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkCmdResolveImage(real_cb,
+                      real_src,
+                      args->srcImageLayout,
+                      real_dst,
+                      args->dstImageLayout,
+                      args->regionCount,
+                      args->pRegions);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdResolveImage recorded");
+}
+
 static void server_dispatch_vkCmdResolveImage2(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkCmdResolveImage2* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdResolveImage2");
@@ -2942,6 +3164,56 @@ static void server_dispatch_vkCmdClearColorImage(struct vn_dispatch_context* ctx
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdClearColorImage recorded");
 }
 
+static void server_dispatch_vkCmdClearDepthStencilImage(struct vn_dispatch_context* ctx,
+                                                        struct vn_command_vkCmdClearDepthStencilImage* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdClearDepthStencilImage (ranges=%u)", args->rangeCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdClearDepthStencilImage")) {
+        return;
+    }
+    if (args->rangeCount == 0 || !args->pRanges || !args->pDepthStencil) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkCmdClearDepthStencilImage");
+        return;
+    }
+    VkCommandBuffer real_cb = get_real_command_buffer(state, args->commandBuffer, "vkCmdClearDepthStencilImage");
+    VkImage real_image = get_real_image(state, args->image, "vkCmdClearDepthStencilImage");
+    if (real_cb == VK_NULL_HANDLE || real_image == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdClearDepthStencilImage(real_cb,
+                                real_image,
+                                args->imageLayout,
+                                args->pDepthStencil,
+                                args->rangeCount,
+                                args->pRanges);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdClearDepthStencilImage recorded");
+}
+
+static void server_dispatch_vkCmdClearAttachments(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkCmdClearAttachments* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdClearAttachments (attachments=%u, rects=%u)",
+           args->attachmentCount,
+           args->rectCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdClearAttachments")) {
+        return;
+    }
+    if (args->attachmentCount == 0 || args->rectCount == 0 || !args->pAttachments || !args->pRects) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkCmdClearAttachments");
+        return;
+    }
+    VkCommandBuffer real_cb = get_real_command_buffer(state, args->commandBuffer, "vkCmdClearAttachments");
+    if (real_cb == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdClearAttachments(real_cb,
+                          args->attachmentCount,
+                          args->pAttachments,
+                          args->rectCount,
+                          args->pRects);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdClearAttachments recorded");
+}
+
 static void server_dispatch_vkCmdBeginRenderPass(struct vn_dispatch_context* ctx,
                                                  struct vn_command_vkCmdBeginRenderPass* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBeginRenderPass");
@@ -2969,6 +3241,35 @@ static void server_dispatch_vkCmdBeginRenderPass(struct vn_dispatch_context* ctx
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBeginRenderPass recorded");
 }
 
+static void server_dispatch_vkCmdBeginRenderPass2(struct vn_dispatch_context* ctx,
+                                                  struct vn_command_vkCmdBeginRenderPass2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBeginRenderPass2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBeginRenderPass2")) {
+        return;
+    }
+    if (!args->pRenderPassBegin || !args->pSubpassBeginInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing begin info for vkCmdBeginRenderPass2");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBeginRenderPass2");
+    VkRenderPass real_rp =
+        server_state_bridge_get_real_render_pass(state, args->pRenderPassBegin->renderPass);
+    VkFramebuffer real_fb =
+        server_state_bridge_get_real_framebuffer(state, args->pRenderPassBegin->framebuffer);
+    if (real_cb == VK_NULL_HANDLE || real_rp == VK_NULL_HANDLE || real_fb == VK_NULL_HANDLE) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkRenderPassBeginInfo begin_info = *args->pRenderPassBegin;
+    begin_info.renderPass = real_rp;
+    begin_info.framebuffer = real_fb;
+    vkCmdBeginRenderPass2(real_cb, &begin_info, args->pSubpassBeginInfo);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBeginRenderPass2 recorded");
+}
+
 static void server_dispatch_vkCmdEndRenderPass(struct vn_dispatch_context* ctx,
                                                struct vn_command_vkCmdEndRenderPass* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdEndRenderPass");
@@ -2983,6 +3284,62 @@ static void server_dispatch_vkCmdEndRenderPass(struct vn_dispatch_context* ctx,
     }
     vkCmdEndRenderPass(real_cb);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdEndRenderPass recorded");
+}
+
+static void server_dispatch_vkCmdNextSubpass(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkCmdNextSubpass* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdNextSubpass");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdNextSubpass")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdNextSubpass");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdNextSubpass(real_cb, args->contents);
+}
+
+static void server_dispatch_vkCmdNextSubpass2(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdNextSubpass2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdNextSubpass2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdNextSubpass2")) {
+        return;
+    }
+    if (!args->pSubpassBeginInfo || !args->pSubpassEndInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing subpass info for vkCmdNextSubpass2");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdNextSubpass2");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdNextSubpass2(real_cb, args->pSubpassBeginInfo, args->pSubpassEndInfo);
+}
+
+static void server_dispatch_vkCmdEndRenderPass2(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdEndRenderPass2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdEndRenderPass2");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdEndRenderPass2")) {
+        return;
+    }
+    if (!args->pSubpassEndInfo) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Missing end info for vkCmdEndRenderPass2");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdEndRenderPass2");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdEndRenderPass2(real_cb, args->pSubpassEndInfo);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdEndRenderPass2 recorded");
 }
 
 static void server_dispatch_vkCmdBeginRendering(struct vn_dispatch_context* ctx,
@@ -3087,6 +3444,23 @@ static void server_dispatch_vkCmdBindPipeline(struct vn_dispatch_context* ctx,
     vkCmdBindPipeline(real_cb, args->pipelineBindPoint, real_pipeline);
 }
 
+static void server_dispatch_vkCmdBindIndexBuffer(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCmdBindIndexBuffer* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindIndexBuffer");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindIndexBuffer")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBindIndexBuffer");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdBindIndexBuffer");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdBindIndexBuffer(real_cb, real_buffer, args->offset, args->indexType);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindIndexBuffer recorded");
+}
+
 static void server_dispatch_vkCmdBindVertexBuffers(struct vn_dispatch_context* ctx,
                                                    struct vn_command_vkCmdBindVertexBuffers* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindVertexBuffers (count=%u)",
@@ -3124,6 +3498,52 @@ static void server_dispatch_vkCmdBindVertexBuffers(struct vn_dispatch_context* c
                            args->pOffsets);
     free(real_buffers);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindVertexBuffers recorded");
+}
+
+static void server_dispatch_vkCmdBindVertexBuffers2(struct vn_dispatch_context* ctx,
+                                                    struct vn_command_vkCmdBindVertexBuffers2* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdBindVertexBuffers2 (count=%u)",
+           args->bindingCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdBindVertexBuffers2")) {
+        return;
+    }
+    if (args->bindingCount == 0 || !args->pBuffers || !args->pOffsets) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid parameters for vkCmdBindVertexBuffers2");
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdBindVertexBuffers2");
+    if (!real_cb) {
+        return;
+    }
+    VkBuffer* real_buffers = calloc(args->bindingCount, sizeof(*real_buffers));
+    if (!real_buffers) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for vertex buffers");
+        return;
+    }
+    for (uint32_t i = 0; i < args->bindingCount; ++i) {
+        if (args->pBuffers[i] == VK_NULL_HANDLE) {
+            real_buffers[i] = VK_NULL_HANDLE;
+            continue;
+        }
+        real_buffers[i] =
+            get_real_buffer(state, args->pBuffers[i], "vkCmdBindVertexBuffers2");
+        if (real_buffers[i] == VK_NULL_HANDLE) {
+            free(real_buffers);
+            return;
+        }
+    }
+
+    vkCmdBindVertexBuffers2(real_cb,
+                            args->firstBinding,
+                            args->bindingCount,
+                            real_buffers,
+                            args->pOffsets,
+                            args->pSizes,
+                            args->pStrides);
+    free(real_buffers);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdBindVertexBuffers2 recorded");
 }
 
 static void server_dispatch_vkCmdBindDescriptorSets(struct vn_dispatch_context* ctx,
@@ -3332,6 +3752,114 @@ static void server_dispatch_vkCmdSetPrimitiveTopology(struct vn_dispatch_context
     vkCmdSetPrimitiveTopology(real_cb, args->primitiveTopology);
 }
 
+static void server_dispatch_vkCmdSetBlendConstants(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdSetBlendConstants* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetBlendConstants");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetBlendConstants")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetBlendConstants");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetBlendConstants(real_cb, args->blendConstants);
+}
+
+static void server_dispatch_vkCmdSetLineWidth(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdSetLineWidth* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetLineWidth");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetLineWidth")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetLineWidth");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetLineWidth(real_cb, args->lineWidth);
+}
+
+static void server_dispatch_vkCmdSetDepthBias(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdSetDepthBias* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetDepthBias");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetDepthBias")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetDepthBias");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetDepthBias(real_cb,
+                      args->depthBiasConstantFactor,
+                      args->depthBiasClamp,
+                      args->depthBiasSlopeFactor);
+}
+
+static void server_dispatch_vkCmdSetDepthBounds(struct vn_dispatch_context* ctx,
+                                                struct vn_command_vkCmdSetDepthBounds* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetDepthBounds");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetDepthBounds")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetDepthBounds");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetDepthBounds(real_cb, args->minDepthBounds, args->maxDepthBounds);
+}
+
+static void server_dispatch_vkCmdSetStencilCompareMask(struct vn_dispatch_context* ctx,
+                                                       struct vn_command_vkCmdSetStencilCompareMask* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetStencilCompareMask");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetStencilCompareMask")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetStencilCompareMask");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetStencilCompareMask(real_cb, args->faceMask, args->compareMask);
+}
+
+static void server_dispatch_vkCmdSetStencilWriteMask(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkCmdSetStencilWriteMask* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetStencilWriteMask");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetStencilWriteMask")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetStencilWriteMask");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetStencilWriteMask(real_cb, args->faceMask, args->writeMask);
+}
+
+static void server_dispatch_vkCmdSetStencilReference(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkCmdSetStencilReference* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetStencilReference");
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetStencilReference")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetStencilReference");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetStencilReference(real_cb, args->faceMask, args->reference);
+}
+
 static void server_dispatch_vkCmdSetViewportWithCount(struct vn_dispatch_context* ctx,
                                                       struct vn_command_vkCmdSetViewportWithCount* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetViewportWithCount (count=%u)",
@@ -3510,6 +4038,66 @@ static void server_dispatch_vkCmdSetPrimitiveRestartEnable(
     vkCmdSetPrimitiveRestartEnable(real_cb, args->primitiveRestartEnable);
 }
 
+static void server_dispatch_vkCmdSetDeviceMask(struct vn_dispatch_context* ctx,
+                                               struct vn_command_vkCmdSetDeviceMask* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdSetDeviceMask (mask=%u)", args->deviceMask);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdSetDeviceMask")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdSetDeviceMask");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdSetDeviceMask(real_cb, args->deviceMask);
+}
+
+static void server_dispatch_vkCmdExecuteCommands(struct vn_dispatch_context* ctx,
+                                                 struct vn_command_vkCmdExecuteCommands* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdExecuteCommands (count=%u)",
+           args->commandBufferCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdExecuteCommands")) {
+        return;
+    }
+    if (!args->pCommandBuffers || args->commandBufferCount == 0) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Invalid command buffer list for vkCmdExecuteCommands");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    VkCommandBuffer real_primary =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdExecuteCommands");
+    if (real_primary == VK_NULL_HANDLE) {
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+
+    VkCommandBuffer* real_secondary =
+        args->commandBufferCount > 0 ? calloc(args->commandBufferCount, sizeof(*real_secondary)) : NULL;
+    if (!real_secondary) {
+        VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Out of memory for secondary list");
+        server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+        return;
+    }
+    for (uint32_t i = 0; i < args->commandBufferCount; ++i) {
+        VkCommandBuffer real_cb =
+            get_real_command_buffer(state, args->pCommandBuffers[i], "vkCmdExecuteCommands");
+        if (real_cb == VK_NULL_HANDLE) {
+            VP_LOG_ERROR(SERVER, "[Venus Server]   -> ERROR: Secondary command buffer %u not tracked", i);
+            server_state_bridge_mark_command_buffer_invalid(state, args->commandBuffer);
+            free(real_secondary);
+            return;
+        }
+        real_secondary[i] = real_cb;
+    }
+
+    vkCmdExecuteCommands(real_primary, args->commandBufferCount, real_secondary);
+    free(real_secondary);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdExecuteCommands recorded");
+}
+
 static void server_dispatch_vkCmdDraw(struct vn_dispatch_context* ctx,
                                       struct vn_command_vkCmdDraw* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDraw (verts=%u inst=%u)",
@@ -3529,6 +4117,113 @@ static void server_dispatch_vkCmdDraw(struct vn_dispatch_context* ctx,
               args->firstVertex,
               args->firstInstance);
     VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDraw recorded");
+}
+
+static void server_dispatch_vkCmdDrawIndexed(struct vn_dispatch_context* ctx,
+                                             struct vn_command_vkCmdDrawIndexed* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDrawIndexed (indices=%u inst=%u)",
+           args->indexCount,
+           args->instanceCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDrawIndexed")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDrawIndexed");
+    if (!real_cb) {
+        return;
+    }
+    vkCmdDrawIndexed(real_cb,
+                     args->indexCount,
+                     args->instanceCount,
+                     args->firstIndex,
+                     args->vertexOffset,
+                     args->firstInstance);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDrawIndexed recorded");
+}
+
+static void server_dispatch_vkCmdDrawIndirect(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkCmdDrawIndirect* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDrawIndirect (drawCount=%u)", args->drawCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDrawIndirect")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDrawIndirect");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdDrawIndirect");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDrawIndirect(real_cb, real_buffer, args->offset, args->drawCount, args->stride);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDrawIndirect recorded");
+}
+
+static void server_dispatch_vkCmdDrawIndirectCount(struct vn_dispatch_context* ctx,
+                                                   struct vn_command_vkCmdDrawIndirectCount* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDrawIndirectCount (maxDrawCount=%u)",
+           args->maxDrawCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDrawIndirectCount")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDrawIndirectCount");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdDrawIndirectCount");
+    VkBuffer real_count = get_real_buffer(state, args->countBuffer, "vkCmdDrawIndirectCount");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE || real_count == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDrawIndirectCount(real_cb,
+                           real_buffer,
+                           args->offset,
+                           real_count,
+                           args->countBufferOffset,
+                           args->maxDrawCount,
+                           args->stride);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDrawIndirectCount recorded");
+}
+
+static void server_dispatch_vkCmdDrawIndexedIndirect(struct vn_dispatch_context* ctx,
+                                                     struct vn_command_vkCmdDrawIndexedIndirect* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDrawIndexedIndirect (drawCount=%u)", args->drawCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDrawIndexedIndirect")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDrawIndexedIndirect");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdDrawIndexedIndirect");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDrawIndexedIndirect(real_cb, real_buffer, args->offset, args->drawCount, args->stride);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDrawIndexedIndirect recorded");
+}
+
+static void server_dispatch_vkCmdDrawIndexedIndirectCount(struct vn_dispatch_context* ctx,
+                                                          struct vn_command_vkCmdDrawIndexedIndirectCount* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkCmdDrawIndexedIndirectCount (maxDrawCount=%u)",
+           args->maxDrawCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    if (!command_buffer_recording_guard(state, args->commandBuffer, "vkCmdDrawIndexedIndirectCount")) {
+        return;
+    }
+    VkCommandBuffer real_cb =
+        get_real_command_buffer(state, args->commandBuffer, "vkCmdDrawIndexedIndirectCount");
+    VkBuffer real_buffer = get_real_buffer(state, args->buffer, "vkCmdDrawIndexedIndirectCount");
+    VkBuffer real_count = get_real_buffer(state, args->countBuffer, "vkCmdDrawIndexedIndirectCount");
+    if (real_cb == VK_NULL_HANDLE || real_buffer == VK_NULL_HANDLE || real_count == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdDrawIndexedIndirectCount(real_cb,
+                                  real_buffer,
+                                  args->offset,
+                                  real_count,
+                                  args->countBufferOffset,
+                                  args->maxDrawCount,
+                                  args->stride);
+    VP_LOG_INFO(SERVER, "[Venus Server]   -> vkCmdDrawIndexedIndirectCount recorded");
 }
 
 static void server_dispatch_vkCmdPipelineBarrier(struct vn_dispatch_context* ctx,
@@ -4142,6 +4837,302 @@ static void server_dispatch_vkResetEvent(struct vn_dispatch_context* ctx,
     args->ret = server_state_bridge_reset_event(state, args->event);
 }
 
+static void server_dispatch_vkQueueBindSparse(struct vn_dispatch_context* ctx,
+                                              struct vn_command_vkQueueBindSparse* args) {
+    VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkQueueBindSparse (bindInfoCount=%u)",
+           args->bindInfoCount);
+    struct ServerState* state = (struct ServerState*)ctx->data;
+    args->ret = VK_SUCCESS;
+
+    if (args->bindInfoCount > 0 && !args->pBindInfo) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkQueue real_queue = server_state_bridge_get_real_queue(state, args->queue);
+    if (args->queue != VK_NULL_HANDLE && real_queue == VK_NULL_HANDLE) {
+        args->ret = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkFence real_fence = server_state_bridge_get_real_fence(state, args->fence);
+
+    VkBindSparseInfo* infos =
+        args->bindInfoCount > 0 ? calloc(args->bindInfoCount, sizeof(*infos)) : NULL;
+    if (args->bindInfoCount > 0 && !infos) {
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+
+    struct SparseTemp {
+        VkSemaphore* wait_semaphores;
+        VkSemaphore* signal_semaphores;
+        VkSparseBufferMemoryBindInfo* buffer_infos;
+        VkSparseMemoryBind** buffer_binds;
+        VkSparseImageOpaqueMemoryBindInfo* image_opaque_infos;
+        VkSparseMemoryBind** opaque_binds;
+        VkSparseImageMemoryBindInfo* image_infos;
+        VkSparseImageMemoryBind** image_binds;
+        VkTimelineSemaphoreSubmitInfo timeline_info;
+        uint64_t* wait_values;
+        uint64_t* signal_values;
+        bool has_timeline;
+    };
+
+    struct SparseTemp* temps =
+        args->bindInfoCount > 0 ? calloc(args->bindInfoCount, sizeof(*temps)) : NULL;
+    if (args->bindInfoCount > 0 && !temps) {
+        free(infos);
+        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+
+    for (uint32_t i = 0; i < args->bindInfoCount; ++i) {
+        const VkBindSparseInfo* src = &args->pBindInfo[i];
+        VkBindSparseInfo* dst = &infos[i];
+        struct SparseTemp* temp = &temps[i];
+        *dst = *src;
+
+        if (src->waitSemaphoreCount > 0) {
+            temp->wait_semaphores = calloc(src->waitSemaphoreCount, sizeof(VkSemaphore));
+            if (!temp->wait_semaphores) {
+                args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->waitSemaphoreCount; ++j) {
+                if (!server_state_bridge_semaphore_exists(state, src->pWaitSemaphores[j])) {
+                    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+                temp->wait_semaphores[j] =
+                    server_state_bridge_get_real_semaphore(state, src->pWaitSemaphores[j]);
+            }
+            dst->pWaitSemaphores = temp->wait_semaphores;
+        } else {
+            dst->pWaitSemaphores = NULL;
+        }
+
+        if (src->bufferBindCount > 0) {
+            temp->buffer_infos = calloc(src->bufferBindCount, sizeof(VkSparseBufferMemoryBindInfo));
+            temp->buffer_binds = calloc(src->bufferBindCount, sizeof(VkSparseMemoryBind*));
+            if (!temp->buffer_infos || !temp->buffer_binds) {
+                args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->bufferBindCount; ++j) {
+                const VkSparseBufferMemoryBindInfo* buf = &src->pBufferBinds[j];
+                VkSparseBufferMemoryBindInfo* dst_buf = &temp->buffer_infos[j];
+                *dst_buf = *buf;
+                dst_buf->buffer = get_real_buffer(state, buf->buffer, "vkQueueBindSparse");
+                if (dst_buf->buffer == VK_NULL_HANDLE) {
+                    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+                if (buf->bindCount > 0) {
+                    temp->buffer_binds[j] =
+                        calloc(buf->bindCount, sizeof(VkSparseMemoryBind));
+                    if (!temp->buffer_binds[j]) {
+                        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto cleanup;
+                    }
+                    memcpy(temp->buffer_binds[j], buf->pBinds, sizeof(VkSparseMemoryBind) * buf->bindCount);
+                    for (uint32_t k = 0; k < buf->bindCount; ++k) {
+                        if (temp->buffer_binds[j][k].memory != VK_NULL_HANDLE) {
+                            temp->buffer_binds[j][k].memory = server_state_bridge_get_real_memory(
+                                state, temp->buffer_binds[j][k].memory);
+                            if (temp->buffer_binds[j][k].memory == VK_NULL_HANDLE) {
+                                args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                                goto cleanup;
+                            }
+                        }
+                    }
+                    dst_buf->pBinds = temp->buffer_binds[j];
+                } else {
+                    dst_buf->pBinds = NULL;
+                }
+            }
+            dst->pBufferBinds = temp->buffer_infos;
+        } else {
+            dst->pBufferBinds = NULL;
+        }
+
+        if (src->imageOpaqueBindCount > 0) {
+            temp->image_opaque_infos =
+                calloc(src->imageOpaqueBindCount, sizeof(VkSparseImageOpaqueMemoryBindInfo));
+            temp->opaque_binds = calloc(src->imageOpaqueBindCount, sizeof(VkSparseMemoryBind*));
+            if (!temp->image_opaque_infos || !temp->opaque_binds) {
+                args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->imageOpaqueBindCount; ++j) {
+                const VkSparseImageOpaqueMemoryBindInfo* info = &src->pImageOpaqueBinds[j];
+                VkSparseImageOpaqueMemoryBindInfo* dst_info = &temp->image_opaque_infos[j];
+                *dst_info = *info;
+                dst_info->image = get_real_image(state, info->image, "vkQueueBindSparse");
+                if (dst_info->image == VK_NULL_HANDLE) {
+                    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+                if (info->bindCount > 0) {
+                    temp->opaque_binds[j] =
+                        calloc(info->bindCount, sizeof(VkSparseMemoryBind));
+                    if (!temp->opaque_binds[j]) {
+                        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto cleanup;
+                    }
+                    memcpy(temp->opaque_binds[j], info->pBinds, sizeof(VkSparseMemoryBind) * info->bindCount);
+                    for (uint32_t k = 0; k < info->bindCount; ++k) {
+                        if (temp->opaque_binds[j][k].memory != VK_NULL_HANDLE) {
+                            temp->opaque_binds[j][k].memory = server_state_bridge_get_real_memory(
+                                state, temp->opaque_binds[j][k].memory);
+                            if (temp->opaque_binds[j][k].memory == VK_NULL_HANDLE) {
+                                args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                                goto cleanup;
+                            }
+                        }
+                    }
+                    dst_info->pBinds = temp->opaque_binds[j];
+                } else {
+                    dst_info->pBinds = NULL;
+                }
+            }
+            dst->pImageOpaqueBinds = temp->image_opaque_infos;
+        } else {
+            dst->pImageOpaqueBinds = NULL;
+        }
+
+        if (src->imageBindCount > 0) {
+            temp->image_infos =
+                calloc(src->imageBindCount, sizeof(VkSparseImageMemoryBindInfo));
+            temp->image_binds = calloc(src->imageBindCount, sizeof(VkSparseImageMemoryBind*));
+            if (!temp->image_infos || !temp->image_binds) {
+                args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->imageBindCount; ++j) {
+                const VkSparseImageMemoryBindInfo* info = &src->pImageBinds[j];
+                VkSparseImageMemoryBindInfo* dst_info = &temp->image_infos[j];
+                *dst_info = *info;
+                dst_info->image = get_real_image(state, info->image, "vkQueueBindSparse");
+                if (dst_info->image == VK_NULL_HANDLE) {
+                    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+                if (info->bindCount > 0) {
+                    temp->image_binds[j] =
+                        calloc(info->bindCount, sizeof(VkSparseImageMemoryBind));
+                    if (!temp->image_binds[j]) {
+                        args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto cleanup;
+                    }
+                    memcpy(temp->image_binds[j], info->pBinds, sizeof(VkSparseImageMemoryBind) * info->bindCount);
+                    for (uint32_t k = 0; k < info->bindCount; ++k) {
+                        if (temp->image_binds[j][k].memory != VK_NULL_HANDLE) {
+                            temp->image_binds[j][k].memory = server_state_bridge_get_real_memory(
+                                state, temp->image_binds[j][k].memory);
+                            if (temp->image_binds[j][k].memory == VK_NULL_HANDLE) {
+                                args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                                goto cleanup;
+                            }
+                        }
+                    }
+                    dst_info->pBinds = temp->image_binds[j];
+                } else {
+                    dst_info->pBinds = NULL;
+                }
+            }
+            dst->pImageBinds = temp->image_infos;
+        } else {
+            dst->pImageBinds = NULL;
+        }
+
+        if (src->signalSemaphoreCount > 0) {
+            temp->signal_semaphores = calloc(src->signalSemaphoreCount, sizeof(VkSemaphore));
+            if (!temp->signal_semaphores) {
+                args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto cleanup;
+            }
+            for (uint32_t j = 0; j < src->signalSemaphoreCount; ++j) {
+                if (!server_state_bridge_semaphore_exists(state, src->pSignalSemaphores[j])) {
+                    args->ret = VK_ERROR_INITIALIZATION_FAILED;
+                    goto cleanup;
+                }
+                temp->signal_semaphores[j] =
+                    server_state_bridge_get_real_semaphore(state, src->pSignalSemaphores[j]);
+            }
+            dst->pSignalSemaphores = temp->signal_semaphores;
+        } else {
+            dst->pSignalSemaphores = NULL;
+        }
+
+        const VkTimelineSemaphoreSubmitInfo* timeline = find_timeline_submit_info(src->pNext);
+        temp->has_timeline = false;
+        if (timeline) {
+            temp->timeline_info = *timeline;
+            if (timeline->waitSemaphoreValueCount > 0) {
+                temp->wait_values = calloc(timeline->waitSemaphoreValueCount, sizeof(uint64_t));
+                if (!temp->wait_values) {
+                    args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                    goto cleanup;
+                }
+                memcpy(temp->wait_values,
+                       timeline->pWaitSemaphoreValues,
+                       timeline->waitSemaphoreValueCount * sizeof(uint64_t));
+                temp->timeline_info.pWaitSemaphoreValues = temp->wait_values;
+            }
+            if (timeline->signalSemaphoreValueCount > 0) {
+                temp->signal_values = calloc(timeline->signalSemaphoreValueCount, sizeof(uint64_t));
+                if (!temp->signal_values) {
+                    args->ret = VK_ERROR_OUT_OF_HOST_MEMORY;
+                    goto cleanup;
+                }
+                memcpy(temp->signal_values,
+                       timeline->pSignalSemaphoreValues,
+                       timeline->signalSemaphoreValueCount * sizeof(uint64_t));
+                temp->timeline_info.pSignalSemaphoreValues = temp->signal_values;
+            }
+            dst->pNext = &temp->timeline_info;
+            temp->has_timeline = true;
+        } else {
+            dst->pNext = NULL;
+        }
+    }
+
+    args->ret = vkQueueBindSparse(real_queue, args->bindInfoCount, infos, real_fence);
+
+cleanup:
+    if (temps) {
+        for (uint32_t i = 0; i < args->bindInfoCount; ++i) {
+            free(temps[i].wait_semaphores);
+            free(temps[i].signal_semaphores);
+            if (temps[i].buffer_binds) {
+                for (uint32_t j = 0; j < args->pBindInfo[i].bufferBindCount; ++j) {
+                    free(temps[i].buffer_binds[j]);
+                }
+            }
+            if (temps[i].opaque_binds) {
+                for (uint32_t j = 0; j < args->pBindInfo[i].imageOpaqueBindCount; ++j) {
+                    free(temps[i].opaque_binds[j]);
+                }
+            }
+            if (temps[i].image_binds) {
+                for (uint32_t j = 0; j < args->pBindInfo[i].imageBindCount; ++j) {
+                    free(temps[i].image_binds[j]);
+                }
+            }
+            free(temps[i].buffer_infos);
+            free(temps[i].buffer_binds);
+            free(temps[i].image_opaque_infos);
+            free(temps[i].opaque_binds);
+            free(temps[i].image_infos);
+            free(temps[i].image_binds);
+            free(temps[i].wait_values);
+            free(temps[i].signal_values);
+        }
+    }
+    free(temps);
+    free(infos);
+}
 static void server_dispatch_vkQueueSubmit(struct vn_dispatch_context* ctx,
                                           struct vn_command_vkQueueSubmit* args) {
     VP_LOG_INFO(SERVER, "[Venus Server] Dispatching vkQueueSubmit (submitCount=%u)", args->submitCount);
@@ -4202,6 +5193,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
         server_dispatch_vkEnumerateInstanceExtensionProperties;
     renderer->ctx.dispatch_vkEnumerateInstanceLayerProperties = server_dispatch_vkEnumerateInstanceLayerProperties;
     renderer->ctx.dispatch_vkEnumeratePhysicalDevices = server_dispatch_vkEnumeratePhysicalDevices;
+    renderer->ctx.dispatch_vkEnumeratePhysicalDeviceGroups = server_dispatch_vkEnumeratePhysicalDeviceGroups;
 
     // Phase 3 handlers: Physical device queries
     renderer->ctx.dispatch_vkGetPhysicalDeviceProperties = server_dispatch_vkGetPhysicalDeviceProperties;
@@ -4222,15 +5214,20 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCreateDevice = server_dispatch_vkCreateDevice;
     renderer->ctx.dispatch_vkDestroyDevice = server_dispatch_vkDestroyDevice;
     renderer->ctx.dispatch_vkGetDeviceQueue = server_dispatch_vkGetDeviceQueue;
+    renderer->ctx.dispatch_vkGetDeviceQueue2 = server_dispatch_vkGetDeviceQueue2;
+    renderer->ctx.dispatch_vkGetDeviceGroupPeerMemoryFeatures =
+        server_dispatch_vkGetDeviceGroupPeerMemoryFeatures;
 
     // Phase 4 handlers: Memory and resources
     renderer->ctx.dispatch_vkAllocateMemory = server_dispatch_vkAllocateMemory;
     renderer->ctx.dispatch_vkFreeMemory = server_dispatch_vkFreeMemory;
+    renderer->ctx.dispatch_vkGetDeviceMemoryCommitment = server_dispatch_vkGetDeviceMemoryCommitment;
     renderer->ctx.dispatch_vkCreateBuffer = server_dispatch_vkCreateBuffer;
     renderer->ctx.dispatch_vkDestroyBuffer = server_dispatch_vkDestroyBuffer;
     renderer->ctx.dispatch_vkGetBufferMemoryRequirements = server_dispatch_vkGetBufferMemoryRequirements;
     renderer->ctx.dispatch_vkGetBufferMemoryRequirements2 = server_dispatch_vkGetBufferMemoryRequirements2;
     renderer->ctx.dispatch_vkBindBufferMemory = server_dispatch_vkBindBufferMemory;
+    renderer->ctx.dispatch_vkBindBufferMemory2 = server_dispatch_vkBindBufferMemory2;
     renderer->ctx.dispatch_vkGetBufferDeviceAddress = server_dispatch_vkGetBufferDeviceAddress;
     renderer->ctx.dispatch_vkGetBufferOpaqueCaptureAddress = server_dispatch_vkGetBufferOpaqueCaptureAddress;
     renderer->ctx.dispatch_vkGetDeviceMemoryOpaqueCaptureAddress =
@@ -4246,6 +5243,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetDeviceImageSparseMemoryRequirements =
         server_dispatch_vkGetDeviceImageSparseMemoryRequirements;
     renderer->ctx.dispatch_vkBindImageMemory = server_dispatch_vkBindImageMemory;
+    renderer->ctx.dispatch_vkBindImageMemory2 = server_dispatch_vkBindImageMemory2;
     renderer->ctx.dispatch_vkGetImageSubresourceLayout = server_dispatch_vkGetImageSubresourceLayout;
     renderer->ctx.dispatch_vkCreateImageView = server_dispatch_vkCreateImageView;
     renderer->ctx.dispatch_vkDestroyImageView = server_dispatch_vkDestroyImageView;
@@ -4277,6 +5275,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCreateRenderPass = server_dispatch_vkCreateRenderPass;
     renderer->ctx.dispatch_vkCreateRenderPass2 = server_dispatch_vkCreateRenderPass2;
     renderer->ctx.dispatch_vkDestroyRenderPass = server_dispatch_vkDestroyRenderPass;
+    renderer->ctx.dispatch_vkGetRenderAreaGranularity = server_dispatch_vkGetRenderAreaGranularity;
     renderer->ctx.dispatch_vkCreateFramebuffer = server_dispatch_vkCreateFramebuffer;
     renderer->ctx.dispatch_vkDestroyFramebuffer = server_dispatch_vkDestroyFramebuffer;
     renderer->ctx.dispatch_vkCreateComputePipelines = server_dispatch_vkCreateComputePipelines;
@@ -4285,6 +5284,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCreateCommandPool = server_dispatch_vkCreateCommandPool;
     renderer->ctx.dispatch_vkDestroyCommandPool = server_dispatch_vkDestroyCommandPool;
     renderer->ctx.dispatch_vkResetCommandPool = server_dispatch_vkResetCommandPool;
+    renderer->ctx.dispatch_vkTrimCommandPool = server_dispatch_vkTrimCommandPool;
     renderer->ctx.dispatch_vkAllocateCommandBuffers = server_dispatch_vkAllocateCommandBuffers;
     renderer->ctx.dispatch_vkFreeCommandBuffers = server_dispatch_vkFreeCommandBuffers;
     renderer->ctx.dispatch_vkBeginCommandBuffer = server_dispatch_vkBeginCommandBuffer;
@@ -4300,21 +5300,36 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdCopyBufferToImage2 = server_dispatch_vkCmdCopyBufferToImage2;
     renderer->ctx.dispatch_vkCmdCopyImageToBuffer = server_dispatch_vkCmdCopyImageToBuffer;
     renderer->ctx.dispatch_vkCmdCopyImageToBuffer2 = server_dispatch_vkCmdCopyImageToBuffer2;
+    renderer->ctx.dispatch_vkCmdResolveImage = server_dispatch_vkCmdResolveImage;
     renderer->ctx.dispatch_vkCmdResolveImage2 = server_dispatch_vkCmdResolveImage2;
     renderer->ctx.dispatch_vkCmdFillBuffer = server_dispatch_vkCmdFillBuffer;
     renderer->ctx.dispatch_vkCmdUpdateBuffer = server_dispatch_vkCmdUpdateBuffer;
     renderer->ctx.dispatch_vkCmdClearColorImage = server_dispatch_vkCmdClearColorImage;
+    renderer->ctx.dispatch_vkCmdClearDepthStencilImage = server_dispatch_vkCmdClearDepthStencilImage;
+    renderer->ctx.dispatch_vkCmdClearAttachments = server_dispatch_vkCmdClearAttachments;
     renderer->ctx.dispatch_vkCmdBeginRenderPass = server_dispatch_vkCmdBeginRenderPass;
+    renderer->ctx.dispatch_vkCmdBeginRenderPass2 = server_dispatch_vkCmdBeginRenderPass2;
     renderer->ctx.dispatch_vkCmdEndRenderPass = server_dispatch_vkCmdEndRenderPass;
+    renderer->ctx.dispatch_vkCmdEndRenderPass2 = server_dispatch_vkCmdEndRenderPass2;
     renderer->ctx.dispatch_vkCmdBeginRendering = server_dispatch_vkCmdBeginRendering;
     renderer->ctx.dispatch_vkCmdEndRendering = server_dispatch_vkCmdEndRendering;
     renderer->ctx.dispatch_vkCmdBindPipeline = server_dispatch_vkCmdBindPipeline;
+    renderer->ctx.dispatch_vkCmdBindIndexBuffer = server_dispatch_vkCmdBindIndexBuffer;
     renderer->ctx.dispatch_vkCmdBindVertexBuffers = server_dispatch_vkCmdBindVertexBuffers;
+    renderer->ctx.dispatch_vkCmdBindVertexBuffers2 = server_dispatch_vkCmdBindVertexBuffers2;
     renderer->ctx.dispatch_vkCmdBindDescriptorSets = server_dispatch_vkCmdBindDescriptorSets;
     renderer->ctx.dispatch_vkCmdPushConstants = server_dispatch_vkCmdPushConstants;
     renderer->ctx.dispatch_vkCmdDispatch = server_dispatch_vkCmdDispatch;
     renderer->ctx.dispatch_vkCmdDispatchIndirect = server_dispatch_vkCmdDispatchIndirect;
     renderer->ctx.dispatch_vkCmdDispatchBase = server_dispatch_vkCmdDispatchBase;
+    renderer->ctx.dispatch_vkCmdSetBlendConstants = server_dispatch_vkCmdSetBlendConstants;
+    renderer->ctx.dispatch_vkCmdSetLineWidth = server_dispatch_vkCmdSetLineWidth;
+    renderer->ctx.dispatch_vkCmdSetDepthBias = server_dispatch_vkCmdSetDepthBias;
+    renderer->ctx.dispatch_vkCmdSetDepthBounds = server_dispatch_vkCmdSetDepthBounds;
+    renderer->ctx.dispatch_vkCmdSetStencilCompareMask = server_dispatch_vkCmdSetStencilCompareMask;
+    renderer->ctx.dispatch_vkCmdSetStencilWriteMask = server_dispatch_vkCmdSetStencilWriteMask;
+    renderer->ctx.dispatch_vkCmdSetStencilReference = server_dispatch_vkCmdSetStencilReference;
+    renderer->ctx.dispatch_vkCmdSetDeviceMask = server_dispatch_vkCmdSetDeviceMask;
     renderer->ctx.dispatch_vkCmdSetViewport = server_dispatch_vkCmdSetViewport;
     renderer->ctx.dispatch_vkCmdSetViewportWithCount = server_dispatch_vkCmdSetViewportWithCount;
     renderer->ctx.dispatch_vkCmdSetScissor = server_dispatch_vkCmdSetScissor;
@@ -4331,7 +5346,16 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkCmdSetRasterizerDiscardEnable = server_dispatch_vkCmdSetRasterizerDiscardEnable;
     renderer->ctx.dispatch_vkCmdSetDepthBiasEnable = server_dispatch_vkCmdSetDepthBiasEnable;
     renderer->ctx.dispatch_vkCmdSetPrimitiveRestartEnable = server_dispatch_vkCmdSetPrimitiveRestartEnable;
+    renderer->ctx.dispatch_vkCmdNextSubpass = server_dispatch_vkCmdNextSubpass;
+    renderer->ctx.dispatch_vkCmdNextSubpass2 = server_dispatch_vkCmdNextSubpass2;
+    renderer->ctx.dispatch_vkCmdSetDeviceMask = server_dispatch_vkCmdSetDeviceMask;
+    renderer->ctx.dispatch_vkCmdExecuteCommands = server_dispatch_vkCmdExecuteCommands;
     renderer->ctx.dispatch_vkCmdDraw = server_dispatch_vkCmdDraw;
+    renderer->ctx.dispatch_vkCmdDrawIndexed = server_dispatch_vkCmdDrawIndexed;
+    renderer->ctx.dispatch_vkCmdDrawIndirect = server_dispatch_vkCmdDrawIndirect;
+    renderer->ctx.dispatch_vkCmdDrawIndirectCount = server_dispatch_vkCmdDrawIndirectCount;
+    renderer->ctx.dispatch_vkCmdDrawIndexedIndirect = server_dispatch_vkCmdDrawIndexedIndirect;
+    renderer->ctx.dispatch_vkCmdDrawIndexedIndirectCount = server_dispatch_vkCmdDrawIndexedIndirectCount;
     renderer->ctx.dispatch_vkCmdPipelineBarrier = server_dispatch_vkCmdPipelineBarrier;
     renderer->ctx.dispatch_vkCmdPipelineBarrier2 = server_dispatch_vkCmdPipelineBarrier2;
     renderer->ctx.dispatch_vkCmdResetQueryPool = server_dispatch_vkCmdResetQueryPool;
@@ -4356,6 +5380,7 @@ struct VenusRenderer* venus_renderer_create(struct ServerState* state) {
     renderer->ctx.dispatch_vkGetSemaphoreCounterValue = server_dispatch_vkGetSemaphoreCounterValue;
     renderer->ctx.dispatch_vkSignalSemaphore = server_dispatch_vkSignalSemaphore;
     renderer->ctx.dispatch_vkWaitSemaphores = server_dispatch_vkWaitSemaphores;
+    renderer->ctx.dispatch_vkQueueBindSparse = server_dispatch_vkQueueBindSparse;
     renderer->ctx.dispatch_vkCreateEvent = server_dispatch_vkCreateEvent;
     renderer->ctx.dispatch_vkDestroyEvent = server_dispatch_vkDestroyEvent;
     renderer->ctx.dispatch_vkGetEventStatus = server_dispatch_vkGetEventStatus;

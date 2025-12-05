@@ -596,6 +596,21 @@ inline bool ensure_remote_buffer(VkBuffer buffer, VkBuffer* remote, const char* 
     return true;
 }
 
+inline bool ensure_remote_buffer_and_size(VkBuffer buffer,
+                                          VkBuffer* remote,
+                                          VkDeviceSize* size_out,
+                                          const char* func_name) {
+    *remote = g_resource_state.get_remote_buffer(buffer);
+    if (*remote == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] " << func_name << " buffer not tracked\n";
+        return false;
+    }
+    if (size_out) {
+        *size_out = g_resource_state.get_buffer_size(buffer);
+    }
+    return true;
+}
+
 // Helper function: ensure remote image handle exists
 inline bool ensure_remote_image(VkImage image, VkImage* remote, const char* func_name) {
     *remote = g_resource_state.get_remote_image(image);

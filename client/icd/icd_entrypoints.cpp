@@ -34,6 +34,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
         ICD_LOG_INFO() << " -> returning vkEnumerateInstanceVersion\n";
         return (PFN_vkVoidFunction)vkEnumerateInstanceVersion;
     }
+    if (strcmp(pName, "vkEnumerateInstanceLayerProperties") == 0) {
+        ICD_LOG_INFO() << " -> returning vkEnumerateInstanceLayerProperties\n";
+        return (PFN_vkVoidFunction)vkEnumerateInstanceLayerProperties;
+    }
     if (strcmp(pName, "vkEnumerateInstanceExtensionProperties") == 0) {
         ICD_LOG_INFO() << " -> returning vkEnumerateInstanceExtensionProperties\n";
         return (PFN_vkVoidFunction)vkEnumerateInstanceExtensionProperties;
@@ -53,6 +57,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
     if (strcmp(pName, "vkEnumeratePhysicalDevices") == 0) {
         ICD_LOG_INFO() << " -> returning vkEnumeratePhysicalDevices\n";
         return (PFN_vkVoidFunction)vkEnumeratePhysicalDevices;
+    }
+    if (strcmp(pName, "vkEnumeratePhysicalDeviceGroups") == 0 ||
+        strcmp(pName, "vkEnumeratePhysicalDeviceGroupsKHR") == 0) {
+        ICD_LOG_INFO() << " -> returning vkEnumeratePhysicalDeviceGroups\n";
+        return (PFN_vkVoidFunction)vkEnumeratePhysicalDeviceGroups;
     }
     if (strcmp(pName, "vkGetPhysicalDeviceFeatures") == 0) {
         ICD_LOG_INFO() << " -> returning vkGetPhysicalDeviceFeatures\n";
@@ -253,6 +262,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance in
         ICD_LOG_INFO() << " -> returning vkWaitSemaphores\n";
         return (PFN_vkVoidFunction)vkWaitSemaphores;
     }
+    if (strcmp(pName, "vkQueueBindSparse") == 0) {
+        ICD_LOG_INFO() << " -> returning vkQueueBindSparse\n";
+        return (PFN_vkVoidFunction)vkQueueBindSparse;
+    }
     if (strcmp(pName, "vkQueueSubmit") == 0) {
         ICD_LOG_INFO() << " -> returning vkQueueSubmit\n";
         return (PFN_vkVoidFunction)vkQueueSubmit;
@@ -333,6 +346,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkGetDeviceQueue\n";
         return (PFN_vkVoidFunction)vkGetDeviceQueue;
     }
+    if (strcmp(pName, "vkGetDeviceQueue2") == 0) {
+        ICD_LOG_INFO() << " -> vkGetDeviceQueue2\n";
+        return (PFN_vkVoidFunction)vkGetDeviceQueue2;
+    }
     if (strcmp(pName, "vkDestroyDevice") == 0) {
         ICD_LOG_INFO() << " -> vkDestroyDevice\n";
         return (PFN_vkVoidFunction)vkDestroyDevice;
@@ -344,6 +361,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkFreeMemory") == 0) {
         ICD_LOG_INFO() << " -> vkFreeMemory\n";
         return (PFN_vkVoidFunction)vkFreeMemory;
+    }
+    if (strcmp(pName, "vkGetDeviceMemoryCommitment") == 0) {
+        ICD_LOG_INFO() << " -> vkGetDeviceMemoryCommitment\n";
+        return (PFN_vkVoidFunction)vkGetDeviceMemoryCommitment;
     }
     if (strcmp(pName, "vkMapMemory") == 0) {
         ICD_LOG_INFO() << " -> vkMapMemory\n";
@@ -384,6 +405,14 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkBindBufferMemory") == 0) {
         ICD_LOG_INFO() << " -> vkBindBufferMemory\n";
         return (PFN_vkVoidFunction)vkBindBufferMemory;
+    }
+    if (strcmp(pName, "vkBindBufferMemory2") == 0) {
+        ICD_LOG_INFO() << " -> vkBindBufferMemory2\n";
+        return (PFN_vkVoidFunction)vkBindBufferMemory2;
+    }
+    if (strcmp(pName, "vkBindBufferMemory2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkBindBufferMemory2KHR\n";
+        return (PFN_vkVoidFunction)vkBindBufferMemory2KHR;
     }
     if (strcmp(pName, "vkGetBufferDeviceAddress") == 0) {
         ICD_LOG_INFO() << " -> vkGetBufferDeviceAddress\n";
@@ -484,6 +513,14 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkBindImageMemory") == 0) {
         ICD_LOG_INFO() << " -> vkBindImageMemory\n";
         return (PFN_vkVoidFunction)vkBindImageMemory;
+    }
+    if (strcmp(pName, "vkBindImageMemory2") == 0) {
+        ICD_LOG_INFO() << " -> vkBindImageMemory2\n";
+        return (PFN_vkVoidFunction)vkBindImageMemory2;
+    }
+    if (strcmp(pName, "vkBindImageMemory2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkBindImageMemory2KHR\n";
+        return (PFN_vkVoidFunction)vkBindImageMemory2KHR;
     }
     if (strcmp(pName, "vkCreateShaderModule") == 0) {
         ICD_LOG_INFO() << " -> vkCreateShaderModule\n";
@@ -639,6 +676,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkDestroyRenderPass\n";
         return (PFN_vkVoidFunction)vkDestroyRenderPass;
     }
+    if (strcmp(pName, "vkGetRenderAreaGranularity") == 0) {
+        ICD_LOG_INFO() << " -> vkGetRenderAreaGranularity\n";
+        return (PFN_vkVoidFunction)vkGetRenderAreaGranularity;
+    }
     if (strcmp(pName, "vkCreateFramebuffer") == 0) {
         ICD_LOG_INFO() << " -> vkCreateFramebuffer\n";
         return (PFN_vkVoidFunction)vkCreateFramebuffer;
@@ -687,6 +728,14 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkResetCommandPool\n";
         return (PFN_vkVoidFunction)vkResetCommandPool;
     }
+    if (strcmp(pName, "vkTrimCommandPool") == 0) {
+        ICD_LOG_INFO() << " -> vkTrimCommandPool\n";
+        return (PFN_vkVoidFunction)vkTrimCommandPool;
+    }
+    if (strcmp(pName, "vkTrimCommandPoolKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkTrimCommandPoolKHR\n";
+        return (PFN_vkVoidFunction)vkTrimCommandPoolKHR;
+    }
     if (strcmp(pName, "vkAllocateCommandBuffers") == 0) {
         ICD_LOG_INFO() << " -> vkAllocateCommandBuffers\n";
         return (PFN_vkVoidFunction)vkAllocateCommandBuffers;
@@ -706,6 +755,42 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkResetCommandBuffer") == 0) {
         ICD_LOG_INFO() << " -> vkResetCommandBuffer\n";
         return (PFN_vkVoidFunction)vkResetCommandBuffer;
+    }
+    if (strcmp(pName, "vkCmdSetBlendConstants") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetBlendConstants\n";
+        return (PFN_vkVoidFunction)vkCmdSetBlendConstants;
+    }
+    if (strcmp(pName, "vkCmdSetLineWidth") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetLineWidth\n";
+        return (PFN_vkVoidFunction)vkCmdSetLineWidth;
+    }
+    if (strcmp(pName, "vkCmdSetDepthBias") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetDepthBias\n";
+        return (PFN_vkVoidFunction)vkCmdSetDepthBias;
+    }
+    if (strcmp(pName, "vkCmdSetDepthBounds") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetDepthBounds\n";
+        return (PFN_vkVoidFunction)vkCmdSetDepthBounds;
+    }
+    if (strcmp(pName, "vkCmdSetStencilCompareMask") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetStencilCompareMask\n";
+        return (PFN_vkVoidFunction)vkCmdSetStencilCompareMask;
+    }
+    if (strcmp(pName, "vkCmdSetStencilWriteMask") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetStencilWriteMask\n";
+        return (PFN_vkVoidFunction)vkCmdSetStencilWriteMask;
+    }
+    if (strcmp(pName, "vkCmdSetStencilReference") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetStencilReference\n";
+        return (PFN_vkVoidFunction)vkCmdSetStencilReference;
+    }
+    if (strcmp(pName, "vkCmdSetDeviceMask") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetDeviceMask\n";
+        return (PFN_vkVoidFunction)vkCmdSetDeviceMask;
+    }
+    if (strcmp(pName, "vkCmdSetDeviceMaskKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdSetDeviceMaskKHR\n";
+        return (PFN_vkVoidFunction)vkCmdSetDeviceMaskKHR;
     }
     if (strcmp(pName, "vkCmdCopyBuffer") == 0) {
         ICD_LOG_INFO() << " -> vkCmdCopyBuffer\n";
@@ -759,6 +844,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdCopyImageToBuffer\n";
         return (PFN_vkVoidFunction)vkCmdCopyImageToBuffer;
     }
+    if (strcmp(pName, "vkCmdResolveImage") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdResolveImage\n";
+        return (PFN_vkVoidFunction)vkCmdResolveImage;
+    }
     if (strcmp(pName, "vkCmdCopyImageToBuffer2") == 0) {
         ICD_LOG_INFO() << " -> vkCmdCopyImageToBuffer2\n";
         return (PFN_vkVoidFunction)vkCmdCopyImageToBuffer2;
@@ -787,9 +876,21 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdClearColorImage\n";
         return (PFN_vkVoidFunction)vkCmdClearColorImage;
     }
+    if (strcmp(pName, "vkCmdClearDepthStencilImage") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdClearDepthStencilImage\n";
+        return (PFN_vkVoidFunction)vkCmdClearDepthStencilImage;
+    }
+    if (strcmp(pName, "vkCmdClearAttachments") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdClearAttachments\n";
+        return (PFN_vkVoidFunction)vkCmdClearAttachments;
+    }
     if (strcmp(pName, "vkCmdBeginRenderPass") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBeginRenderPass\n";
         return (PFN_vkVoidFunction)vkCmdBeginRenderPass;
+    }
+    if (strcmp(pName, "vkCmdBeginRenderPass2") == 0 || strcmp(pName, "vkCmdBeginRenderPass2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBeginRenderPass2\n";
+        return (PFN_vkVoidFunction)vkCmdBeginRenderPass2;
     }
     if (strcmp(pName, "vkCmdBeginRendering") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBeginRendering\n";
@@ -802,6 +903,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkCmdEndRenderPass") == 0) {
         ICD_LOG_INFO() << " -> vkCmdEndRenderPass\n";
         return (PFN_vkVoidFunction)vkCmdEndRenderPass;
+    }
+    if (strcmp(pName, "vkCmdEndRenderPass2") == 0 || strcmp(pName, "vkCmdEndRenderPass2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdEndRenderPass2\n";
+        return (PFN_vkVoidFunction)vkCmdEndRenderPass2;
     }
     if (strcmp(pName, "vkCmdEndRendering") == 0) {
         ICD_LOG_INFO() << " -> vkCmdEndRendering\n";
@@ -818,6 +923,26 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkCmdBindVertexBuffers") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindVertexBuffers\n";
         return (PFN_vkVoidFunction)vkCmdBindVertexBuffers;
+    }
+    if (strcmp(pName, "vkCmdBindIndexBuffer") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindIndexBuffer\n";
+        return (PFN_vkVoidFunction)vkCmdBindIndexBuffer;
+    }
+    if (strcmp(pName, "vkCmdBindVertexBuffers2") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindVertexBuffers2\n";
+        return (PFN_vkVoidFunction)vkCmdBindVertexBuffers2;
+    }
+    if (strcmp(pName, "vkCmdBindVertexBuffers2EXT") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdBindVertexBuffers2EXT\n";
+        return (PFN_vkVoidFunction)vkCmdBindVertexBuffers2EXT;
+    }
+    if (strcmp(pName, "vkCmdNextSubpass") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdNextSubpass\n";
+        return (PFN_vkVoidFunction)vkCmdNextSubpass;
+    }
+    if (strcmp(pName, "vkCmdNextSubpass2") == 0 || strcmp(pName, "vkCmdNextSubpass2KHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdNextSubpass2\n";
+        return (PFN_vkVoidFunction)vkCmdNextSubpass2;
     }
     if (strcmp(pName, "vkCmdSetViewport") == 0) {
         ICD_LOG_INFO() << " -> vkCmdSetViewport\n";
@@ -939,9 +1064,41 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkCmdSetPrimitiveRestartEnableEXT\n";
         return (PFN_vkVoidFunction)vkCmdSetPrimitiveRestartEnableEXT;
     }
+    if (strcmp(pName, "vkCmdExecuteCommands") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdExecuteCommands\n";
+        return (PFN_vkVoidFunction)vkCmdExecuteCommands;
+    }
     if (strcmp(pName, "vkCmdDraw") == 0) {
         ICD_LOG_INFO() << " -> vkCmdDraw\n";
         return (PFN_vkVoidFunction)vkCmdDraw;
+    }
+    if (strcmp(pName, "vkCmdDrawIndexed") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndexed\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndexed;
+    }
+    if (strcmp(pName, "vkCmdDrawIndirect") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndirect\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndirect;
+    }
+    if (strcmp(pName, "vkCmdDrawIndirectCount") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndirectCount\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndirectCount;
+    }
+    if (strcmp(pName, "vkCmdDrawIndirectCountKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndirectCountKHR\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndirectCountKHR;
+    }
+    if (strcmp(pName, "vkCmdDrawIndexedIndirect") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndexedIndirect\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndexedIndirect;
+    }
+    if (strcmp(pName, "vkCmdDrawIndexedIndirectCount") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndexedIndirectCount\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndexedIndirectCount;
+    }
+    if (strcmp(pName, "vkCmdDrawIndexedIndirectCountKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkCmdDrawIndexedIndirectCountKHR\n";
+        return (PFN_vkVoidFunction)vkCmdDrawIndexedIndirectCountKHR;
     }
     if (strcmp(pName, "vkCmdBindDescriptorSets") == 0) {
         ICD_LOG_INFO() << " -> vkCmdBindDescriptorSets\n";
@@ -1103,6 +1260,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
         ICD_LOG_INFO() << " -> vkWaitSemaphores\n";
         return (PFN_vkVoidFunction)vkWaitSemaphores;
     }
+    if (strcmp(pName, "vkQueueBindSparse") == 0) {
+        ICD_LOG_INFO() << " -> vkQueueBindSparse\n";
+        return (PFN_vkVoidFunction)vkQueueBindSparse;
+    }
     if (strcmp(pName, "vkQueueSubmit") == 0) {
         ICD_LOG_INFO() << " -> vkQueueSubmit\n";
         return (PFN_vkVoidFunction)vkQueueSubmit;
@@ -1122,6 +1283,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
     if (strcmp(pName, "vkDeviceWaitIdle") == 0) {
         ICD_LOG_INFO() << " -> vkDeviceWaitIdle\n";
         return (PFN_vkVoidFunction)vkDeviceWaitIdle;
+    }
+    if (strcmp(pName, "vkGetDeviceGroupPeerMemoryFeatures") == 0 ||
+        strcmp(pName, "vkGetDeviceGroupPeerMemoryFeaturesKHR") == 0) {
+        ICD_LOG_INFO() << " -> vkGetDeviceGroupPeerMemoryFeatures\n";
+        return (PFN_vkVoidFunction)vkGetDeviceGroupPeerMemoryFeatures;
     }
 
     ICD_LOG_INFO() << " -> NOT IMPLEMENTED, returning nullptr\n";

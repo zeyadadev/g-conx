@@ -73,6 +73,15 @@ VkBuffer ResourceState::get_remote_buffer(VkBuffer buffer) const {
     return it->second.remote_handle;
 }
 
+VkDeviceSize ResourceState::get_buffer_size(VkBuffer buffer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = buffers_.find(handle_key(buffer));
+    if (it == buffers_.end()) {
+        return 0;
+    }
+    return it->second.size;
+}
+
 bool ResourceState::cache_buffer_requirements(VkBuffer buffer, const VkMemoryRequirements& requirements) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = buffers_.find(handle_key(buffer));

@@ -207,6 +207,58 @@ VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
               << ", remote=" << icd_queue->remote_handle << ")\n";
 }
 
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue2(
+    VkDevice device,
+    const VkDeviceQueueInfo2* pQueueInfo,
+    VkQueue* pQueue) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetDeviceQueue2 called (device=" << device << ")\n";
+
+    if (!pQueue || !pQueueInfo) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters to vkGetDeviceQueue2\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        *pQueue = VK_NULL_HANDLE;
+        return;
+    }
+
+    // Get ICD device structure
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    if (!icd_device) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetDeviceQueue2\n";
+        *pQueue = VK_NULL_HANDLE;
+        return;
+    }
+
+    // Allocate ICD queue structure (required for loader dispatch table)
+    IcdQueue* icd_queue = new IcdQueue();
+    if (!icd_queue) {
+        *pQueue = VK_NULL_HANDLE;
+        return;
+    }
+
+    icd_queue->loader_data = nullptr;
+    icd_queue->parent_device = device;
+    icd_queue->family_index = pQueueInfo->queueFamilyIndex;
+    icd_queue->queue_index = pQueueInfo->queueIndex;
+    icd_queue->remote_handle = VK_NULL_HANDLE;
+
+    vn_call_vkGetDeviceQueue2(&g_ring, icd_device->remote_handle, pQueueInfo, &icd_queue->remote_handle);
+
+    *pQueue = icd_queue_to_handle(icd_queue);
+    g_device_state.add_queue(device,
+                             *pQueue,
+                             icd_queue->remote_handle,
+                             pQueueInfo->queueFamilyIndex,
+                             pQueueInfo->queueIndex);
+
+    ICD_LOG_INFO() << "[Client ICD] Queue2 retrieved (local=" << *pQueue
+              << ", remote=" << icd_queue->remote_handle << ")\n";
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
     ICD_LOG_INFO() << "[Client ICD] vkDeviceWaitIdle called\n";
 
@@ -233,6 +285,41 @@ VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
         ICD_LOG_ERROR() << "[Client ICD] vkDeviceWaitIdle failed: " << result << "\n";
     }
     return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceGroupPeerMemoryFeatures(
+    VkDevice device,
+    uint32_t heapIndex,
+    uint32_t localDeviceIndex,
+    uint32_t remoteDeviceIndex,
+    VkPeerMemoryFeatureFlags* pPeerMemoryFeatures) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkGetDeviceGroupPeerMemoryFeatures called\n";
+
+    if (!pPeerMemoryFeatures) {
+        ICD_LOG_ERROR() << "[Client ICD] pPeerMemoryFeatures is NULL\n";
+        return;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        *pPeerMemoryFeatures = 0;
+        return;
+    }
+
+    VkDevice remote_device = g_device_state.get_remote_device(device);
+    if (remote_device == VK_NULL_HANDLE) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkGetDeviceGroupPeerMemoryFeatures\n";
+        *pPeerMemoryFeatures = 0;
+        return;
+    }
+
+    vn_call_vkGetDeviceGroupPeerMemoryFeatures(&g_ring,
+                                               remote_device,
+                                               heapIndex,
+                                               localDeviceIndex,
+                                               remoteDeviceIndex,
+                                               pPeerMemoryFeatures);
 }
 
 } // extern "C"

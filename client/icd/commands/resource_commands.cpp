@@ -227,6 +227,82 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(
     return result;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory2(
+    VkDevice device,
+    uint32_t bindInfoCount,
+    const VkBindBufferMemoryInfo* pBindInfos) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkBindBufferMemory2 called (count=" << bindInfoCount << ")\n";
+
+    if (bindInfoCount == 0 || !pBindInfos) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkBindBufferMemory2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkBindBufferMemory2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkBindBufferMemoryInfo> remote_infos(bindInfoCount);
+    for (uint32_t i = 0; i < bindInfoCount; ++i) {
+        const VkBindBufferMemoryInfo& info = pBindInfos[i];
+        if (!g_resource_state.has_buffer(info.buffer) || !g_resource_state.has_memory(info.memory)) {
+            ICD_LOG_ERROR() << "[Client ICD] Buffer or memory not tracked in vkBindBufferMemory2 (index=" << i << ")\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (g_resource_state.buffer_is_bound(info.buffer)) {
+            ICD_LOG_ERROR() << "[Client ICD] Buffer already bound in vkBindBufferMemory2 (index=" << i << ")\n";
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+
+        VkMemoryRequirements cached_requirements;
+        if (g_resource_state.get_cached_buffer_requirements(info.buffer, &cached_requirements)) {
+            VkDeviceSize memory_size = g_resource_state.get_memory_size(info.memory);
+            if (!validate_memory_offset(cached_requirements, memory_size, info.memoryOffset)) {
+                ICD_LOG_ERROR() << "[Client ICD] Buffer bind validation failed in vkBindBufferMemory2 (index=" << i
+                            << ", offset=" << info.memoryOffset << ")\n";
+                return VK_ERROR_VALIDATION_FAILED_EXT;
+            }
+        }
+
+        remote_infos[i] = info;
+        remote_infos[i].buffer = g_resource_state.get_remote_buffer(info.buffer);
+        remote_infos[i].memory = g_resource_state.get_remote_memory(info.memory);
+        if (remote_infos[i].buffer == VK_NULL_HANDLE || remote_infos[i].memory == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Remote handles missing in vkBindBufferMemory2 (index=" << i << ")\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkBindBufferMemory2(&g_ring,
+                                                  icd_device->remote_handle,
+                                                  bindInfoCount,
+                                                  remote_infos.data());
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < bindInfoCount; ++i) {
+            g_resource_state.bind_buffer(pBindInfos[i].buffer, pBindInfos[i].memory, pBindInfos[i].memoryOffset);
+        }
+        ICD_LOG_INFO() << "[Client ICD] vkBindBufferMemory2 bound " << bindInfoCount << " buffer(s)\n";
+    } else {
+        ICD_LOG_ERROR() << "[Client ICD] vkBindBufferMemory2 failed: " << result << "\n";
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory2KHR(
+    VkDevice device,
+    uint32_t bindInfoCount,
+    const VkBindBufferMemoryInfo* pBindInfos) {
+    return vkBindBufferMemory2(device, bindInfoCount, pBindInfos);
+}
+
 VKAPI_ATTR VkDeviceAddress VKAPI_CALL vkGetBufferDeviceAddress(
     VkDevice device,
     const VkBufferDeviceAddressInfo* pInfo) {
@@ -837,6 +913,82 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory(
         ICD_LOG_ERROR() << "[Client ICD] Server rejected vkBindImageMemory: " << result << "\n";
     }
     return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory2(
+    VkDevice device,
+    uint32_t bindInfoCount,
+    const VkBindImageMemoryInfo* pBindInfos) {
+
+    ICD_LOG_INFO() << "[Client ICD] vkBindImageMemory2 called (count=" << bindInfoCount << ")\n";
+
+    if (bindInfoCount == 0 || !pBindInfos) {
+        ICD_LOG_ERROR() << "[Client ICD] Invalid parameters for vkBindImageMemory2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!ensure_connected()) {
+        ICD_LOG_ERROR() << "[Client ICD] Not connected to server\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!g_device_state.has_device(device)) {
+        ICD_LOG_ERROR() << "[Client ICD] Unknown device in vkBindImageMemory2\n";
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    std::vector<VkBindImageMemoryInfo> remote_infos(bindInfoCount);
+    for (uint32_t i = 0; i < bindInfoCount; ++i) {
+        const VkBindImageMemoryInfo& info = pBindInfos[i];
+        if (!g_resource_state.has_image(info.image) || !g_resource_state.has_memory(info.memory)) {
+            ICD_LOG_ERROR() << "[Client ICD] Image or memory not tracked in vkBindImageMemory2 (index=" << i << ")\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (g_resource_state.image_is_bound(info.image)) {
+            ICD_LOG_ERROR() << "[Client ICD] Image already bound in vkBindImageMemory2 (index=" << i << ")\n";
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+
+        VkMemoryRequirements cached_requirements = {};
+        if (g_resource_state.get_cached_image_requirements(info.image, &cached_requirements)) {
+            VkDeviceSize memory_size = g_resource_state.get_memory_size(info.memory);
+            if (!validate_memory_offset(cached_requirements, memory_size, info.memoryOffset)) {
+                ICD_LOG_ERROR() << "[Client ICD] Image bind validation failed in vkBindImageMemory2 (index=" << i
+                            << ", offset=" << info.memoryOffset << ")\n";
+                return VK_ERROR_VALIDATION_FAILED_EXT;
+            }
+        }
+
+        remote_infos[i] = info;
+        remote_infos[i].image = g_resource_state.get_remote_image(info.image);
+        remote_infos[i].memory = g_resource_state.get_remote_memory(info.memory);
+        if (remote_infos[i].image == VK_NULL_HANDLE || remote_infos[i].memory == VK_NULL_HANDLE) {
+            ICD_LOG_ERROR() << "[Client ICD] Remote handles missing in vkBindImageMemory2 (index=" << i << ")\n";
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    IcdDevice* icd_device = icd_device_from_handle(device);
+    VkResult result = vn_call_vkBindImageMemory2(&g_ring,
+                                                 icd_device->remote_handle,
+                                                 bindInfoCount,
+                                                 remote_infos.data());
+    if (result == VK_SUCCESS) {
+        for (uint32_t i = 0; i < bindInfoCount; ++i) {
+            g_resource_state.bind_image(pBindInfos[i].image, pBindInfos[i].memory, pBindInfos[i].memoryOffset);
+        }
+        ICD_LOG_INFO() << "[Client ICD] vkBindImageMemory2 bound " << bindInfoCount << " image(s)\n";
+    } else {
+        ICD_LOG_ERROR() << "[Client ICD] vkBindImageMemory2 failed: " << result << "\n";
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory2KHR(
+    VkDevice device,
+    uint32_t bindInfoCount,
+    const VkBindImageMemoryInfo* pBindInfos) {
+    return vkBindImageMemory2(device, bindInfoCount, pBindInfos);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetImageSubresourceLayout(

@@ -65,6 +65,7 @@ public:
                                      const VkRenderPassCreateInfo2* info);
     bool destroy_render_pass(VkRenderPass render_pass);
     VkRenderPass get_real_render_pass(VkRenderPass render_pass) const;
+    VkDevice get_render_pass_real_device(VkRenderPass render_pass) const;
 
     VkFramebuffer create_framebuffer(VkDevice client_device,
                                      VkDevice real_device,

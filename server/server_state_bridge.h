@@ -28,6 +28,9 @@ VkPhysicalDevice server_state_bridge_get_real_physical_device(const struct Serve
                                                               VkPhysicalDevice physical_device);
 VkDevice server_state_bridge_get_real_device(const struct ServerState* state, VkDevice device);
 VkQueue server_state_bridge_get_real_queue(const struct ServerState* state, VkQueue queue);
+VkFence server_state_bridge_get_real_fence(struct ServerState* state, VkFence fence);
+VkSemaphore server_state_bridge_get_real_semaphore(struct ServerState* state, VkSemaphore semaphore);
+bool server_state_bridge_semaphore_exists(struct ServerState* state, VkSemaphore semaphore);
 VkBuffer server_state_bridge_get_real_buffer(const struct ServerState* state, VkBuffer buffer);
 VkImage server_state_bridge_get_real_image(const struct ServerState* state, VkImage image);
 VkImageView server_state_bridge_create_image_view(struct ServerState* state,
@@ -101,6 +104,10 @@ VkRenderPass server_state_bridge_create_render_pass2(struct ServerState* state,
 void server_state_bridge_destroy_render_pass(struct ServerState* state, VkRenderPass renderPass);
 VkRenderPass server_state_bridge_get_real_render_pass(const struct ServerState* state,
                                                       VkRenderPass renderPass);
+void server_state_bridge_get_render_area_granularity(struct ServerState* state,
+                                                     VkDevice device,
+                                                     VkRenderPass renderPass,
+                                                     VkExtent2D* pGranularity);
 VkFramebuffer server_state_bridge_create_framebuffer(struct ServerState* state,
                                                      VkDevice device,
                                                      const VkFramebufferCreateInfo* info);
@@ -142,15 +149,31 @@ VkBuffer server_state_bridge_create_buffer(struct ServerState* state, VkDevice d
 bool server_state_bridge_destroy_buffer(struct ServerState* state, VkBuffer buffer);
 bool server_state_bridge_get_buffer_memory_requirements(struct ServerState* state, VkBuffer buffer, VkMemoryRequirements* requirements);
 VkResult server_state_bridge_bind_buffer_memory(struct ServerState* state, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset);
+VkResult server_state_bridge_bind_buffer_memory2(struct ServerState* state,
+                                                 VkDevice device,
+                                                 uint32_t bindInfoCount,
+                                                 const VkBindBufferMemoryInfo* pBindInfos);
 VkImage server_state_bridge_create_image(struct ServerState* state, VkDevice device, const VkImageCreateInfo* info);
 bool server_state_bridge_destroy_image(struct ServerState* state, VkImage image);
 bool server_state_bridge_get_image_memory_requirements(struct ServerState* state, VkImage image, VkMemoryRequirements* requirements);
 VkResult server_state_bridge_bind_image_memory(struct ServerState* state, VkImage image, VkDeviceMemory memory, VkDeviceSize offset);
+VkResult server_state_bridge_bind_image_memory2(struct ServerState* state,
+                                                VkDevice device,
+                                                uint32_t bindInfoCount,
+                                                const VkBindImageMemoryInfo* pBindInfos);
 bool server_state_bridge_get_image_subresource_layout(struct ServerState* state, VkImage image, const VkImageSubresource* subresource, VkSubresourceLayout* layout);
+void server_state_bridge_get_device_memory_commitment(struct ServerState* state,
+                                                      VkDevice device,
+                                                      VkDeviceMemory memory,
+                                                      VkDeviceSize* pCommittedMemoryInBytes);
 
 VkCommandPool server_state_bridge_create_command_pool(struct ServerState* state, VkDevice device, const VkCommandPoolCreateInfo* info);
 bool server_state_bridge_destroy_command_pool(struct ServerState* state, VkCommandPool commandPool);
 VkResult server_state_bridge_reset_command_pool(struct ServerState* state, VkCommandPool commandPool, VkCommandPoolResetFlags flags);
+void server_state_bridge_trim_command_pool(struct ServerState* state,
+                                           VkDevice device,
+                                           VkCommandPool commandPool,
+                                           VkCommandPoolTrimFlags flags);
 VkResult server_state_bridge_allocate_command_buffers(struct ServerState* state, VkDevice device, const VkCommandBufferAllocateInfo* info, VkCommandBuffer* pCommandBuffers);
 void server_state_bridge_free_command_buffers(struct ServerState* state, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers);
 VkResult server_state_bridge_begin_command_buffer(struct ServerState* state, VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* info);

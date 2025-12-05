@@ -282,6 +282,18 @@ VkQueue server_state_get_real_queue(const ServerState* state, VkQueue queue) {
     return state->queue_map.lookup(queue);
 }
 
+VkFence server_state_get_real_fence(ServerState* state, VkFence fence) {
+    return state->sync_manager.get_real_fence(fence);
+}
+
+VkSemaphore server_state_get_real_semaphore(ServerState* state, VkSemaphore semaphore) {
+    return state->sync_manager.get_real_semaphore(semaphore);
+}
+
+bool server_state_semaphore_exists(ServerState* state, VkSemaphore semaphore) {
+    return state->sync_manager.semaphore_exists(semaphore);
+}
+
 VkDeviceMemory server_state_alloc_memory(ServerState* state, VkDevice device, const VkMemoryAllocateInfo* info) {
     if (!info) {
         return VK_NULL_HANDLE;
@@ -354,11 +366,88 @@ VkResult server_state_bind_image_memory(ServerState* state,
     return VK_SUCCESS;
 }
 
+VkResult server_state_bind_buffer_memory2(ServerState* state,
+                                          VkDevice device,
+                                          uint32_t bind_info_count,
+                                          const VkBindBufferMemoryInfo* bind_infos) {
+    if (bind_info_count == 0 || !bind_infos) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    (void)device;
+
+    for (uint32_t i = 0; i < bind_info_count; ++i) {
+        VkResult result = server_state_bind_buffer_memory(state,
+                                                          bind_infos[i].buffer,
+                                                          bind_infos[i].memory,
+                                                          bind_infos[i].memoryOffset);
+        if (result != VK_SUCCESS) {
+            SERVER_LOG_ERROR() << "vkBindBufferMemory2 failed for bind index " << i << " (result=" << result << ")";
+            return result;
+        }
+    }
+    return VK_SUCCESS;
+}
+
+VkResult server_state_bind_image_memory2(ServerState* state,
+                                         VkDevice device,
+                                         uint32_t bind_info_count,
+                                         const VkBindImageMemoryInfo* bind_infos) {
+    if (bind_info_count == 0 || !bind_infos) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    (void)device;
+
+    for (uint32_t i = 0; i < bind_info_count; ++i) {
+        VkResult result = server_state_bind_image_memory(state,
+                                                         bind_infos[i].image,
+                                                         bind_infos[i].memory,
+                                                         bind_infos[i].memoryOffset);
+        if (result != VK_SUCCESS) {
+            SERVER_LOG_ERROR() << "vkBindImageMemory2 failed for bind index " << i << " (result=" << result << ")";
+            return result;
+        }
+    }
+    return VK_SUCCESS;
+}
+
 bool server_state_get_image_subresource_layout(ServerState* state,
                                                VkImage image,
                                                const VkImageSubresource* subresource,
                                                VkSubresourceLayout* layout) {
     return state->resource_tracker.get_image_subresource_layout(image, *subresource, layout);
+}
+
+void server_state_get_device_memory_commitment(ServerState* state,
+                                               VkDevice device,
+                                               VkDeviceMemory memory,
+                                               VkDeviceSize* committed) {
+    if (!committed) {
+        return;
+    }
+
+    *committed = 0;
+    VkDeviceMemory real_memory = VK_NULL_HANDLE;
+    VkDevice real_device = VK_NULL_HANDLE;
+    VkDeviceSize alloc_size = 0;
+    uint32_t type_index = 0;
+    if (!state->resource_tracker.get_memory_info(memory, &real_memory, &real_device, &alloc_size, &type_index)) {
+        SERVER_LOG_ERROR() << "vkGetDeviceMemoryCommitment: memory not tracked";
+        return;
+    }
+
+    if (device != VK_NULL_HANDLE) {
+        VkDevice device_override = server_state_get_real_device(state, device);
+        if (device_override != VK_NULL_HANDLE) {
+            real_device = device_override;
+        }
+    }
+
+    vkGetDeviceMemoryCommitment(real_device, real_memory, committed);
+    if (*committed == 0) {
+        *committed = alloc_size;
+    }
 }
 
 VkImageView server_state_create_image_view(ServerState* state,
@@ -749,6 +838,32 @@ VkRenderPass server_state_get_real_render_pass(const ServerState* state,
     return state->resource_tracker.get_real_render_pass(render_pass);
 }
 
+void server_state_get_render_area_granularity(ServerState* state,
+                                              VkDevice device,
+                                              VkRenderPass render_pass,
+                                              VkExtent2D* granularity) {
+    if (!granularity) {
+        return;
+    }
+
+    VkRenderPass real_render_pass = state->resource_tracker.get_real_render_pass(render_pass);
+    VkDevice real_device = state->resource_tracker.get_render_pass_real_device(render_pass);
+
+    if (real_render_pass == VK_NULL_HANDLE || real_device == VK_NULL_HANDLE) {
+        SERVER_LOG_ERROR() << "vkGetRenderAreaGranularity: render pass not tracked";
+        return;
+    }
+
+    if (device != VK_NULL_HANDLE) {
+        VkDevice device_override = server_state_get_real_device(state, device);
+        if (device_override != VK_NULL_HANDLE) {
+            real_device = device_override;
+        }
+    }
+
+    vkGetRenderAreaGranularity(real_device, real_render_pass, granularity);
+}
+
 VkFramebuffer server_state_create_framebuffer(ServerState* state,
                                               VkDevice device,
                                               const VkFramebufferCreateInfo* info) {
@@ -848,6 +963,23 @@ VkResult server_state_reset_command_pool(ServerState* state,
                                          VkCommandPool pool,
                                          VkCommandPoolResetFlags flags) {
     return state->command_buffer_state.reset_pool(pool, flags);
+}
+
+void server_state_trim_command_pool(ServerState* state,
+                                    VkDevice device,
+                                    VkCommandPool pool,
+                                    VkCommandPoolTrimFlags flags) {
+    VkCommandPool real_pool = state->command_buffer_state.get_real_pool(pool);
+    VkDevice real_device = state->command_buffer_state.get_pool_real_device(pool);
+    if (real_pool == VK_NULL_HANDLE || real_device == VK_NULL_HANDLE) {
+        SERVER_LOG_ERROR() << "vkTrimCommandPool: unknown pool";
+        return;
+    }
+    if (device != VK_NULL_HANDLE && state->command_buffer_state.get_pool_device(pool) != device) {
+        SERVER_LOG_ERROR() << "vkTrimCommandPool: device mismatch for pool";
+        return;
+    }
+    vkTrimCommandPool(real_device, real_pool, flags);
 }
 
 VkResult server_state_allocate_command_buffers(ServerState* state,
@@ -1376,6 +1508,18 @@ VkQueue server_state_bridge_get_real_queue(const struct ServerState* state, VkQu
     return venus_plus::server_state_get_real_queue(state, queue);
 }
 
+VkFence server_state_bridge_get_real_fence(struct ServerState* state, VkFence fence) {
+    return venus_plus::server_state_get_real_fence(state, fence);
+}
+
+VkSemaphore server_state_bridge_get_real_semaphore(struct ServerState* state, VkSemaphore semaphore) {
+    return venus_plus::server_state_get_real_semaphore(state, semaphore);
+}
+
+bool server_state_bridge_semaphore_exists(struct ServerState* state, VkSemaphore semaphore) {
+    return venus_plus::server_state_semaphore_exists(state, semaphore);
+}
+
 VkBuffer server_state_bridge_get_real_buffer(const struct ServerState* state, VkBuffer buffer) {
     return venus_plus::server_state_get_real_buffer(state, buffer);
 }
@@ -1568,6 +1712,13 @@ VkRenderPass server_state_bridge_get_real_render_pass(const struct ServerState* 
     return venus_plus::server_state_get_real_render_pass(state, render_pass);
 }
 
+void server_state_bridge_get_render_area_granularity(struct ServerState* state,
+                                                     VkDevice device,
+                                                     VkRenderPass renderPass,
+                                                     VkExtent2D* pGranularity) {
+    venus_plus::server_state_get_render_area_granularity(state, device, renderPass, pGranularity);
+}
+
 VkFramebuffer server_state_bridge_create_framebuffer(struct ServerState* state,
                                                      VkDevice device,
                                                      const VkFramebufferCreateInfo* info) {
@@ -1687,6 +1838,13 @@ VkResult server_state_bridge_bind_buffer_memory(struct ServerState* state, VkBuf
     return venus_plus::server_state_bind_buffer_memory(state, buffer, memory, offset);
 }
 
+VkResult server_state_bridge_bind_buffer_memory2(struct ServerState* state,
+                                                 VkDevice device,
+                                                 uint32_t bindInfoCount,
+                                                 const VkBindBufferMemoryInfo* pBindInfos) {
+    return venus_plus::server_state_bind_buffer_memory2(state, device, bindInfoCount, pBindInfos);
+}
+
 VkImage server_state_bridge_create_image(struct ServerState* state, VkDevice device, const VkImageCreateInfo* info) {
     return venus_plus::server_state_create_image(state, device, info);
 }
@@ -1703,11 +1861,25 @@ VkResult server_state_bridge_bind_image_memory(struct ServerState* state, VkImag
     return venus_plus::server_state_bind_image_memory(state, image, memory, offset);
 }
 
+VkResult server_state_bridge_bind_image_memory2(struct ServerState* state,
+                                                VkDevice device,
+                                                uint32_t bindInfoCount,
+                                                const VkBindImageMemoryInfo* pBindInfos) {
+    return venus_plus::server_state_bind_image_memory2(state, device, bindInfoCount, pBindInfos);
+}
+
 bool server_state_bridge_get_image_subresource_layout(struct ServerState* state,
                                                       VkImage image,
                                                       const VkImageSubresource* subresource,
                                                       VkSubresourceLayout* layout) {
     return venus_plus::server_state_get_image_subresource_layout(state, image, subresource, layout);
+}
+
+void server_state_bridge_get_device_memory_commitment(struct ServerState* state,
+                                                      VkDevice device,
+                                                      VkDeviceMemory memory,
+                                                      VkDeviceSize* pCommittedMemoryInBytes) {
+    venus_plus::server_state_get_device_memory_commitment(state, device, memory, pCommittedMemoryInBytes);
 }
 
 VkImageView server_state_bridge_create_image_view(struct ServerState* state,
@@ -1752,6 +1924,13 @@ VkResult server_state_bridge_reset_command_pool(struct ServerState* state,
                                                 VkCommandPool commandPool,
                                                 VkCommandPoolResetFlags flags) {
     return venus_plus::server_state_reset_command_pool(state, commandPool, flags);
+}
+
+void server_state_bridge_trim_command_pool(struct ServerState* state,
+                                           VkDevice device,
+                                           VkCommandPool commandPool,
+                                           VkCommandPoolTrimFlags flags) {
+    venus_plus::server_state_trim_command_pool(state, device, commandPool, flags);
 }
 
 VkResult server_state_bridge_allocate_command_buffers(struct ServerState* state,
